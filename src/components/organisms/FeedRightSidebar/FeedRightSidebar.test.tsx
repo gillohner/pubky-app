@@ -8,8 +8,13 @@ vi.mock('@/organisms/VibesCard/VibesCard', () => ({
 }));
 
 describe('Vibes sidebar placement', () => {
-  it.each([HomeFeedRightSidebar, HomeFeedRightDrawer])('excludes Vibes from regular feed sidebars', (Sidebar) => {
-    render(<Sidebar />);
+  it('places Vibes directly above Feedback in the Home sidebar', () => {
+    render(<HomeFeedRightSidebar showVibes />);
+    expect(screen.getByTestId('feedback-card').previousElementSibling).toBe(screen.getByTestId('vibes-card'));
+  });
+
+  it.each([HomeFeedRightSidebar, HomeFeedRightDrawer])('excludes Vibes from other regular feed surfaces', (Surface) => {
+    render(<Surface />);
     expect(screen.queryByTestId('vibes-card')).not.toBeInTheDocument();
   });
 

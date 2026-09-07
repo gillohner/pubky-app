@@ -5,7 +5,7 @@
 /**
  * HomeFeedContent
  *
- * Shared content for Home feed sidebars - WhoToFollow, ActiveUsers, HotTags, FeedbackCard.
+ * Shared content for regular feed sidebars - WhoToFollow, ActiveUsers, HotTags, FeedbackCard.
  * Used by both HomeFeedRightSidebar (desktop) and HomeFeedRightDrawer (tablet).
  */
 import { Container } from '@/atoms/Container/Container';
@@ -15,12 +15,13 @@ import { HotTags } from '../HotTags/HotTags';
 import { VibesCard } from '../VibesCard/VibesCard';
 import { WhoToFollowSidebar } from '../WhoToFollowSidebar/WhoToFollowSidebar';
 
-function HomeFeedContent() {
+function HomeFeedContent({ showVibes = false }: { showVibes?: boolean }) {
   return (
     <>
       <WhoToFollowSidebar />
       <ActiveUsers />
       <HotTags />
+      {showVibes && <VibesCard />}
       <FeedbackCard />
     </>
   );
@@ -36,8 +37,8 @@ function HomeFeedContent() {
  * Right sidebar for Home feed - displays WhoToFollow, ActiveUsers, HotTags, FeedbackCard.
  * Desktop version.
  */
-export function HomeFeedRightSidebar() {
-  return <HomeFeedContent />;
+export function HomeFeedRightSidebar({ showVibes = false }: { showVibes?: boolean }) {
+  return <HomeFeedContent showVibes={showVibes} />;
 }
 
 /**

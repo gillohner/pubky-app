@@ -44,7 +44,7 @@ const configs: Record<FeedsRouteKey, FeedsShellConfig> = {
     hasGradientBackground: false,
     classNameMobileHeader: 'pb-0',
     leftSidebarContent: <HomeFeedSidebar allowVisualLayout feedVariant={TIMELINE_FEED_VARIANT.HOME} />,
-    rightSidebarContent: <HomeFeedRightSidebar />,
+    rightSidebarContent: <HomeFeedRightSidebar showVibes />,
     leftDrawerContent: <HomeFeedDrawer allowVisualLayout feedVariant={TIMELINE_FEED_VARIANT.HOME} />,
     rightDrawerContent: <HomeFeedRightDrawer />,
     leftDrawerContentMobile: <HomeFeedDrawerMobile allowVisualLayout feedVariant={TIMELINE_FEED_VARIANT.HOME} />,
