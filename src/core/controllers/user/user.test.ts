@@ -5,7 +5,7 @@ import { HttpMethod } from '@/libs/http/http.types';
 import type { Pubky } from '@/models/models.types';
 import type { UserCountsModel } from '@/models/user/counts/userCounts';
 import { FollowNormalizer } from '@/pipes/follow/follow.normalizer';
-import type { NexusTag, NexusTaggers, NexusUserCounts, NexusUserDetails } from '@/services/nexus/nexus.types';
+import type { NexusTaggers, NexusUserCounts, NexusUserDetails } from '@/services/nexus/nexus.types';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { UserController } from './user';
 
@@ -446,44 +446,6 @@ describe('UserController', () => {
       await expect(UserController.commitFollow(HttpMethod.PUT, { follower, followee })).rejects.toThrow(
         'delegate-fail',
       );
-    });
-  });
-
-  describe('tags', () => {
-    it('should delegate to UserApplication with correct params', async () => {
-      const userId = 'pubky-user';
-      const mockTags = [
-        { label: 'developer', taggers: [] as Pubky[], taggers_count: 0, relationship: false },
-      ] as NexusTag[];
-
-      const tagsSpy = vi.spyOn(UserApplication, 'fetchTags').mockResolvedValue(mockTags);
-
-      const result = await UserController.fetchTags({
-        user_id: userId,
-        skip_tags: 5,
-        limit_tags: 20,
-      });
-
-      expect(result).toEqual(mockTags);
-      expect(tagsSpy).toHaveBeenCalledWith({
-        user_id: userId,
-        skip_tags: 5,
-        limit_tags: 20,
-      });
-    });
-
-    it('should propagate errors from application layer', async () => {
-      const userId = 'pubky-user';
-
-      vi.spyOn(UserApplication, 'fetchTags').mockRejectedValue(new Error('Application error'));
-
-      await expect(
-        UserController.fetchTags({
-          user_id: userId,
-          skip_tags: 0,
-          limit_tags: 10,
-        }),
-      ).rejects.toThrow('Application error');
     });
   });
 

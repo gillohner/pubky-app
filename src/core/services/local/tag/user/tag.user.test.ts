@@ -72,33 +72,6 @@ describe('LocalUserTagService', () => {
     });
   });
 
-  it('publishes committed local intent to expanded tagger lists without notifying idempotent writes', async () => {
-    const listener = vi.fn();
-    const unsubscribe = ViewerTagMarkerStorage.subscribe(listener);
-    const params = createTagParams('developer');
-    try {
-      await LocalUserTagService.create(params);
-      await LocalUserTagService.create(params);
-      expect(listener).toHaveBeenCalledTimes(1);
-      expect(listener).toHaveBeenLastCalledWith({ ...params, taggersCount: 1 });
-      expect((await UserTagsModel.findById(testData.taggedPubky))?.mutations?.developer).toMatchObject({
-        viewerId: testData.taggerPubky,
-        relationship: true,
-      });
-
-      await LocalUserTagService.delete(params);
-      await LocalUserTagService.delete(params);
-      expect(listener).toHaveBeenCalledTimes(2);
-      expect(listener).toHaveBeenLastCalledWith({ ...params, taggersCount: 0 });
-      expect((await UserTagsModel.findById(testData.taggedPubky))?.mutations?.developer).toMatchObject({
-        viewerId: testData.taggerPubky,
-        relationship: false,
-      });
-    } finally {
-      unsubscribe();
-    }
-  });
-
   describe('create', () => {
     it('should create a new tag and update counts', async () => {
       await setupUserCounts(testData.taggedPubky, 0, 0);

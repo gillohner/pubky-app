@@ -14,6 +14,7 @@ import {
   buildAuthorCollectionsStreamId,
   buildContentSearchStreamId,
   buildDiscoverCollectionsStreamId,
+  buildPostReplyStreamId,
   type PostStreamId,
   PostStreamTypes,
 } from '@/models/stream/post/postStream.types';
@@ -38,7 +39,7 @@ import {
   StreamSorting,
 } from '@/services/nexus/nexus.types';
 import { NexusPostStreamService } from '@/services/nexus/stream/posts/postStream';
-import { StreamKind, StreamSource } from '@/services/nexus/stream/posts/postStream.types';
+import { StreamKind, StreamOrder, StreamSource } from '@/services/nexus/stream/posts/postStream.types';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { asInvalid } from '@/test-utils/type-assertions';
 import { MuteFilter } from './muting/mute-filter';
@@ -3747,5 +3748,35 @@ describe('PostStreamApplication', () => {
 
       expect(result.nextPageIds).toEqual([ownPost, bookmarkedPost]);
     });
+  });
+});
+
+describe('PostStreamApplication reply publication', () => {
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('awaits grouped hydration before publishing cold reply IDs', async () => {
+    const streamId = buildPostReplyStreamId('author:parent');
+    const replyIds = ['author:reply'];
+    vi.spyOn(NexusPostStreamService, 'fetch').mockResolvedValue({ post_keys: replyIds, last_post_score: null });
+    vi.spyOn(LocalStreamPostsService, 'getNotPersistedPostsInCache').mockResolvedValue(replyIds);
+    const hydration = Promise.withResolvers<boolean>();
+    vi.spyOn(PostStreamApplication, 'fetchMissingPostsFromNexus').mockReturnValue(hydration.promise);
+    const publish = vi.spyOn(LocalStreamPostsService, 'persistNewStreamChunk').mockResolvedValue(undefined);
+    const page = PostStreamApplication.getOrFetchStreamSlice({
+      streamId,
+      streamHead: SKIP_FETCH_NEW_POSTS,
+      streamTail: 0,
+      limit: 3,
+      viewerId: null,
+      order: StreamOrder.ASCENDING,
+    });
+    await vi.waitFor(() => expect(PostStreamApplication.fetchMissingPostsFromNexus).toHaveBeenCalledTimes(1));
+    expect(publish).not.toHaveBeenCalled();
+    hydration.resolve(true);
+    const result = await page;
+    expect(publish).toHaveBeenCalledExactlyOnceWith({ stream: replyIds, streamId });
+    expect(result.nextPageIds).toEqual(replyIds);
+    expect(result.cacheMissPostIds).toEqual([]);
   });
 });

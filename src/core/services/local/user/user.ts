@@ -127,16 +127,6 @@ export class LocalUserService {
   }
 
   /**
-   * Reads tags for a single user from local database.
-   * @param userId - User ID to read tags for
-   * @returns Promise resolving to array of tags or empty array if not found
-   */
-  static async readTags({ userId }: TReadProfileParams): Promise<NexusTag[]> {
-    const userTags = await UserTagsModel.findById(userId);
-    return userTags?.tags ?? [];
-  }
-
-  /**
    * Bulk reads multiple user tags from local database.
    * @param userIds - Array of user IDs to read tags for
    * @returns Promise resolving to Map of user ID to user tags

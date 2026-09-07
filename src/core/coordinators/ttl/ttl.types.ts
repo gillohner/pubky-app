@@ -75,11 +75,6 @@ export interface TtlCoordinatorState {
   isStarted: boolean;
 
   /**
-   * Current route (used for reset on navigation)
-   */
-  currentRoute: string;
-
-  /**
    * Whether the page is currently visible
    */
   isPageVisible: boolean;
@@ -163,12 +158,8 @@ export interface EntityOps<T extends string> {
   subscribed: ReadonlyMap<T, number>;
   /** Queue of entity IDs pending refresh */
   batchQueue: Set<T>;
-  /** TTL in milliseconds for this entity type */
-  ttlMs: number;
   /** Maximum entities per batch request */
   maxBatchSize: number;
-  /** Whether this entity type requires viewerId for refresh (posts do, users don't) */
-  requiresViewerId: boolean;
   /** Find stale entities by IDs */
   findStaleByIds: (ids: T[]) => Promise<T[]>;
   /** Force refresh entities by IDs */

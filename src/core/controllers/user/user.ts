@@ -15,7 +15,7 @@ import type {
   NexusUserDetails,
   NexusUserRelationship,
 } from '@/services/nexus/nexus.types';
-import type { TUserTaggersParams, TUserTagsParams } from '@/services/nexus/user/user.types';
+import type { TUserTaggersParams } from '@/services/nexus/user/user.types';
 
 export class UserController {
   private constructor() {} // Prevent instantiation
@@ -65,33 +65,6 @@ export class UserController {
    */
   static async getManyCounts(params: TPubkyListParams): Promise<Map<Pubky, NexusUserCounts>> {
     return await UserApplication.getManyCounts(params);
-  }
-
-  /**
-   * Retrieves tags for a user from local IndexedDB.
-   * @param userId - User ID to get tags for
-   * @returns Promise resolving to an array of tags or empty array if not found
-   */
-  static async getTags(params: TReadProfileParams): Promise<NexusTag[]> {
-    return await UserApplication.getTags(params);
-  }
-
-  /**
-   * Saves tags for a user to local IndexedDB.
-   * @param userId - User ID to save tags for
-   * @param tags - Array of tags to save
-   */
-  static async upsertTags(userId: Pubky, tags: NexusTag[]): Promise<void> {
-    await UserApplication.upsertTags(userId, tags);
-  }
-
-  /**
-   * Fetch tags for a user from the Nexus API
-   * @param params - The parameters for fetching tags
-   * @returns The tags for the user
-   */
-  static async fetchTags(params: TUserTagsParams): Promise<NexusTag[]> {
-    return await UserApplication.fetchTags(params);
   }
 
   /**

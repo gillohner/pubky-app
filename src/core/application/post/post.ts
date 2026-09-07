@@ -26,7 +26,6 @@ import type { PostCountsModelSchema } from '@/models/post/counts/postCounts.sche
 import { PostDetailsModel } from '@/models/post/details/postDetails';
 import type { PostDetailsModelSchema } from '@/models/post/details/postDetails.schema';
 import type { PostRelationshipsModelSchema } from '@/models/post/relationships/postRelationships.schema';
-import type { TagCollectionModelSchema } from '@/models/shared/tag/tag.schema';
 import { buildAuthorCollectionsStreamId } from '@/models/stream/post/postStream.types';
 import { CollectionPostContent } from '@/pipes/post/post.collection';
 import { PostNormalizer } from '@/pipes/post/post.normalizer';
@@ -68,15 +67,6 @@ export class PostApplication {
    */
   static async getCounts({ compositeId }: TCompositeId): Promise<PostCountsModelSchema | null> {
     return await LocalPostService.readCounts(compositeId);
-  }
-
-  /**
-   * Reads post tags for a specific post from local database
-   * @param compositeId - Composite post ID in format "authorId:postId"
-   * @returns Post tags
-   */
-  static async getTags({ compositeId }: TCompositeId): Promise<TagCollectionModelSchema<string>[]> {
-    return await LocalPostService.readTags(compositeId);
   }
 
   /**

@@ -77,6 +77,7 @@ describe('TtlCoordinator', () => {
     useAuthStore.getState().reset();
 
     // Setup spies for TtlController methods
+    vi.spyOn(TtlController, 'refreshStaleTags').mockResolvedValue(undefined);
     findStalePostsSpy = vi.spyOn(TtlController, 'findStalePostsByIds').mockResolvedValue([]);
     findStaleUsersSpy = vi.spyOn(TtlController, 'findStaleUsersByIds').mockResolvedValue([]);
     forceRefreshPostsSpy = vi.spyOn(TtlController, 'forceRefreshPostsByIds').mockResolvedValue(undefined);
@@ -92,6 +93,50 @@ describe('TtlCoordinator', () => {
     });
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('keeps visible subscriptions refreshing as a guest after logout without a manager remount', async () => {
+    setupAuthenticatedUser();
+    const coordinator = TtlCoordinator.getInstance();
+    coordinator.subscribePost({ compositePostId: 'author:post' });
+    coordinator.start();
+    await waitForTick();
+    vi.mocked(TtlController.refreshStaleTags).mockClear();
+    useAuthStore.getState().reset();
+    await waitForTick();
+    expect(TtlCoordinator.getInstance()).toBe(coordinator);
+    expect(TtlController.refreshStaleTags).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'post', ids: ['author:post'], viewerId: undefined }),
+    );
+  });
+
+  it('contains a failed local tag scan and continues the next tick', async () => {
+    vi.mocked(TtlController.refreshStaleTags).mockRejectedValueOnce(new Error('local read failed'));
+    const coordinator = TtlCoordinator.getInstance();
+    coordinator.subscribePost({ compositePostId: 'author:post' });
+    coordinator.start();
+    await waitForTick();
+    vi.mocked(TtlController.refreshStaleTags).mockClear();
+    await waitForTick();
+    expect(TtlController.refreshStaleTags).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'post', ids: ['author:post'] }),
+    );
+  });
+
+  it('checks tag freshness even when subscribed entity details are fresh', async () => {
+    const coordinator = TtlCoordinator.getInstance();
+    coordinator.subscribePost({ compositePostId: 'author:post' });
+    coordinator.subscribeUser({ pubky: 'profile' });
+    coordinator.start();
+    await waitForTick();
+    expect(forceRefreshPostsSpy).not.toHaveBeenCalled();
+    expect(forceRefreshUsersSpy).not.toHaveBeenCalled();
+    expect(TtlController.refreshStaleTags).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'post', ids: ['author:post'] }),
+    );
+    expect(TtlController.refreshStaleTags).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'user', ids: ['profile'] }),
+    );
   });
 
   // ===========================================================================
@@ -709,101 +754,15 @@ describe('TtlCoordinator', () => {
   });
 
   // ===========================================================================
-  // 5. Route Changes
+  // 5. Lifecycle reset
   // ===========================================================================
 
-  describe('Route Changes', () => {
-    it('setRoute on initial mount (empty → route) does NOT reset subscriptions', async () => {
-      setupAuthenticatedUser();
-
-      const coordinator = TtlCoordinator.getInstance();
-      coordinator.configure({ batchIntervalMs: 1_000 });
-
-      // Subscribe a post before setting route
-      const postId = createCompositePostId('author1', 'post1');
-      coordinator.subscribePost({ compositePostId: postId });
-
-      // Set initial route (from empty string)
-      coordinator.setRoute('/home');
-
-      // Start and trigger tick
-      coordinator.start();
-      findStalePostsSpy.mockClear();
-      await waitForTick();
-
-      // Post should still be subscribed (not reset on initial mount)
-      expect(findStalePostsSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          postIds: expect.arrayContaining([postId]),
-        }),
-      );
-    });
-
-    it('setRoute preserves subscriptions owned by mounted components', async () => {
-      setupAuthenticatedUser();
-
-      const coordinator = TtlCoordinator.getInstance();
-      coordinator.configure({ batchIntervalMs: 1_000 });
-
-      // Set initial route
-      coordinator.setRoute('/home');
-
-      // Subscribe posts and users
-      const postId = createCompositePostId('author1', 'post1');
-      const userId = 'user-pubky-1' as Pubky;
-      coordinator.subscribePost({ compositePostId: postId });
-      coordinator.subscribeUser({ pubky: userId });
-
-      // Change route - should trigger reset
-      coordinator.setRoute('/profile');
-
-      // Start and trigger tick
-      coordinator.start();
-      findStalePostsSpy.mockClear();
-      findStaleUsersSpy.mockClear();
-      await waitForTick();
-
-      expect(findStalePostsSpy).toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
-      expect(findStaleUsersSpy).toHaveBeenCalledWith(expect.objectContaining({ userIds: [userId] }));
-    });
-
-    it('setRoute to same route is a no-op', async () => {
-      setupAuthenticatedUser();
-
-      const coordinator = TtlCoordinator.getInstance();
-      coordinator.configure({ batchIntervalMs: 1_000 });
-
-      // Set initial route
-      coordinator.setRoute('/home');
-
-      // Subscribe a post
-      const postId = createCompositePostId('author1', 'post1');
-      coordinator.subscribePost({ compositePostId: postId });
-
-      // Set same route again - should NOT reset
-      coordinator.setRoute('/home');
-
-      // Start and trigger tick
-      coordinator.start();
-      findStalePostsSpy.mockClear();
-      await waitForTick();
-
-      // Post should still be subscribed
-      expect(findStalePostsSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          postIds: expect.arrayContaining([postId]),
-        }),
-      );
-    });
-
+  describe('Lifecycle reset', () => {
     it('reset clears all subscriptions, ref counts, and queues', async () => {
       setupAuthenticatedUser();
 
       const coordinator = TtlCoordinator.getInstance();
       coordinator.configure({ batchIntervalMs: 1_000 });
-
-      // Set initial route
-      coordinator.setRoute('/home');
 
       // Subscribe multiple posts and users with ref counts
       const postId1 = createCompositePostId('author1', 'post1');
@@ -964,13 +923,11 @@ describe('TtlCoordinator', () => {
   // ===========================================================================
 
   describe('Auth State Changes', () => {
-    it('keeps a visible subscription across route changes and until its final subscriber leaves', async () => {
+    it('keeps a visible subscription until its final subscriber leaves', async () => {
       const coordinator = TtlCoordinator.getInstance();
       const postId = 'author:shared';
-      coordinator.setRoute('/home');
       coordinator.subscribePost({ compositePostId: postId });
       coordinator.subscribePost({ compositePostId: postId });
-      coordinator.setRoute('/profile/author');
       coordinator.unsubscribePost({ compositePostId: postId });
       findStalePostsSpy.mockResolvedValue([postId]);
       coordinator.start();

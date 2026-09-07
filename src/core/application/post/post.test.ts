@@ -17,7 +17,6 @@ import type { PostCountsModelSchema } from '@/models/post/counts/postCounts.sche
 import { PostDetailsModel } from '@/models/post/details/postDetails';
 import type { PostDetailsModelSchema } from '@/models/post/details/postDetails.schema';
 import type { PostRelationshipsModelSchema } from '@/models/post/relationships/postRelationships.schema';
-import type { TagCollectionModelSchema } from '@/models/shared/tag/tag.schema';
 import type { TFileAttachmentResult } from '@/pipes/file/file.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalPostService } from '@/services/local/post/post';
@@ -37,7 +36,6 @@ vi.mock('@/services/local/post/post', () => ({
     readDetails: vi.fn(),
     readDetailsByIds: vi.fn(),
     readCounts: vi.fn(),
-    readTags: vi.fn(),
     readRelationships: vi.fn(),
   },
 }));
@@ -1190,24 +1188,6 @@ describe('Post Application', () => {
 
       expect(getCountsSpy).toHaveBeenCalledWith('author:post123');
       expect(result).toEqual(mockCounts);
-    });
-  });
-
-  describe('getTags', () => {
-    it('should call LocalPostService.readTags', async () => {
-      const mockTags: TagCollectionModelSchema<string>[] = [
-        {
-          id: 'author:post123',
-          tags: [{ label: 'tag1', taggers: ['test-viewer-id'] as Pubky[], taggers_count: 0, relationship: false }],
-        },
-      ];
-
-      const getTagsSpy = vi.spyOn(LocalPostService, 'readTags').mockResolvedValue(mockTags);
-
-      const result = await PostApplication.getTags({ compositeId: 'author:post123' });
-
-      expect(getTagsSpy).toHaveBeenCalledWith('author:post123');
-      expect(result).toEqual(mockTags);
     });
   });
 

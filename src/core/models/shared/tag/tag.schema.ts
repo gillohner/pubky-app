@@ -9,6 +9,8 @@ export interface TagCollectionModelSchema<Id> {
     exhausted: boolean;
     fetchedAt: number;
     revision: number;
+    /** Earliest background retry after a failed refresh; successful data clears it. */
+    retryAt?: number;
     initialized?: boolean;
     viewerId?: string | null;
   };

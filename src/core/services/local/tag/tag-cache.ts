@@ -1,10 +1,14 @@
+import type { Table } from 'dexie';
 import { db } from '@/database/franky/franky';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { PostCountsModel } from '@/models/post/counts/postCounts';
 import { PostTagsModel } from '@/models/post/tags/postTags';
 import type { NexusModelTuple } from '@/models/shared/base/tuple/baseTuple.type';
 import type { TagCollectionModelSchema } from '@/models/shared/tag/tag.schema';
+import { getTagCursor } from '@/models/shared/tag/tag.utils';
+import { UserCountsModel } from '@/models/user/counts/userCounts';
 import { UserTagsModel } from '@/models/user/tags/userTags';
 import { reconcileTagCounts, reconcileTagWindow } from '@/pipes/tag/tag-cache';
 import type { NexusPostCounts, NexusTag, NexusUserCounts } from '@/services/nexus/nexus.types';
@@ -34,7 +38,7 @@ export class LocalTagCacheService {
     const now = Date.now();
     return ids.filter((_, index) => {
       const cache = records[index]?.cache;
-      return cache !== undefined && now - cache.fetchedAt > ttlMs;
+      return cache !== undefined && now - cache.fetchedAt > ttlMs && (cache.retryAt ?? 0) <= now;
     });
   }
 
@@ -57,10 +61,37 @@ export class LocalTagCacheService {
           cache: {
             ...existing?.cache,
             ...(!existing ? { initialized: false } : {}),
-            cursor: existing?.cache?.cursor ?? existing?.tags.length ?? 0,
+            cursor: getTagCursor(existing),
             exhausted: false,
             fetchedAt: 0,
+            retryAt: undefined,
             revision: (existing?.cache?.revision ?? 0) + 1,
+          },
+        });
+      }),
+    );
+  }
+
+  /** Retain the loaded window and defer only its failed background request. */
+  static async deferRefresh(
+    entity: TagEntity,
+    options: { revision: number | null; retryAt: number; isCurrent?: () => boolean },
+  ) {
+    const table = this.table(entity);
+    await this.write(table.name, () =>
+      db.transaction('rw', table, async () => {
+        const existing = await table.get(entity.id);
+        if (options.isCurrent && !options.isCurrent()) return;
+        if (!existing || (existing.cache?.revision ?? 0) !== options.revision) return;
+        await table.put({
+          ...existing,
+          cache: {
+            ...existing.cache,
+            cursor: getTagCursor(existing),
+            exhausted: existing.cache?.exhausted ?? false,
+            fetchedAt: 0,
+            revision: existing.cache?.revision ?? 0,
+            retryAt: options.retryAt,
           },
         });
       }),
@@ -74,7 +105,8 @@ export class LocalTagCacheService {
     counts: NexusModelTuple<NexusPostCounts | NexusUserCounts>[] = [],
   ) {
     const table = this.table({ kind, id: '' });
-    const countsTable = db.table<(NexusPostCounts | NexusUserCounts) & { id: string }>(`${kind}_counts`);
+    const countsTable: Table<(NexusPostCounts | NexusUserCounts) & { id: string }> =
+      kind === 'post' ? PostCountsModel.table : UserCountsModel.table;
     const incomingCounts = new Map(counts);
     await this.write(table.name, () =>
       db.transaction('rw', table, countsTable, async () => {
@@ -101,7 +133,7 @@ export class LocalTagCacheService {
           if (superseded || foreignPreview) continue;
           // A preview cannot establish which labels disappeared from an expanded list.
           // Keep that window until its full refresh succeeds (including when offline).
-          if ((existing?.cache?.cursor ?? existing?.tags.length ?? 0) > tags.length) continue;
+          if (getTagCursor(existing) > tags.length) continue;
           await table.put({
             id,
             ...reconcileTagWindow(tags, existing, Date.now(), guard.viewerId ?? undefined),

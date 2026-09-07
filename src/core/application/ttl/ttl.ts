@@ -9,7 +9,7 @@ import { PostTtlModel } from '@/models/post/ttl/postTtl';
 import { UserTtlModel } from '@/models/user/ttl/userTtl';
 import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
-import { LocalTagCacheService } from '@/services/local/tag/tag-cache';
+import { LocalTagCacheService, type TagEntity } from '@/services/local/tag/tag-cache';
 import { NexusPostStreamService } from '@/services/nexus/stream/posts/postStream';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 
@@ -22,13 +22,12 @@ export class TtlApplication {
 
     try {
       const ttlRecords = await PostTtlModel.findByIds(uniqueIds);
-      const staleTags = new Set(await LocalTagCacheService.findStale('post', uniqueIds, params.ttlMs));
       const ttlMap = new Map<string, number>(ttlRecords.map((r) => [r.id, r.lastUpdatedAt]));
       const now = Date.now();
 
       return uniqueIds.filter((id) => {
         const lastUpdatedAt = ttlMap.get(id);
-        return lastUpdatedAt === undefined || now - lastUpdatedAt > params.ttlMs || staleTags.has(id);
+        return lastUpdatedAt === undefined || now - lastUpdatedAt > params.ttlMs;
       });
     } catch (error) {
       Logger.warn('TtlApplication: Failed to check post TTL records', { error });
@@ -42,13 +41,12 @@ export class TtlApplication {
 
     try {
       const ttlRecords = await UserTtlModel.findByIds(uniqueIds);
-      const staleTags = new Set(await LocalTagCacheService.findStale('user', uniqueIds, params.ttlMs));
       const ttlMap = new Map<Pubky, number>(ttlRecords.map((r) => [r.id, r.lastUpdatedAt]));
       const now = Date.now();
 
       return uniqueIds.filter((id) => {
         const lastUpdatedAt = ttlMap.get(id);
-        return lastUpdatedAt === undefined || now - lastUpdatedAt > params.ttlMs || staleTags.has(id);
+        return lastUpdatedAt === undefined || now - lastUpdatedAt > params.ttlMs;
       });
     } catch (error) {
       Logger.warn('TtlApplication: Failed to check user TTL records', { error });
@@ -150,6 +148,32 @@ export class TtlApplication {
       ),
     );
     return params.isCurrent && !params.isCurrent() ? [] : userBatch.map((user) => user.details.id);
+  }
+
+  /** Retry stale tag windows without downloading healthy post/profile batches again. */
+  static async refreshStaleTags(params: {
+    kind: TagEntity['kind'];
+    ids: string[];
+    ttlMs: number;
+    viewerId?: Pubky;
+    isCurrent?: () => boolean;
+  }): Promise<void> {
+    if (params.ids.length === 0) return;
+    const ids = await LocalTagCacheService.findStale(params.kind, [...new Set(params.ids)], params.ttlMs);
+    if (params.isCurrent && !params.isCurrent()) return;
+    await this.refreshTagWindows(
+      ids.map((id) =>
+        TagCacheApplication.refreshStale(
+          {
+            kind: params.kind,
+            id,
+            viewerId: params.viewerId,
+            isCurrent: params.isCurrent,
+          },
+          params.ttlMs,
+        ),
+      ),
+    );
   }
 
   private static async refreshTagWindows(tasks: Promise<void>[]): Promise<void> {

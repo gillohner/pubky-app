@@ -31,7 +31,7 @@ import type {
 } from '@/services/nexus/nexus.types';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { NexusUserService } from '@/services/nexus/user/user';
-import type { TUserTaggersParams, TUserTagsParams } from '@/services/nexus/user/user.types';
+import type { TUserTaggersParams } from '@/services/nexus/user/user.types';
 
 export class UserApplication {
   /**
@@ -219,32 +219,6 @@ export class UserApplication {
    */
   static async getManyRelationships(param: TPubkyListParams): Promise<Map<Pubky, UserRelationshipsModelSchema>> {
     return await LocalUserService.readBulkRelationships(param);
-  }
-
-  /**
-   * Get user tags from local database
-   * This is a read-only operation that queries the local cache
-   */
-  static async getTags(params: TReadProfileParams): Promise<NexusTag[]> {
-    return await LocalUserService.readTags(params);
-  }
-
-  /**
-   * Saves tags for a user to local IndexedDB.
-   * @param userId - User ID to save tags for
-   * @param tags - Array of tags to save
-   */
-  static async upsertTags(userId: Pubky, tags: NexusTag[]) {
-    await LocalUserService.upsertTags(userId, tags);
-  }
-
-  /**
-   * Retrieves tags for a user from the nexus service.
-   * @param params - Parameters containing user ID and pagination options
-   * @returns Promise resolving to an array of tags
-   */
-  static async fetchTags(params: TUserTagsParams): Promise<NexusTag[]> {
-    return await NexusUserService.tags(params);
   }
 
   /**

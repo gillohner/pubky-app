@@ -33,7 +33,6 @@ export function usePostTags(postId: string | null | undefined, options: UsePostT
   const viewerId = customViewerId ?? currentUserId;
 
   const { record, isLoading, isLoadingMore, loadMore: loadNextPage } = useTagCache('post', postId, viewerId);
-  const prevPostIdRef = useRef<string | null | undefined>(null);
 
   // Track zero-tagger tags with their original index for order preservation
   const [zeroTaggerTags, setZeroTaggerTags] = useState<Map<string, { tag: NexusTag; index: number }>>(new Map());
@@ -44,17 +43,19 @@ export function usePostTags(postId: string | null | undefined, options: UsePostT
   // In-memory-only: labels the viewer just added are pinned to the front of the list.
   const [recentlyAddedLabels, setRecentlyAddedLabels] = useState<Map<string, number>>(new Map());
   const addCounterRef = useRef(0);
+  const viewRevision = useRef(0);
 
-  // Reset state when postId changes
+  // Local presentation state belongs to one post and viewer.
   useEffect(() => {
-    if (prevPostIdRef.current !== postId) {
-      prevPostIdRef.current = postId;
-      setZeroTaggerTags(new Map());
-      setTagOrder(new Map());
-      setRecentlyAddedLabels(new Map());
-      addCounterRef.current = 0;
-    }
-  }, [postId]);
+    viewRevision.current += 1;
+    setZeroTaggerTags(new Map());
+    setTagOrder(new Map());
+    setRecentlyAddedLabels(new Map());
+    addCounterRef.current = 0;
+    return () => {
+      viewRevision.current += 1;
+    };
+  }, [postId, viewerId]);
 
   // Fetch post counts to derive hasMore from unique_tags count.
   // This avoids defaulting hasMore to true and triggering unnecessary loadMore calls.
@@ -139,6 +140,7 @@ export function usePostTags(postId: string | null | undefined, options: UsePostT
 
   const handleTagAdd = useCallback(
     async (tagString: string): Promise<{ success: boolean; error?: string }> => {
+      const revision = viewRevision.current;
       const label = tagString.trim();
 
       if (!label) return { success: false, error: 'Tag label cannot be empty' };
@@ -159,6 +161,8 @@ export function usePostTags(postId: string | null | undefined, options: UsePostT
           taggedKind: TagKind.POST,
         });
 
+        if (viewRevision.current !== revision) return { success: false };
+
         // Remove from zero-tagger list if it was there
         const labelLower = label.toLowerCase();
         setZeroTaggerTags((prev) => {
@@ -175,6 +179,7 @@ export function usePostTags(postId: string | null | undefined, options: UsePostT
         });
         return { success: true };
       } catch {
+        if (viewRevision.current !== revision) return { success: false };
         toast({
           variant: 'error',
           description: 'Could not add tag',
@@ -188,6 +193,7 @@ export function usePostTags(postId: string | null | undefined, options: UsePostT
   const handleTagToggle = useCallback(
     async (tag: { label: string; relationship?: boolean }): Promise<void> => {
       if (!postId || !viewerId) return;
+      const revision = viewRevision.current;
 
       // Use the relationship from the tag (which comes from transformTagsForViewer)
       // This is more reliable than checking the taggers array which may be truncated
@@ -222,6 +228,7 @@ export function usePostTags(postId: string | null | undefined, options: UsePostT
             taggedKind: TagKind.POST,
           });
 
+          if (viewRevision.current !== revision) return;
           toast({
             title: 'Tag removed',
           });
@@ -240,6 +247,7 @@ export function usePostTags(postId: string | null | undefined, options: UsePostT
             taggedKind: TagKind.POST,
           });
 
+          if (viewRevision.current !== revision) return;
           // Remove from zero-tagger list
           setZeroTaggerTags((prev) => {
             const next = new Map(prev);
@@ -252,6 +260,7 @@ export function usePostTags(postId: string | null | undefined, options: UsePostT
           });
         }
       } catch {
+        if (viewRevision.current !== revision) return;
         // Rollback zero-tagger state on error
         if (userIsTagger) {
           setZeroTaggerTags((prev) => {

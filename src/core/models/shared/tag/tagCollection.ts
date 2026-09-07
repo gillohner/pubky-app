@@ -1,14 +1,9 @@
 import { Table } from 'dexie';
 import { MARKER_TTL_MS } from '@/config/viewerTagMarker';
-import { DatabaseErrorCode } from '@/libs/error/error.codes';
-import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
 import type { Pubky } from '@/models/models.types';
 import { ModelBase } from '@/models/shared/base/baseModel';
-import type { NexusModelTuple } from '@/models/shared/base/tuple/baseTuple.type';
 import { TagModel } from '@/models/shared/tag/tag';
 import type { TagCollectionModelSchema } from '@/models/shared/tag/tag.schema';
-import type { NexusTag } from '@/services/nexus/nexus.types';
 
 export abstract class TagCollection<Id, Schema extends TagCollectionModelSchema<Id>> extends ModelBase<Id, Schema> {
   // TODO: Consider adding multiEntry index on tag labels and if so, update Schema to use it
@@ -24,9 +19,10 @@ export abstract class TagCollection<Id, Schema extends TagCollectionModelSchema<
   }
 
   recordMutation(label: string, viewerId: string, relationship: boolean) {
+    const now = Date.now();
     this.mutations = {
-      ...this.mutations,
-      [label.toLowerCase()]: { viewerId, relationship, expiresAt: Date.now() + MARKER_TTL_MS },
+      ...Object.fromEntries(Object.entries(this.mutations ?? {}).filter(([, mutation]) => mutation.expiresAt > now)),
+      [label.toLowerCase()]: { viewerId, relationship, expiresAt: now + MARKER_TTL_MS },
     };
   }
 
@@ -77,25 +73,6 @@ export abstract class TagCollection<Id, Schema extends TagCollectionModelSchema<
     labelTagData.setRelationship(false);
     //If there is not taggers, remove the tag
     return this.deleteTagIfNoTaggers();
-  }
-
-  // -------- Static CRUD (inherited from ModelBase) --------
-
-  static async bulkSave<TId, TSchema extends TagCollectionModelSchema<TId>>(
-    this: { table: Table<TSchema> },
-    tuples: NexusModelTuple<NexusTag[]>[],
-  ) {
-    try {
-      const toSave = tuples.map((t) => ({ id: t[0] as TId, tags: t[1] }) as TSchema);
-      return await this.table.bulkPut(toSave);
-    } catch (error) {
-      throw Err.database(DatabaseErrorCode.WRITE_FAILED, `Failed to bulk save tags in ${this.table.name}`, {
-        service: ErrorService.Local,
-        operation: 'bulkSave',
-        context: { table: this.table.name, count: tuples.length },
-        cause: error,
-      });
-    }
   }
 
   /**

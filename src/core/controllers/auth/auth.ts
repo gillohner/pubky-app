@@ -13,7 +13,6 @@ import type {
 } from '@/controllers/auth/auth.types';
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
 import { StreamCoordinator } from '@/coordinators/streams/stream';
-import { TtlCoordinator } from '@/coordinators/ttl/ttl';
 import { clearDatabase } from '@/database/franky/franky.helpers';
 import { ErrorService } from '@/libs/error/error.types';
 import { isAppError, isWrongEnvironmentHomeserverError, toAppError } from '@/libs/error/error.utils';
@@ -361,7 +360,7 @@ export class AuthController {
 
     // Reset singletons
     PubkySpecsSingleton.reset();
-    TtlCoordinator.resetInstance();
+    // CoordinatorManager owns TTL lifetime; its auth listener clears session work.
     StreamCoordinator.resetInstance();
     NotificationCoordinator.resetInstance();
 

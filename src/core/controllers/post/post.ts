@@ -30,7 +30,6 @@ import type { CollectionPost, TAuthoredCollectionsParams } from '@/models/post/c
 import type { PostCountsModelSchema } from '@/models/post/counts/postCounts.schema';
 import type { PostDetailsModelSchema } from '@/models/post/details/postDetails.schema';
 import type { PostRelationshipsModelSchema } from '@/models/post/relationships/postRelationships.schema';
-import type { TagCollectionModelSchema } from '@/models/shared/tag/tag.schema';
 import type { TFileAttachmentResult } from '@/pipes/file/file.types';
 import { CollectionPostContent } from '@/pipes/post/post.collection';
 import {
@@ -78,16 +77,6 @@ export class PostController {
    */
   static async getCounts({ compositeId }: TCompositeId): Promise<PostCountsModelSchema | null> {
     return await PostApplication.getCounts({ compositeId });
-  }
-
-  /**
-   * Read post tags for a specific post from local database
-   * @param params - Parameters object
-   * @param params.compositeId - Composite post ID in format "authorId:postId"
-   * @returns Post tags
-   */
-  static async getTags({ compositeId }: TCompositeId): Promise<TagCollectionModelSchema<string>[]> {
-    return await PostApplication.getTags({ compositeId });
   }
 
   /**

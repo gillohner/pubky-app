@@ -11,13 +11,7 @@ import { LocalFollowService } from '@/services/local/follow/follow';
 import { LocalProfileService } from '@/services/local/profile/profile';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import { LocalUserService } from '@/services/local/user/user';
-import type {
-  NexusTag,
-  NexusTaggers,
-  NexusUser,
-  NexusUserCounts,
-  NexusUserDetails,
-} from '@/services/nexus/nexus.types';
+import type { NexusTaggers, NexusUser, NexusUserCounts, NexusUserDetails } from '@/services/nexus/nexus.types';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { NexusUserService } from '@/services/nexus/user/user';
 import { asInvalid, asOpaque } from '@/test-utils/type-assertions';
@@ -406,47 +400,6 @@ describe('UserApplication.ensureModerationFollow', () => {
       url: followUrl,
       bodyJson: followJson,
     });
-  });
-});
-
-describe('UserApplication.fetchTags', () => {
-  const userId = 'pubky_user' as Pubky;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('should delegate to NexusUserService with correct params', async () => {
-    const mockTags = [
-      { label: 'developer', taggers: [] as Pubky[], taggers_count: 0, relationship: false },
-    ] as NexusTag[];
-
-    const nexusSpy = vi.spyOn(NexusUserService, 'tags').mockResolvedValue(mockTags);
-
-    const result = await UserApplication.fetchTags({
-      user_id: userId,
-      skip_tags: 5,
-      limit_tags: 20,
-    });
-
-    expect(result).toEqual(mockTags);
-    expect(nexusSpy).toHaveBeenCalledWith({
-      user_id: userId,
-      skip_tags: 5,
-      limit_tags: 20,
-    });
-  });
-
-  it('should propagate errors from service layer', async () => {
-    vi.spyOn(NexusUserService, 'tags').mockRejectedValue(new Error('Service unavailable'));
-
-    await expect(
-      UserApplication.fetchTags({
-        user_id: userId,
-        skip_tags: 0,
-        limit_tags: 10,
-      }),
-    ).rejects.toThrow('Service unavailable');
   });
 });
 

@@ -71,6 +71,62 @@ describe('usePostTags', () => {
     vi.mocked(useLiveQuery).mockReturnValue(undefined);
   });
 
+  it('discards zero-tagger placeholders when the viewer changes on the same post', async () => {
+    const tag = { label: 'solo', taggers: ['mock-user-id'], taggers_count: 1, relationship: true };
+    setupLiveQueryMock({ tags: [tag] }, { unique_tags: 1 });
+    const { result, rerender } = renderHook(() => usePostTags('author:post123'));
+    await act(async () => result.current.handleTagToggle(tag));
+    setupLiveQueryMock({ tags: [] }, { unique_tags: 0 });
+    rerender();
+    expect(result.current.tags).toEqual([expect.objectContaining({ label: 'solo', taggers_count: 0 })]);
+    vi.mocked(useAuthStore).mockImplementation(mockAuthStoreSelector('other-viewer'));
+    rerender();
+    expect(result.current.tags).toEqual([]);
+  });
+
+  it("does not pin a previous viewer's late tag creation or show its toast", async () => {
+    const pending = Promise.withResolvers<void>();
+    vi.mocked(TagController.commitCreate).mockReturnValueOnce(pending.promise);
+    const tags = [
+      { label: 'first', taggers: [], taggers_count: 2, relationship: false },
+      { label: 'slow', taggers: [], taggers_count: 1, relationship: false },
+    ];
+    setupLiveQueryMock({ tags }, { unique_tags: 2 });
+    const { result, rerender } = renderHook(() => usePostTags('author:post123'));
+    let add!: Promise<unknown>;
+    act(() => {
+      add = result.current.handleTagAdd('slow');
+    });
+    vi.mocked(useAuthStore).mockImplementation(mockAuthStoreSelector('other-viewer'));
+    rerender();
+    await act(async () => {
+      pending.resolve();
+      await add;
+    });
+    expect(result.current.tags.map((tag) => tag.label)).toEqual(['first', 'slow']);
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('does not show a failed toggle toast after the owning view unmounts', async () => {
+    const pending = Promise.withResolvers<void>();
+    vi.mocked(TagController.commitDelete).mockReturnValueOnce(pending.promise);
+    setupLiveQueryMock(
+      { tags: [{ label: 'solo', taggers: ['mock-user-id'], taggers_count: 1, relationship: true }] },
+      { unique_tags: 1 },
+    );
+    const { result, unmount } = renderHook(() => usePostTags('author:post123'));
+    let toggle!: Promise<void>;
+    act(() => {
+      toggle = result.current.handleTagToggle({ label: 'solo', relationship: true });
+    });
+    unmount();
+    await act(async () => {
+      pending.reject(new Error('offline'));
+      await toggle;
+    });
+    expect(toast).not.toHaveBeenCalled();
+  });
+
   describe('initialization', () => {
     it('requests local-first initialization on mount', async () => {
       renderHook(() => usePostTags('author:post123'));

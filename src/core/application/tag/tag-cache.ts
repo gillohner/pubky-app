@@ -1,3 +1,8 @@
+import { POST_TAGS_PER_PAGE, TAG_REFRESH_RETRY_MS, USER_TAGS_PER_PAGE } from '@/config/tags';
+import { ClientErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorService } from '@/libs/error/error.types';
+import { getTagCursor } from '@/models/shared/tag/tag.utils';
 import { LocalTagCacheService, type TagEntity } from '@/services/local/tag/tag-cache';
 import type { NexusTag } from '@/services/nexus/nexus.types';
 import { NexusPostService } from '@/services/nexus/post/post';
@@ -30,21 +35,23 @@ export class TagCacheApplication {
 
   static async refreshExpanded(request: TagRequest, previewSize: number) {
     const cached = await this.get(request);
-    if ((cached?.cache?.cursor ?? cached?.tags.length ?? 0) <= previewSize) return;
-    try {
-      await this.forceRefresh(request);
-    } catch (error) {
-      // Legacy expanded records also need a stale tag timestamp when refresh fails.
-      await LocalTagCacheService.invalidate(request, request.isCurrent);
-      throw error;
-    }
+    if (getTagCursor(cached) <= previewSize || (cached?.cache?.retryAt ?? 0) > Date.now()) return;
+    await this.forceRefresh(request);
+  }
+
+  static async refreshStale(request: TagRequest, ttlMs: number) {
+    const cached = await this.get(request);
+    if (!cached?.cache || Date.now() - cached.cache.fetchedAt <= ttlMs || (cached.cache.retryAt ?? 0) > Date.now())
+      return;
+    await this.forceRefresh(request);
   }
 
   private static run(request: TagRequest, mode: 'missing' | 'next' | 'refresh'): Promise<void> {
+    if (request.isCurrent && !request.isCurrent()) return Promise.resolve();
     const key = `${request.kind}:${request.id}:${request.viewerId ?? ''}`;
     const existing = this.pending.get(key);
     if (existing && (!existing.isCurrent || existing.isCurrent())) {
-      if (mode === 'refresh' && existing.mode !== 'refresh') {
+      if (mode !== 'missing' && existing.mode !== mode) {
         return existing.task.catch(() => {}).then(() => this.run(request, mode));
       }
       return existing.task;
@@ -67,31 +74,49 @@ export class TagCacheApplication {
       (mode === 'missing' || (mode === 'next' && existing.cache?.exhausted))
     )
       return;
-    const cursor = existing?.cache?.cursor ?? existing?.tags.length ?? 0;
+    const cursor = getTagCursor(existing);
     const skip = mode === 'next' ? cursor : 0;
-    const pageSize = request.kind === 'post' ? 3 : 20;
+    const pageSize = request.kind === 'post' ? POST_TAGS_PER_PAGE : USER_TAGS_PER_PAGE;
     const limit = mode === 'refresh' ? Math.max(pageSize, cursor) : pageSize;
-    const tags: NexusTag[] = [];
-    // Nexus limits each request to 100 tags. Refresh the loaded prefix atomically.
-    while (tags.length < limit) {
-      const size = Math.min(100, limit - tags.length);
+    try {
+      const tags: NexusTag[] = [];
+      // Nexus limits each request to 100 tags. Refresh the loaded prefix atomically.
+      while (tags.length < limit) {
+        const size = Math.min(100, limit - tags.length);
+        if (request.isCurrent && !request.isCurrent()) return;
+        const page = await this.fetchPage(request, skip + tags.length, size, mode === 'refresh' || attempt > 0);
+        tags.push(...page);
+        if (page.length < size) break;
+      }
       if (request.isCurrent && !request.isCurrent()) return;
-      const page = await this.fetchPage(request, skip + tags.length, size, mode === 'refresh');
-      tags.push(...page);
-      if (page.length < size) break;
-    }
-    if (request.isCurrent && !request.isCurrent()) return;
-    const saved = await LocalTagCacheService.savePage(request, tags, {
-      skip,
-      limit,
-      revision: existing ? (existing.cache?.revision ?? 0) : null,
-      viewerId: request.viewerId,
-      isCurrent: request.isCurrent,
-    });
-    if (!saved && mode === 'refresh' && (!request.isCurrent || request.isCurrent())) {
-      // Notifications can invalidate a running refresh; all joined callers share its retry.
-      if (attempt < 2) await this.load(request, mode, attempt + 1);
-      else await LocalTagCacheService.invalidate(request, request.isCurrent);
+      const saved = await LocalTagCacheService.savePage(request, tags, {
+        skip,
+        limit,
+        revision: existing ? (existing.cache?.revision ?? 0) : null,
+        viewerId: request.viewerId,
+        isCurrent: request.isCurrent,
+      });
+      if (!saved && (!request.isCurrent || request.isCurrent())) {
+        // Re-read the cursor/revision after a batch, mutation, or notification wins.
+        if (attempt < 2) await this.load(request, mode, attempt + 1);
+        else
+          throw Err.client(ClientErrorCode.CONFLICT, 'Tag cache changed during pagination', {
+            service: ErrorService.Local,
+            operation: 'loadTagPage',
+            context: { kind: request.kind, id: request.id },
+          });
+      }
+    } catch (error) {
+      if (mode === 'refresh') {
+        // Capture the revision used by this attempt, after any queued pagination.
+        // A later accepted write must not be marked stale by this failure.
+        await LocalTagCacheService.deferRefresh(request, {
+          revision: existing ? (existing.cache?.revision ?? 0) : null,
+          retryAt: Date.now() + TAG_REFRESH_RETRY_MS,
+          isCurrent: request.isCurrent,
+        });
+      }
+      throw error;
     }
   }
 

@@ -10,7 +10,6 @@ import { toast } from '@/molecules/Toaster/toast';
 import { useTagCache } from './useTagCache';
 
 // Control database observations and pending I/O independently of React's lifecycle.
-// The consumer integration tests exercise these boundaries with real Dexie queries.
 vi.mock('dexie-react-hooks', () => ({ useLiveQuery: vi.fn() }));
 vi.mock('@/controllers/tag/tag-cache', () => ({
   TagCacheController: { get: vi.fn(), getOrFetch: vi.fn(), getOrFetchNext: vi.fn() },
@@ -52,6 +51,13 @@ describe('useTagCache', () => {
   });
 
   describe('initial loading', () => {
+    it('contains a local read failure so the query does not reject into React', async () => {
+      vi.mocked(TagCacheController.get).mockRejectedValueOnce(offlineError());
+      renderHook(() => useTagCache('user', 'profile', null));
+      const query = vi.mocked(useLiveQuery).mock.calls[0][0];
+      await expect(query()).resolves.toBeNull();
+    });
+
     it.each([null, undefined])('does not load or paginate without an ID (%s)', async (id) => {
       const { result } = renderHook(() => useTagCache('user', id, null));
 

@@ -46,7 +46,7 @@ UI (stream viewport)
 │  │  Batch interval: config     │  │  Batch interval: config     │  │
 │  │  Max batch: configurable    │  │  Max batch: configurable    │  │
 │  │                             │  │                             │  │
-│  │  postRefCount: Map          │  │  userRefCount: Map         │  │
+│  │  subscribedPosts: Set       │  │  subscribedUsers: Set       │  │
 │  │  postBatchQueue: Set        │  │  userBatchQueue: Set        │  │
 │  │                             │  │  userRefCount: Map          │  │
 │  └─────────────────────────────┘  └─────────────────────────────┘  │
@@ -111,7 +111,7 @@ unsubscribeUser({ pubky }: { pubky: Pubky }): void
 **Internal behavior:**
 
 - `CoordinatorsManager` (UI) informs coordinators of route changes via `setRoute(pathname)`
-- Viewport components release their own subscriptions. Route changes preserve subscriptions for persistent layouts; `stop()` clears all state. Both post and user IDs are reference counted.
+- TTL Coordinator clears subscriptions on route changes by calling `reset()` (triggered from `setRoute`)
 
 **Coordinator Lifecycle:**
 
@@ -119,7 +119,7 @@ unsubscribeUser({ pubky }: { pubky: Pubky }): void
 class TtlCoordinator {
   start(): void; // Start batch tick
   stop(): void; // Stop listening + clear state
-  setRoute(route: string): void; // Records navigation; mounted components own subscriptions
+  setRoute(route: string): void; // Called by CoordinatorsManager; triggers reset() when route changes
 
   // UI entry points (viewport-driven)
   subscribePost(params: { compositePostId: CompositePostId }): void;
@@ -134,7 +134,7 @@ class TtlCoordinator {
 ```
 subscribePost(compositePostId)
     │
-    ├──► Increment postRefCount[postId]
+    ├──► Add postId to subscribedPosts
     │    └──► Check post_ttl table
     │         ├── Not found → Add to postBatchQueue (cache miss)
     │         ├── Stale (now - lastUpdatedAt > config.POST_TTL_MS) → Add to postBatchQueue
@@ -142,7 +142,7 @@ subscribePost(compositePostId)
 
 subscribeUser(pubky)
     │
-    └──► Increment userRefCount[pubky]
+    └──► Add pubky to subscribedUsers (increment refCount)
          └──► Check user_ttl table
               ├── Not found → Add to userBatchQueue (cache miss)
               ├── Stale (now - lastUpdatedAt > config.USER_TTL_MS) → Add to userBatchQueue
@@ -154,10 +154,10 @@ subscribeUser(pubky)
 ```
 onBatchTick()
     │
-    ├──► Check all postRefCount keys against post_ttl table
+    ├──► Check all subscribedPosts against post_ttl table
     │    └──► Add stale posts to postBatchQueue
     │
-    ├──► Check all userRefCount keys against user_ttl table
+    ├──► Check all subscribedUsers against user_ttl table
     │    └──► Add stale users to userBatchQueue
     │
     ├──► If postBatchQueue.size > 0
@@ -201,16 +201,16 @@ The TTL Coordinator uses these methods when `(now - lastUpdatedAt) > TTL_MS` to 
 
 The TTL Coordinator must be lifecycle-aware like other coordinators:
 
-- Refresh visible public entities with an optional `viewerId` derived from the auth store. A session is not required for public Nexus reads.
-- Account transitions discard in-flight TTL responses from the previous session; clear queued work and re-evaluate visible subscriptions.
+- Only run refresh ticks when the user is authenticated (derive `viewerId` from auth store)
+- If unauthenticated, skip ticks and do not enqueue refresh work
 - Pause refresh when the page is hidden (unless explicitly configured otherwise)
-- On logout: discard queued authenticated work, retain mounted subscriptions, and resume eligible public reads
+- On logout: stop ticking and `reset()` subscriptions
 
 ### Idempotency & Refcount Invariants
 
 Viewport signals can be noisy; the coordinator must be safe under repeated calls:
 
-- Each `subscribePost` increments its post refcount; each matching unsubscribe decrements it. Users subscribe independently.
+- `subscribePost` is idempotent for the same `compositePostId` (does not double-increment author refcount)
 - `unsubscribePost` is safe if called multiple times or for unknown IDs (no negative refcounts)
 - `subscribeUser`/`unsubscribeUser` follow the same rule: refcounts never drop below 0
 - Removing a post also removes it from `postBatchQueue` (and similarly for users when refcount reaches 0)
@@ -227,30 +227,32 @@ Viewport signals can be noisy; the coordinator must be safe under repeated calls
 ```
 unsubscribePost(compositePostId)
     │
-    ├──► Decrement postRefCount[compositePostId]
-    └──► If refCount === 0: remove the post and its queued work
+    ├──► Remove postId from subscribedPosts
+    │    └──► Remove from postBatchQueue if present
 
 unsubscribeUser(pubky)
     │
     ├──► Decrement userRefCount[pubky]
     └──► If refCount === 0
-         ├──► Remove from userRefCount
+         ├──► Remove from subscribedUsers
          └──► Remove from userBatchQueue if present
 ```
 
 ### Reset Flow
 
-Stopping the coordinator clears its subscriptions. Route changes only update the route; component viewport cleanup owns unsubscription:
+Route change triggers reset via `setRoute()` (called by `CoordinatorsManager`):
 
 ```
 reset()
     │
-    ├──► Clear postRefCount map
+    ├──► Clear subscribedPosts set
+    ├──► Clear subscribedUsers set
     ├──► Clear userRefCount map
     ├──► Clear postBatchQueue
     └──► Clear userBatchQueue
 
-    Note: Account transitions discard responses captured under the previous session.
+    Note: In-flight batch requests complete (data still useful for cache)
+          but results won't be re-queued since subscriptions are cleared
 ```
 
 ## Edge Cases
@@ -266,9 +268,10 @@ Multiple UI surfaces may subscribe to the same user (e.g. profile header + profi
 
 ### 3. Route Change During Batch Request
 
-- Unmounted components release their subscriptions; persistent layouts retain theirs
-- In-flight requests may warm cache while the originating session remains current
-- Only currently visible subscriptions are eligible for later refresh
+- `reset()` clears all subscriptions immediately
+- In-flight batch request completes normally
+- Fetched data is persisted (useful for cache)
+- Items won't be re-queued (subscriptions were cleared)
 
 ## Alternatives Considered
 
@@ -297,7 +300,7 @@ Multiple UI surfaces may subscribe to the same user (e.g. profile header + profi
 - **Viewport-aware refresh**: Only refreshes data the user is viewing, not entire cache
 - **Batched efficiency**: Groups requests reducing network overhead (N items → ceil(N/batchSize) requests)
 - **Configurable TTLs**: Different freshness requirements for posts vs users
-- **Clean lifecycle**: Components release viewport subscriptions; persistent layouts retain theirs across navigation
+- **Clean lifecycle**: Auto-reset on route change clears subscriptions cleanly
 - **Reference counting**: Handles shared authors correctly without redundant fetches
 - **Typed integration**: Direct coordinator calls match existing patterns and are easy to refactor safely
 
@@ -331,7 +334,7 @@ src/core/coordinators/
 
 1. **TTL Tables (already present)**: Dexie tables `post_ttl` and `user_ttl` in `src/core/database/` (this ADR expects schema `{ id, lastUpdatedAt }`). These tables currently exist but are unused; TTL Coordinator will be their first consumer.
 2. **UI Components**: Stream/feed components call the coordinator subscribe/unsubscribe methods based on viewport intersection
-3. **Route Changes**: `CoordinatorsManager` calls `setRoute(pathname)`; TTL Coordinator records the route while mounted components own subscriptions
+3. **Route Changes**: `CoordinatorsManager` calls `setRoute(pathname)`; TTL Coordinator resets subscriptions on change
 4. **CoordinatorsManager**: Manages lifecycle (`start`/`stop` + `setRoute`) alongside other coordinators
 
 ### Viewport Detection
@@ -364,11 +367,3 @@ useEffect(() => {
 - **ADR-0005: TTL Strategy** — Establishes per-entity TTL tracking pattern
 - **ADR-0008: Coordinators Layer** — Defines coordinator architecture and patterns
 - **ADR-0001: Local-First Writes** — TTL Coordinator maintains local-first UX with background refresh
-
-### September 2026 amendment: local-first tag windows
-
-Removing per-mount tag requests requires complete TTL coverage. Visual feed tiles and the Tagged panel subscribe explicitly, including on mobile. Public entity refreshes are allowed without enabling authenticated notification/stream coordinators. Route changes no longer reset subscriptions behind mounted components. Post IDs now use reference counting like user IDs because several visible tiles/cards can refer to the same post.
-
-Tag pagination has independent cache metadata and mutation protection. Batch previews preserve expanded lists; TTL refreshes their loaded prefix atomically instead of truncating it or retaining deleted labels indefinitely. See [the tag cache contract](../local-first.md#tag-previews-pagination-and-freshness).
-
-Bootstrap retry ownership is distinct from viewport ownership. `retryUserIndexing` adds one temporary reference per user; successful Nexus user hydration releases it while preserving any visible subscribers. Missing users remain eligible for retry. Expanded-tag failures retain their stale window but do not reject an otherwise successful entity batch, preventing repeated downloads of healthy batch members.

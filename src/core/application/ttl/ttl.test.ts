@@ -1,17 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FileApplication } from '@/application/file/file';
 import { PostStreamApplication } from '@/application/stream/posts/post';
+import { TagCacheApplication } from '@/application/tag/tag-cache';
 import { TtlApplication } from '@/application/ttl/ttl';
 import type { Pubky } from '@/models/models.types';
 import { PostTtlModel } from '@/models/post/ttl/postTtl';
+import { UserTtlModel } from '@/models/user/ttl/userTtl';
 import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
+import { LocalTagCacheService } from '@/services/local/tag/tag-cache';
 import type { NexusPost, NexusUser } from '@/services/nexus/nexus.types';
 import { queryNexus } from '@/services/nexus/nexus.utils';
 import { postStreamApi } from '@/services/nexus/stream/posts/postStream.api';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { userStreamApi } from '@/services/nexus/stream/users/userStream.api';
 import { asOpaque } from '@/test-utils/type-assertions';
+
+vi.mock('@/application/tag/tag-cache');
+vi.mock('@/services/local/tag/tag-cache');
 
 vi.mock('@/services/nexus/nexus.utils', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/nexus/nexus.utils')>();
@@ -26,6 +32,39 @@ const mockQueryNexus = vi.mocked(queryNexus);
 describe('TtlApplication', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.mocked(LocalTagCacheService.captureRevisions).mockResolvedValue(new Map());
+    vi.mocked(LocalTagCacheService.findStale).mockResolvedValue([]);
+    vi.mocked(TagCacheApplication.refreshExpanded).mockResolvedValue(undefined);
+    vi.mocked(TagCacheApplication.refreshStale).mockResolvedValue(undefined);
+  });
+
+  it('does not expire healthy post/profile details because their tag endpoint failed', async () => {
+    const now = Date.now();
+    vi.spyOn(PostTtlModel, 'findByIds').mockResolvedValue([
+      asOpaque<PostTtlModel>({ id: 'author:post', lastUpdatedAt: now }),
+    ]);
+    vi.spyOn(UserTtlModel, 'findByIds').mockResolvedValue([asOpaque<UserTtlModel>({ id: 'user', lastUpdatedAt: now })]);
+    vi.mocked(LocalTagCacheService.findStale).mockResolvedValue(['author:post', 'user']);
+    expect(await TtlApplication.findStalePostsByIds({ postIds: ['author:post'], ttlMs: 1000 })).toEqual([]);
+    expect(await TtlApplication.findStaleUsersByIds({ userIds: ['user'], ttlMs: 1000 })).toEqual([]);
+  });
+
+  it('retries eligible tag windows separately and contains a failed window', async () => {
+    vi.mocked(LocalTagCacheService.findStale).mockResolvedValue(['stale']);
+    vi.mocked(TagCacheApplication.refreshStale).mockRejectedValueOnce(new Error('offline'));
+    await expect(
+      TtlApplication.refreshStaleTags({ kind: 'user', ids: ['fresh', 'stale'], ttlMs: 1000 }),
+    ).resolves.toBeUndefined();
+    expect(TagCacheApplication.refreshStale).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'user', id: 'stale' }),
+      1000,
+    );
+  });
+
+  it('discards a tag retry selection after its viewer session changes', async () => {
+    vi.mocked(LocalTagCacheService.findStale).mockResolvedValue(['stale']);
+    await TtlApplication.refreshStaleTags({ kind: 'user', ids: ['stale'], ttlMs: 1000, isCurrent: () => false });
+    expect(TagCacheApplication.refreshStale).not.toHaveBeenCalled();
   });
 
   describe('findStalePostsByIds', () => {

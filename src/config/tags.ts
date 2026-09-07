@@ -63,3 +63,10 @@ export const HOT_TAGS_FEATURED_COUNT = 3;
 
 /** Number of popular interest chips shown on the onboarding "Tags of interest" step (per design) */
 export const ONBOARDING_INTERESTS_SUGGESTED_COUNT = 21;
+
+/** Server page sizes for post and profile tag collections. */
+export const POST_TAGS_PER_PAGE = 3;
+export const USER_TAGS_PER_PAGE = 20;
+
+/** Cooldown after a background tag refresh fails. */
+export const TAG_REFRESH_RETRY_MS = 30_000;

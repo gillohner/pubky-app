@@ -1,19 +1,13 @@
 import Dexie, { Table } from 'dexie';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AppError } from '@/libs/error/error';
-import { DatabaseErrorCode } from '@/libs/error/error.codes';
-import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { Pubky } from '@/models/models.types';
-import type { NexusModelTuple } from '@/models/shared/base/tuple/baseTuple.type';
 import { TagModel } from '@/models/shared/tag/tag';
 import type { TagCollectionModelSchema } from '@/models/shared/tag/tag.schema';
 import type { NexusTag } from '@/services/nexus/nexus.types';
 import { TagCollection } from './tagCollection';
 
 type TestTagSchema = TagCollectionModelSchema<string>;
-
-type TestTagTuple = NexusModelTuple<NexusTag[]>;
 
 class TestTagCollection extends TagCollection<string, TestTagSchema> implements TestTagSchema {
   static table: Table<TestTagSchema>;
@@ -77,69 +71,22 @@ describe('TagCollection', () => {
     const ids = results.map((r) => r.id).sort();
     expect(ids).toEqual(['a', 'b']);
   });
-
-  it('bulkSave upserts multiple collections from tuples', async () => {
-    const tuples: TestTagTuple[] = [
-      ['x', [makeTag('x1')]],
-      ['y', [makeTag('y1'), makeTag('y2')]],
-    ];
-
-    await TestTagCollection.bulkSave(tuples);
-
-    const all = await TestTagCollection.table.toArray();
-    const byId = new Map(all.map((r) => [r.id, r]));
-
-    expect(byId.get('x')?.tags.map((t) => t.label)).toEqual(['x1']);
-    expect(byId.get('y')?.tags.map((t) => t.label)).toEqual(['y1', 'y2']);
-  });
 });
 
-describe('TagCollection error handling', () => {
-  let db: Dexie;
-
-  const makeTag = (label: string, taggers: Pubky[] = []): NexusTag => ({
-    label,
-    taggers,
-    taggers_count: taggers.length,
-    relationship: false,
-  });
-
-  beforeEach(async () => {
-    globalThis.indexedDB = indexedDB;
-    globalThis.IDBKeyRange = IDBKeyRange;
-
-    db = new Dexie('tag-collection-error-test');
-    db.version(1).stores({ test_tags: 'id' });
-    await db.open();
-
-    TestTagCollection.table = db.table<TestTagSchema>('test_tags');
-    await TestTagCollection.table.clear();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('bulkSave throws WRITE_FAILED with correct context on failure', async () => {
-    vi.spyOn(TestTagCollection.table, 'bulkPut').mockRejectedValueOnce(new Error('DB error'));
-
-    const tuples: TestTagTuple[] = [
-      ['x', [makeTag('x1')]],
-      ['y', [makeTag('y1')]],
-    ];
-
-    try {
-      await TestTagCollection.bulkSave(tuples);
-      expect.fail('Expected error to be thrown');
-    } catch (error) {
-      expect(error).toBeInstanceOf(AppError);
-      const appError = error as AppError;
-      expect(appError.category).toBe(ErrorCategory.Database);
-      expect(appError.code).toBe(DatabaseErrorCode.WRITE_FAILED);
-      expect(appError.service).toBe(ErrorService.Local);
-      expect(appError.operation).toBe('bulkSave');
-      expect(appError.context).toMatchObject({ table: 'test_tags', count: 2 });
-      expect(appError.cause).toBeInstanceOf(Error);
-    }
+describe('TagCollection local intent', () => {
+  it('prunes expired local intents while retaining live intents for other viewers', () => {
+    const now = Date.now();
+    const collection = new TestTagCollection({
+      id: 'profile',
+      tags: [],
+      mutations: {
+        expired: { viewerId: 'old', relationship: true, expiresAt: now },
+        live: { viewerId: 'other', relationship: false, expiresAt: now + 60_000 },
+      },
+    });
+    collection.recordMutation('NEW', 'viewer', true);
+    expect(Object.keys(collection.mutations ?? {})).toEqual(['live', 'new']);
+    expect(collection.mutations?.live).toEqual({ viewerId: 'other', relationship: false, expiresAt: now + 60_000 });
+    expect(collection.mutations?.new).toMatchObject({ viewerId: 'viewer', relationship: true });
   });
 });

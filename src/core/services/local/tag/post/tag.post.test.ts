@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/database/franky/franky';
 import { HttpMethod } from '@/libs/http/http.types';
 import type { Pubky } from '@/models/models.types';
@@ -102,33 +102,6 @@ describe('LocalTagService', () => {
     );
     // Clear viewer-mutation markers so prior tests don't bleed across describes.
     window.sessionStorage.clear();
-  });
-
-  it('publishes committed local intent to expanded tagger lists without notifying idempotent writes', async () => {
-    const listener = vi.fn();
-    const unsubscribe = ViewerTagMarkerStorage.subscribe(listener);
-    const params = createTagParams('javascript');
-    try {
-      await LocalPostTagService.create(params);
-      await LocalPostTagService.create(params);
-      expect(listener).toHaveBeenCalledTimes(1);
-      expect(listener).toHaveBeenLastCalledWith({ ...params, taggersCount: 1 });
-      expect((await PostTagsModel.findById(testData.postId))?.mutations?.javascript).toMatchObject({
-        viewerId: testData.taggerPubky,
-        relationship: true,
-      });
-
-      await LocalPostTagService.delete(params);
-      await LocalPostTagService.delete(params);
-      expect(listener).toHaveBeenCalledTimes(2);
-      expect(listener).toHaveBeenLastCalledWith({ ...params, taggersCount: 0 });
-      expect((await PostTagsModel.findById(testData.postId))?.mutations?.javascript).toMatchObject({
-        viewerId: testData.taggerPubky,
-        relationship: false,
-      });
-    } finally {
-      unsubscribe();
-    }
   });
 
   describe('create', () => {

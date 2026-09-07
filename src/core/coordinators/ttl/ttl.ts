@@ -6,6 +6,7 @@ import {
   getTtlUserMs,
 } from '@/config/sync';
 import { TtlController } from '@/controllers/ttl/ttl';
+import { isAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -32,14 +33,14 @@ import type {
  * Staleness formula: now - lastUpdatedAt > TTL_MS
  *
  * Architecture:
- * - Posts: subscribedPosts Set + postBatchQueue Set
- * - Users: subscribedUsers Set + userBatchQueue Set (ref-counted for multiple subscribers)
+ * - Posts: postRefCount Map + postBatchQueue Set
+ * - Users: userRefCount Map + userBatchQueue Set
  *
  * Note: Post and user subscriptions are independent.
  * User subscriptions are managed explicitly via subscribeUser/unsubscribeUser,
  * with reference counting to handle multiple subscribers to the same user.
  *
- * More info in the ADR: https://github.com/pubky/pubky-app/blob/dev/docs/adr/0012-ttl-coordinator.md
+ * More info in the ADR: https://github.com/pubky/pubky-app/blob/dev/docs/adr/0019-local-first-tag-cache.md
  */
 export class TtlCoordinator {
   private static instance: TtlCoordinator | null = null;
@@ -57,7 +58,6 @@ export class TtlCoordinator {
   private state: TtlCoordinatorState = {
     intervalId: null,
     isStarted: false,
-    currentRoute: '',
     isPageVisible: true,
     userRefCount: new Map(),
     postRefCount: new Map(),
@@ -122,20 +122,6 @@ export class TtlCoordinator {
     this.stopTicking();
     this.reset();
     Logger.debug('TtlCoordinator stopped');
-  }
-
-  /**
-   * Set the current route
-   * Viewport subscriptions survive navigation until their owning component leaves.
-   */
-  public setRoute(route: string): void {
-    if (this.state.currentRoute === route) {
-      return;
-    }
-
-    this.updateRoute(route);
-    // Mounted viewport subscribers own their lifetime. Persistent layouts and
-    // overlapping route transitions must not lose freshness on navigation.
   }
 
   /**
@@ -369,6 +355,8 @@ export class TtlCoordinator {
 
     try {
       await this.onBatchTick();
+    } catch (error) {
+      if (!isAppError(error)) Logger.warn('TtlCoordinator: Batch tick failed', { error });
     } finally {
       // Schedule next tick only after the current one completes.
       if (this.isTickLoopActive && this.shouldTick()) {
@@ -445,15 +433,6 @@ export class TtlCoordinator {
   }
 
   /**
-   * Update the current route, returning the previous route
-   */
-  private updateRoute(route: string): string {
-    const previousRoute = this.state.currentRoute;
-    this.state.currentRoute = route;
-    return previousRoute;
-  }
-
-  /**
    * Update page visibility state
    */
   private setPageVisible(visible: boolean): void {
@@ -472,9 +451,7 @@ export class TtlCoordinator {
       entityName: 'post',
       subscribed: this.state.postRefCount,
       batchQueue: this.state.postBatchQueue,
-      ttlMs: this.config.postTtlMs,
       maxBatchSize: this.config.postMaxBatchSize,
-      requiresViewerId: false,
       findStaleByIds: (ids) => TtlController.findStalePostsByIds({ postIds: ids, ttlMs: this.config.postTtlMs }),
       forceRefresh: (ids, viewerId) =>
         TtlController.forceRefreshPostsByIds({ postIds: ids, viewerId: viewerId ?? undefined }),
@@ -489,9 +466,7 @@ export class TtlCoordinator {
       entityName: 'user',
       subscribed: this.state.userRefCount,
       batchQueue: this.state.userBatchQueue,
-      ttlMs: this.config.userTtlMs,
       maxBatchSize: this.config.userMaxBatchSize,
-      requiresViewerId: false,
       findStaleByIds: (ids) => TtlController.findStaleUsersByIds({ userIds: ids, ttlMs: this.config.userTtlMs }),
       forceRefresh: async (ids, viewerId) => {
         const refreshed = await TtlController.forceRefreshUsersByIds({ userIds: ids, viewerId: viewerId ?? undefined });
@@ -561,12 +536,6 @@ export class TtlCoordinator {
   private async refreshStaleEntities<T extends string>(ops: EntityOps<T>, viewerId: Pubky | null): Promise<void> {
     if (ops.batchQueue.size === 0) return;
 
-    // viewerId may be required for certain entity types
-    if (ops.requiresViewerId && !viewerId) {
-      Logger.warn(`TtlCoordinator: Cannot refresh ${ops.entityName}s without viewerId`);
-      return;
-    }
-
     // Take up to maxBatchSize entities
     const ids = Array.from(ops.batchQueue).slice(0, ops.maxBatchSize);
 
@@ -624,5 +593,23 @@ export class TtlCoordinator {
 
     // Fire batch refreshes (parallel)
     await Promise.all([this.refreshStaleEntities(postOps, viewerId), this.refreshStaleEntities(userOps, viewerId)]);
+
+    const afterRefresh = useAuthStore.getState();
+    if (afterRefresh.currentUserPubky !== viewerId || afterRefresh.session !== session) return;
+    // Tag failures have their own persisted cooldown, independent of entity TTLs.
+    await Promise.all([
+      TtlController.refreshStaleTags({
+        kind: 'post',
+        ids: [...postOps.subscribed.keys()],
+        ttlMs: this.config.postTtlMs,
+        viewerId: viewerId ?? undefined,
+      }),
+      TtlController.refreshStaleTags({
+        kind: 'user',
+        ids: [...userOps.subscribed.keys()],
+        ttlMs: this.config.userTtlMs,
+        viewerId: viewerId ?? undefined,
+      }),
+    ]);
   }
 }
