@@ -16,7 +16,7 @@ describe('VibesCard', () => {
     render(<VibesCard />);
     expect(screen.getByRole('heading', { name: 'Experimental' })).toBeInTheDocument();
     expect(screen.getByText('Get a taste of the future.')).toBeInTheDocument();
-    const link = screen.getByRole('link', { name: 'Pubky Vibes' });
+    const link = screen.getByRole('link', { name: 'Try vibes.pubky.app' });
     expect(link).toHaveAttribute('href', VIBES_URL);
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
@@ -24,13 +24,13 @@ describe('VibesCard', () => {
 
   it('stops home reminders after opening Vibes but keeps the sidebar entry available', () => {
     const { unmount } = render(<VibesCard />);
-    fireEvent.click(screen.getByRole('link', { name: 'Pubky Vibes' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Try vibes.pubky.app' }));
     const saved = localStorage.getItem(buildFeatureDiscoveryStorageKey('vibes-test-user', VIBES_ALERT_STORAGE_ID));
     expect(JSON.parse(saved!)).toMatchObject({ tried: true });
-    expect(screen.getByRole('link', { name: 'Pubky Vibes' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Try vibes.pubky.app' })).toBeInTheDocument();
     unmount();
     render(<VibesCard />);
-    expect(screen.getByRole('link', { name: 'Pubky Vibes' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Try vibes.pubky.app' })).toBeInTheDocument();
   });
 });
 

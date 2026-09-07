@@ -15,7 +15,7 @@ export function VibesCard() {
       <FilterHeader title="Experimental" subtitle="Get a taste of the future." />
       <SidebarButton icon={WandSparkles} asChild>
         <a href={VIBES_URL} target="_blank" rel="noopener noreferrer" onClick={tryVibes}>
-          Pubky Vibes
+          Try vibes.pubky.app
         </a>
       </SidebarButton>
     </FilterRoot>
