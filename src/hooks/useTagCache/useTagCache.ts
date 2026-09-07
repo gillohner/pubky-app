@@ -8,11 +8,13 @@ import { toast } from '@/molecules/Toaster/toast';
 /** Observe local data; mount only fills a missing record. TTL owns freshness. */
 export function useTagCache(kind: 'post' | 'user', id: string | null | undefined, viewerId: string | null) {
   const key = `${kind}:${id ?? ''}:${viewerId ?? ''}`;
-  const currentKey = useRef(key);
+  const currentKey = useRef<string | null>(key);
   const pendingPage = useRef<string | null>(null);
   const [initial, setInitial] = useState<{ key: string; pending: boolean }>({ key, pending: !!id });
   const [loadingPage, setLoadingPage] = useState<string | null>(null);
-  const record = useLiveQuery(() => (id ? TagCacheController.get({ kind, id }) : null), [id, kind]);
+  const observedRecord = useLiveQuery(() => (id ? TagCacheController.get({ kind, id }) : null), [id, kind]);
+  // Dexie keeps the previous result until the new query emits after an ID change.
+  const record = observedRecord && observedRecord.id !== id ? undefined : observedRecord;
 
   useEffect(() => {
     currentKey.current = key;
@@ -29,6 +31,7 @@ export function useTagCache(kind: 'post' | 'user', id: string | null | undefined
     }
     return () => {
       active = false;
+      currentKey.current = null;
     };
   }, [kind, id, viewerId, key]);
 

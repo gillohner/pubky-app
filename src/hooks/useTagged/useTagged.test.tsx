@@ -2,23 +2,20 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TagKind } from '@/application/tag/tag.types';
 import { useProfileStats } from '@/hooks/useProfileStats/useProfileStats';
+import { NetworkErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorService } from '@/libs/error/error.types';
 import { toast } from '@/molecules/Toaster/toast';
 import type { NexusTag } from '@/services/nexus/nexus.types';
 import { useTagged } from './useTagged';
 
 // Hoist mock functions before vi.mock
 const mockMocks = vi.hoisted(() => {
-  const mockGetTags = vi.fn();
-  const mockFetchTags = vi.fn();
-  const mockUpsertTags = vi.fn();
-  const mockGetCounts = vi.fn();
+  const mockGetOrFetchTags = vi.fn();
   const mockTagCreate = vi.fn();
   const mockTagDelete = vi.fn();
   return {
-    mockGetTags,
-    mockFetchTags,
-    mockUpsertTags,
-    mockGetCounts,
+    mockGetOrFetchTags,
     mockTagCreate,
     mockTagDelete,
   };
@@ -26,15 +23,7 @@ const mockMocks = vi.hoisted(() => {
 
 // Mock dependencies
 vi.mock('@/controllers/tag/tag-cache', () => ({
-  TagCacheController: { get: vi.fn(), getOrFetch: mockMocks.mockFetchTags, fetchNext: vi.fn() },
-}));
-vi.mock('@/controllers/user/user', () => ({
-  UserController: {
-    getTags: mockMocks.mockGetTags,
-    fetchTags: mockMocks.mockFetchTags,
-    upsertTags: mockMocks.mockUpsertTags,
-    getCounts: mockMocks.mockGetCounts,
-  },
+  TagCacheController: { get: vi.fn(), getOrFetch: mockMocks.mockGetOrFetchTags, getOrFetchNext: vi.fn() },
 }));
 vi.mock('@/controllers/tag/tag', () => ({
   TagController: {
@@ -55,10 +44,11 @@ vi.mock('@/stores/auth/auth.store', () => ({
 }));
 
 // Mock useProfileStats
-const mockUseProfileStats = vi.fn((_userId: string, _options?: unknown) => ({
+const defaultProfileStats = {
   stats: { uniqueTags: 0, posts: 0, replies: 0, followers: 0, following: 0, friends: 0, notifications: 0 },
   isLoading: false,
-}));
+};
+const mockUseProfileStats = vi.fn((_userId: string, _options?: unknown) => defaultProfileStats);
 vi.mock('@/hooks/useProfileStats/useProfileStats', () => ({
   useProfileStats: (...args: Parameters<typeof useProfileStats>) => mockUseProfileStats(...args),
 }));
@@ -68,18 +58,11 @@ vi.mock('@/molecules/Toaster/toast');
 // Mock dexie-react-hooks
 let mockLocalTags: NexusTag[] | null = null;
 
-const mockUseLiveQuery = vi.fn(<T,>(queryFn: () => Promise<T> | T, deps: unknown[], defaultValue: T): T => {
-  // For getTags query
-  if (deps && deps[0] && typeof deps[0] === 'string') {
-    return (mockLocalTags !== null ? { tags: mockLocalTags } : defaultValue) as T;
-  }
-  // For getCounts query (from useProfileStats)
-  return defaultValue;
-});
-
 vi.mock('dexie-react-hooks', () => ({
-  useLiveQuery: <T,>(queryFn: () => Promise<T> | T, deps: unknown[], defaultValue: T): T =>
-    mockUseLiveQuery(queryFn, deps, defaultValue) as T,
+  useLiveQuery: (_queryFn: () => unknown, deps: unknown[]) => {
+    const id = deps[0];
+    return typeof id === 'string' && mockLocalTags !== null ? { id, tags: mockLocalTags } : undefined;
+  },
 }));
 
 describe('useTagged', () => {
@@ -88,20 +71,8 @@ describe('useTagged', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLocalTags = null;
-    mockMocks.mockGetTags.mockResolvedValue([]);
-    mockMocks.mockFetchTags.mockResolvedValue([]);
-    mockMocks.mockUpsertTags.mockResolvedValue(undefined);
-    mockMocks.mockGetCounts.mockResolvedValue({
-      tagged: 0,
-      tags: 0,
-      unique_tags: 0,
-      posts: 0,
-      replies: 0,
-      following: 0,
-      followers: 0,
-      friends: 0,
-      bookmarks: 0,
-    });
+    mockUseProfileStats.mockReturnValue(defaultProfileStats);
+    mockMocks.mockGetOrFetchTags.mockResolvedValue(undefined);
     mockMocks.mockTagCreate.mockResolvedValue(undefined);
     mockMocks.mockTagDelete.mockResolvedValue(undefined);
   });
@@ -132,10 +103,10 @@ describe('useTagged', () => {
     renderHook(() => useTagged(mockUserId));
 
     await waitFor(() => {
-      expect(mockMocks.mockFetchTags).toHaveBeenCalled();
+      expect(mockMocks.mockGetOrFetchTags).toHaveBeenCalled();
     });
 
-    expect(mockMocks.mockFetchTags).toHaveBeenCalledWith({
+    expect(mockMocks.mockGetOrFetchTags).toHaveBeenCalledWith({
       kind: 'user',
       id: mockUserId,
       viewerId: 'mock-current-user',
@@ -192,7 +163,12 @@ describe('useTagged', () => {
 
   it('shows an error toast when adding a tag fails', async () => {
     mockLocalTags = [];
-    mockMocks.mockTagCreate.mockRejectedValueOnce(new Error('Network error'));
+    mockMocks.mockTagCreate.mockRejectedValueOnce(
+      Err.network(NetworkErrorCode.CONNECTION_FAILED, 'Network error', {
+        service: ErrorService.Nexus,
+        operation: 'commitTag',
+      }),
+    );
 
     const { result } = renderHook(() => useTagged(mockUserId));
 
@@ -252,7 +228,12 @@ describe('useTagged', () => {
         relationship: true,
       },
     ];
-    mockMocks.mockTagDelete.mockRejectedValueOnce(new Error('Network error'));
+    mockMocks.mockTagDelete.mockRejectedValueOnce(
+      Err.network(NetworkErrorCode.CONNECTION_FAILED, 'Network error', {
+        service: ErrorService.Nexus,
+        operation: 'commitTag',
+      }),
+    );
 
     const { result } = renderHook(() => useTagged(mockUserId));
 

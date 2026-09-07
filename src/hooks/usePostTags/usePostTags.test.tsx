@@ -2,15 +2,19 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TagController } from '@/controllers/tag/tag';
+import { NetworkErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorService } from '@/libs/error/error.types';
 import { toast } from '@/molecules/Toaster/toast';
+import type { NexusTag } from '@/services/nexus/nexus.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type { AuthStore } from '@/stores/auth/auth.types';
 import { mockAuthStore } from '@/test-utils/stores';
 import { usePostTags } from './usePostTags';
 
-// Hoisted mock for fetchTags - must be defined before vi.mock
-const { mockFetchTags, mockAuthStoreSelector } = vi.hoisted(() => ({
-  mockFetchTags: vi.fn().mockResolvedValue([]),
+// Hoisted I/O and auth mocks
+const { mockGetOrFetchTags, mockAuthStoreSelector } = vi.hoisted(() => ({
+  mockGetOrFetchTags: vi.fn().mockResolvedValue(undefined),
   mockAuthStoreSelector: (currentUserPubky: string | null) => {
     return (selector: (state: AuthStore) => unknown) => selector(mockAuthStore({ currentUserPubky }));
   },
@@ -21,13 +25,11 @@ vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: vi.fn(mockAuthStoreSelector('mock-user-id')),
 }));
 vi.mock('@/controllers/tag/tag-cache', () => ({
-  TagCacheController: { get: vi.fn(), getOrFetch: mockFetchTags, fetchNext: vi.fn() },
+  TagCacheController: { get: vi.fn(), getOrFetch: mockGetOrFetchTags, getOrFetchNext: vi.fn() },
 }));
 vi.mock('@/controllers/post/post', () => ({
   PostController: {
-    getTags: vi.fn().mockResolvedValue([]),
     getCounts: vi.fn().mockResolvedValue(null),
-    fetchTags: mockFetchTags,
   },
 }));
 vi.mock('@/controllers/tag/tag', () => ({
@@ -36,40 +38,12 @@ vi.mock('@/controllers/tag/tag', () => ({
     commitDelete: vi.fn().mockResolvedValue(undefined),
   },
 }));
-vi.mock('@/application/tag/tag.types', () => ({
-  TagKind: {
-    POST: 'post',
-    USER: 'user',
-  },
-}));
-vi.mock('@/controllers/file/file', () => ({
-  FileController: {
-    getAvatarUrl: vi.fn((id: string) => `https://avatar.test/${id}`),
-  },
-}));
-
 // Mock dexie-react-hooks - returns undefined for loading state
 vi.mock('dexie-react-hooks', () => ({
   useLiveQuery: vi.fn(() => undefined),
 }));
 // Mock toast
 vi.mock('@/molecules/Toaster/toast');
-
-// Mock tag transformation utilities
-vi.mock('@/molecules/TaggedItem/TaggedItem.utils', () => ({
-  transformTagWithAvatars: vi.fn((tag) => ({
-    ...tag,
-    taggers: tag.taggers?.map((id: string) => ({ id, avatarUrl: `https://avatar.test/${id}` })) ?? [],
-  })),
-  transformTagsForViewer: vi.fn((tags) =>
-    tags
-      .filter((tag: { label?: string }) => tag.label)
-      .map((tag: { label: string; taggers?: string[] }) => ({
-        ...tag,
-        taggers: tag.taggers?.map((id: string) => ({ id, avatarUrl: `https://avatar.test/${id}` })) ?? [],
-      })),
-  ),
-}));
 
 /**
  * Helper to mock useLiveQuery returning different values for its two call sites:
@@ -80,11 +54,11 @@ vi.mock('@/molecules/TaggedItem/TaggedItem.utils', () => ({
  * order, so the mock stays correct even if a future change reorders or adds
  * additional useLiveQuery calls in the hook.
  */
-function setupLiveQueryMock(tagsValue: unknown, countsValue: unknown) {
+function setupLiveQueryMock(tagsValue: { tags: NexusTag[] } | undefined, countsValue: unknown) {
   vi.mocked(useLiveQuery).mockImplementation((queryFn) => {
     const fnStr = queryFn.toString();
     if (fnStr.includes('TagCacheController'))
-      return Array.isArray(tagsValue) ? (tagsValue[0] ?? { tags: [] }) : tagsValue;
+      return tagsValue ? { id: 'author:post123', tags: tagsValue.tags } : undefined;
     if (fnStr.includes('getCounts')) return countsValue;
     return undefined;
   });
@@ -102,7 +76,7 @@ describe('usePostTags', () => {
       renderHook(() => usePostTags('author:post123'));
 
       await waitFor(() => {
-        expect(mockFetchTags).toHaveBeenCalledWith({
+        expect(mockGetOrFetchTags).toHaveBeenCalledWith({
           kind: 'post',
           id: 'author:post123',
           viewerId: 'mock-user-id',
@@ -180,7 +154,12 @@ describe('usePostTags', () => {
     });
 
     it('shows an error toast when adding a tag fails', async () => {
-      vi.mocked(TagController.commitCreate).mockRejectedValueOnce(new Error('Network error'));
+      vi.mocked(TagController.commitCreate).mockRejectedValueOnce(
+        Err.network(NetworkErrorCode.CONNECTION_FAILED, 'Network error', {
+          service: ErrorService.Nexus,
+          operation: 'commitTag',
+        }),
+      );
 
       const { result } = renderHook(() => usePostTags('author:post123'));
 
@@ -218,7 +197,7 @@ describe('usePostTags', () => {
       };
 
       // Return the tag in useLiveQuery
-      vi.mocked(useLiveQuery).mockReturnValue({ tags: [tagWithOneCount] });
+      vi.mocked(useLiveQuery).mockReturnValue({ id: 'author:post123', tags: [tagWithOneCount] });
 
       const { result, rerender } = renderHook(() => usePostTags('author:post123'));
 
@@ -231,7 +210,7 @@ describe('usePostTags', () => {
       await result.current.handleTagToggle({ label: 'solo-tag', relationship: true });
 
       // After delete, simulate IndexedDB returning empty (tag removed from DB)
-      vi.mocked(useLiveQuery).mockReturnValue({ tags: [] });
+      vi.mocked(useLiveQuery).mockReturnValue({ id: 'author:post123', tags: [] });
       rerender();
 
       // BUG: Currently the tag disappears.
@@ -245,11 +224,10 @@ describe('usePostTags', () => {
     it('shows a success toast when a tag is removed', async () => {
       const mockViewerId = 'viewer-123';
       vi.mocked(useAuthStore).mockImplementation(mockAuthStoreSelector(mockViewerId));
-      vi.mocked(useLiveQuery).mockReturnValue([
-        {
-          tags: [{ label: 'solo-tag', taggers_count: 1, taggers: [mockViewerId], relationship: true }],
-        },
-      ]);
+      vi.mocked(useLiveQuery).mockReturnValue({
+        id: 'author:post123',
+        tags: [{ label: 'solo-tag', taggers_count: 1, taggers: [mockViewerId], relationship: true }],
+      });
 
       const { result } = renderHook(() => usePostTags('author:post123'));
 
@@ -265,12 +243,16 @@ describe('usePostTags', () => {
     it('shows an error toast when removing a tag fails', async () => {
       const mockViewerId = 'viewer-123';
       vi.mocked(useAuthStore).mockImplementation(mockAuthStoreSelector(mockViewerId));
-      vi.mocked(useLiveQuery).mockReturnValue([
-        {
-          tags: [{ label: 'solo-tag', taggers_count: 1, taggers: [mockViewerId], relationship: true }],
-        },
-      ]);
-      vi.mocked(TagController.commitDelete).mockRejectedValueOnce(new Error('Network error'));
+      vi.mocked(useLiveQuery).mockReturnValue({
+        id: 'author:post123',
+        tags: [{ label: 'solo-tag', taggers_count: 1, taggers: [mockViewerId], relationship: true }],
+      });
+      vi.mocked(TagController.commitDelete).mockRejectedValueOnce(
+        Err.network(NetworkErrorCode.CONNECTION_FAILED, 'Network error', {
+          service: ErrorService.Nexus,
+          operation: 'commitTag',
+        }),
+      );
 
       const { result } = renderHook(() => usePostTags('author:post123'));
 
@@ -299,7 +281,7 @@ describe('usePostTags', () => {
       let liveTags = [...existingTags];
       vi.mocked(useLiveQuery).mockImplementation((queryFn) => {
         const fnStr = queryFn.toString();
-        if (fnStr.includes('TagCacheController')) return { tags: liveTags };
+        if (fnStr.includes('TagCacheController')) return { id: 'author:post123', tags: liveTags };
         return undefined;
       });
 
@@ -332,7 +314,7 @@ describe('usePostTags', () => {
       ];
       vi.mocked(useLiveQuery).mockImplementation((queryFn) => {
         const fnStr = queryFn.toString();
-        if (fnStr.includes('TagCacheController')) return { tags: liveTags };
+        if (fnStr.includes('TagCacheController')) return { id: 'author:post123', tags: liveTags };
         return undefined;
       });
 
@@ -365,7 +347,7 @@ describe('usePostTags', () => {
         { label: 'gamma', taggers_count: 3, taggers: ['other-3'], relationship: false },
       ];
 
-      setupLiveQueryMock([{ tags: existingTags }], undefined);
+      setupLiveQueryMock({ tags: existingTags }, undefined);
 
       const { result } = renderHook(() => usePostTags('author:post123'));
 
@@ -393,7 +375,7 @@ describe('usePostTags', () => {
       ];
       vi.mocked(useLiveQuery).mockImplementation((queryFn) => {
         const fnStr = queryFn.toString();
-        if (fnStr.includes('TagCacheController')) return { tags: liveTags };
+        if (fnStr.includes('TagCacheController')) return { id: 'author:post123', tags: liveTags };
         return undefined;
       });
 
