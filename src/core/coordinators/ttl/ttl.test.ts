@@ -1055,6 +1055,99 @@ describe('TtlCoordinator', () => {
       expect(findStalePostsSpy).toHaveBeenCalled();
     });
 
+    it('starts ticking when the session is restored after start(), without a restart', async () => {
+      // Public routes (single collection, post, profile) mount CoordinatorsManager
+      // before the persisted session is restored, so start() runs unauthenticated.
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+
+      const postId = createCompositePostId('author1', 'post1');
+      coordinator.subscribePost({ compositePostId: postId });
+      findStalePostsSpy.mockClear(); // subscribe runs its own one-off staleness check
+      coordinator.start();
+
+      await advanceAndFlush(2_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+
+      // Session restore lands: the auth listener must revive the loop on its own.
+      setupAuthenticatedUser();
+
+      await waitForTick();
+      expect(findStalePostsSpy).toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
+    });
+
+    it('starts ticking when hasProfile resolves to true after start(), without a restart', async () => {
+      useAuthStore.getState().init({
+        session: mockSession(),
+        currentUserPubky: 'test-user' as Pubky,
+        hasProfile: false,
+      });
+
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+
+      const postId = createCompositePostId('author1', 'post1');
+      coordinator.subscribePost({ compositePostId: postId });
+      findStalePostsSpy.mockClear(); // subscribe runs its own one-off staleness check
+      coordinator.start();
+
+      await advanceAndFlush(2_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+
+      useAuthStore.getState().setHasProfile(true);
+
+      await waitForTick();
+      expect(findStalePostsSpy).toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
+    });
+
+    it('stops ticking and clears subscriptions when the session is cleared', async () => {
+      setupAuthenticatedUser();
+
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+
+      const postId = createCompositePostId('author1', 'post1');
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.start();
+      await waitForTick();
+      expect(findStalePostsSpy).toHaveBeenCalled();
+
+      // Logout clears the session on the store.
+      useAuthStore.getState().reset();
+      findStalePostsSpy.mockClear();
+
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+
+      // Signing back in revives the loop, but the old subscription is gone.
+      setupAuthenticatedUser();
+      await waitForTick();
+      expect(findStalePostsSpy).not.toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
+    });
+
+    it('a new subscription restarts a stopped loop once conditions are met (no auth event)', async () => {
+      // Detach the auth listener so only the subscribe-time safety net can revive the loop.
+      const subscribeSpy = vi.spyOn(useAuthStore, 'subscribe').mockReturnValue(() => {});
+      const coordinator = TtlCoordinator.getInstance();
+      subscribeSpy.mockRestore();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+
+      coordinator.start();
+      await advanceAndFlush(2_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+
+      setupAuthenticatedUser();
+      await advanceAndFlush(2_000);
+      // No listener, no subscription: still stopped.
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+
+      const postId = createCompositePostId('author1', 'post1');
+      coordinator.subscribePost({ compositePostId: postId });
+
+      await waitForTick();
+      expect(findStalePostsSpy).toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
+    });
+
     it('requires hasProfile to be true to tick', async () => {
       // Authenticate but without profile
       useAuthStore.getState().init({

@@ -160,6 +160,7 @@ export class TtlCoordinator {
 
     // Check if post is stale and queue for refresh
     void this.checkAndQueueEntity(compositePostId, this.getPostOps());
+    this.ensureTicking();
   }
 
   /**
@@ -190,6 +191,7 @@ export class TtlCoordinator {
       totalSubscribedUsers: this.state.subscribedUsers.size,
     });
     void this.checkAndQueueEntity(pubky, this.getUserOps());
+    this.ensureTicking();
   }
 
   /**
@@ -235,22 +237,28 @@ export class TtlCoordinator {
    * Setup event listeners for auth state and page visibility
    */
   private setupListeners(): void {
-    // Listen to auth store changes
+    // Listen to auth store changes. Compare snapshot fields, not selectors:
+    // `selectIsAuthenticated()` reads the live store through `get()`, so calling
+    // it on `prevState` returns the *current* value and a change is never
+    // detected. That left the loop dead after any reload on a public route
+    // (single collection, post, profile), where `start()` runs before the
+    // persisted session is restored and nothing ever re-evaluated `shouldTick`.
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      const isAuthenticated = state.selectIsAuthenticated();
-      const wasAuthenticated = prevState.selectIsAuthenticated();
+      const isAuthenticated = state.session !== null;
+      const wasAuthenticated = prevState.session !== null;
+      const profileChanged = state.hasProfile !== prevState.hasProfile;
 
-      if (isAuthenticated !== wasAuthenticated) {
-        Logger.debug('TtlCoordinator: Auth state changed', { isAuthenticated });
+      if (isAuthenticated === wasAuthenticated && !profileChanged) return;
 
-        if (!isAuthenticated) {
-          // User logged out - stop and reset
-          this.stopTicking();
-          this.reset();
-        } else {
-          // User logged in - start if coordinator is started
-          this.evaluateAndStartTicking();
-        }
+      Logger.debug('TtlCoordinator: Auth state changed', { isAuthenticated, hasProfile: state.hasProfile });
+
+      if (!isAuthenticated) {
+        // User logged out - stop and reset
+        this.stopTicking();
+        this.reset();
+      } else {
+        // Session restored / logged in / profile resolved - start if coordinator is started
+        this.evaluateAndStartTicking();
       }
     });
 
@@ -300,6 +308,18 @@ export class TtlCoordinator {
       this.startTicking();
     } else {
       this.stopTicking();
+    }
+  }
+
+  /**
+   * Safety net: a subscription is the moment freshness matters, so if the tick
+   * loop is stopped but every lifecycle condition is now met, restart it. Covers
+   * any path where the loop halted on a transient condition (session still
+   * restoring, remount races) without a later auth/visibility event to revive it.
+   */
+  private ensureTicking(): void {
+    if (!this.isTickLoopActive && this.shouldTick()) {
+      this.startTicking();
     }
   }
 
