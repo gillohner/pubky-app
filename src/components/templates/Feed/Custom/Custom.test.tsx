@@ -63,11 +63,9 @@ describe('Custom', () => {
     expect(screen.getByTestId('alert-backup')).toBeInTheDocument();
   });
 
-  it('renders FeedNavigation with hidden lg:flex className in main content', () => {
+  it('renders FeedNavigation in main content', () => {
     render(<Custom />);
-    const feedNavs = screen.getAllByTestId('feed-navigation');
-    const mainFeedNav = feedNavs.find((el) => el.getAttribute('data-classname') === 'hidden lg:flex');
-    expect(mainFeedNav).toBeInTheDocument();
+    expect(screen.getByTestId('feed-navigation')).toBeInTheDocument();
   });
 
   it('renders TimelineFeed with CUSTOM variant', () => {

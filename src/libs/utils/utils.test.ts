@@ -7,6 +7,7 @@ import {
 } from '@/test-utils/pubky';
 import { asInvalid } from '@/test-utils/type-assertions';
 import {
+  canonicalizeTagLabel,
   canSubmitPost,
   clearCookies,
   cn,
@@ -28,6 +29,7 @@ import {
   isPostDeleted,
   isPubkyIdentifier,
   isSameDomain,
+  isStarterPackReservedTag,
   isValidPostCompositeId,
   isValidTagLabel,
   minutesAgo,
@@ -1282,6 +1284,28 @@ describe('Utils', () => {
     });
   });
 
+  describe('canonicalizeTagLabel', () => {
+    it('should trim surrounding whitespace and lowercase the label', () => {
+      expect(canonicalizeTagLabel('  BitCoin  ')).toBe('bitcoin');
+    });
+
+    it('should preserve valid non-Latin labels', () => {
+      expect(canonicalizeTagLabel(' 日本語 ')).toBe('日本語');
+    });
+  });
+
+  describe('isStarterPackReservedTag', () => {
+    it('matches Nexus-reserved labels after canonicalization', () => {
+      expect(isStarterPackReservedTag(' HateSpeech ')).toBe(true);
+      expect(isStarterPackReservedTag('IL_ADULT_NU_SEX_ACT')).toBe(true);
+    });
+
+    it('keeps the starter-pack API contract separate from broader moderation labels', () => {
+      expect(isStarterPackReservedTag('nudity')).toBe(false);
+      expect(isStarterPackReservedTag('bitcoin')).toBe(false);
+    });
+  });
+
   describe('canSubmitPost', () => {
     describe('when submitting is in progress', () => {
       it('should return false regardless of content', () => {
@@ -1289,6 +1313,19 @@ describe('Utils', () => {
         expect(canSubmitPost('reply', 'Hello', [], true)).toBe(false);
         expect(canSubmitPost('repost', '', [], true)).toBe(false);
         expect(canSubmitPost('edit', 'Hello', [], true)).toBe(false);
+      });
+    });
+
+    describe('when inline image uploads are in flight', () => {
+      it('blocks an otherwise-valid post', () => {
+        expect(canSubmitPost('post', 'Hello', [], false, false, undefined, true)).toBe(false);
+        expect(canSubmitPost('post', 'Body', [], false, true, 'Title', true)).toBe(false);
+        expect(canSubmitPost('repost', '', [], false, false, undefined, true)).toBe(false);
+      });
+
+      it('preserves prior behavior when false or omitted', () => {
+        expect(canSubmitPost('post', 'Hello', [], false, false, undefined, false)).toBe(true);
+        expect(canSubmitPost('post', 'Body', [], false, true, 'Title')).toBe(true);
       });
     });
 
@@ -1347,11 +1384,11 @@ describe('Utils', () => {
         expect(canSubmitPost('edit', 'Updated content', [], false)).toBe(true);
       });
 
-      it('should return false when content is empty', () => {
+      it('should return false when no content and no attachments', () => {
         expect(canSubmitPost('edit', '', [], false)).toBe(false);
       });
 
-      it('should return false for whitespace-only content', () => {
+      it('should return false for whitespace-only content without attachments', () => {
         expect(canSubmitPost('edit', '   ', [], false)).toBe(false);
         expect(canSubmitPost('edit', '\n\t', [], false)).toBe(false);
       });
@@ -1360,9 +1397,12 @@ describe('Utils', () => {
         expect(canSubmitPost('edit', 'Updated content', [], false)).toBe(true);
       });
 
-      it('should return false with attachments but no content', () => {
+      it('should return true with attachments but no content', () => {
+        // Attachment-only edits are valid, matching post/reply behavior — the
+        // edit composer counts kept homeserver URIs as well as new Files.
         const mockFile = new File(['test'], 'test.png', { type: 'image/png' });
-        expect(canSubmitPost('edit', '', [mockFile], false)).toBe(false);
+        expect(canSubmitPost('edit', '', [mockFile], false)).toBe(true);
+        expect(canSubmitPost('edit', '', ['pubky://author/pub/pubky.app/files/kept1'], false)).toBe(true);
       });
 
       it('should require both content and title when isArticle is true', () => {

@@ -8,7 +8,7 @@ import { useCreateLockContent } from '@/hooks/useCreateLockContent/useCreateLock
 import { Logger } from '@/libs/logger/logger';
 import { buildArticleContent } from '@/libs/post/articleContent';
 import { DEFAULT_LOCK_TITLE } from '@/libs/post/lockTeaser';
-import { useToast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useTimelineFeedContext } from '@/organisms/Timeline/Feed/TimelineFeed/TimelineFeedContext';
 import { inferPostKindForCreate } from '@/pipes/post/post.kind';
 import { postKindBelongsToStream } from '@/stores/home/home.utils';
@@ -58,7 +58,6 @@ export function usePostInputLock({
   // The auth modal fires `onOpenChange(false)` on both cancel and the success "Continue"; this flag
   // lets the close handler tell them apart so success advances instead of reverting the switch.
   const advancingFromAuth = useRef(false);
-  const { toast } = useToast();
   const timelineFeed = useTimelineFeedContext();
 
   const lockServerPubky = getLockServer() ?? '';

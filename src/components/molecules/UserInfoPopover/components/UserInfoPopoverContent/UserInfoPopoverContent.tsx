@@ -57,7 +57,6 @@ export function UserInfoPopoverContent({
     onFollowClick,
   } = useUserInfoPopoverActions({
     userId,
-    userName,
     isCurrentUser,
     isFollowing,
     isFollowingStatusLoading,
@@ -79,7 +78,7 @@ export function UserInfoPopoverContent({
       />
       {profileBio ? (
         <Container className="max-h-(--popover-bio-max-height) overflow-y-auto" overrideDefaults>
-          <PostText content={profileBio} />
+          <PostText content={profileBio} compactUrls={false} />
         </Container>
       ) : null}
       <UserInfoPopoverStats

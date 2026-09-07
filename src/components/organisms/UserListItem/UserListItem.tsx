@@ -8,7 +8,6 @@ import { Container } from '@/atoms/Container/Container';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { USER_LIST_TAG_MAX_LENGTH, USER_LIST_TAGS_MAX_TOTAL_CHARS } from '@/config/tags';
-import { resolveFollowDisplayName } from '@/hooks/useFollowUser/useFollowUser.utils';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { useTtlSubscription } from '@/hooks/useTtlSubscription/useTtlSubscription';
 import { cn, formatPublicKey } from '@/libs/utils/utils';
@@ -376,6 +375,81 @@ function FullVariant({
   );
 }
 
+/**
+ * CardVariant
+ * Self-contained card for grid surfaces (search People). Desktop: avatar +
+ * name/pubky with TAGS/POSTS stats, then tag chips + follow button. Below lg
+ * the card collapses to avatar + name/pubky only.
+ *
+ * The whole card is a link to the profile — inner CTAs (tag chips, follow)
+ * suppress their own events, same contract as `CollectionCard`.
+ */
+function CardVariant({
+  user,
+  avatarUrl,
+  displayName,
+  formattedPublicKey,
+  stats,
+  isFollowing,
+  isLoading,
+  isStatusLoading,
+  isCurrentUser,
+  followButtonVariant,
+  className,
+  dataTestId,
+  onFollowClick,
+  ttlRef,
+}: VariantProps) {
+  const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
+  const profileUrl = getUserProfileUrl(user.id, currentUserPubky);
+
+  return (
+    <Link
+      ref={ttlRef}
+      overrideDefaults
+      href={profileUrl}
+      aria-label={displayName}
+      className={cn('flex w-full flex-col gap-3 rounded-md bg-card p-4', className)}
+      data-testid={dataTestId || `user-list-item-${user.id}`}
+    >
+      <Container overrideDefaults className="flex items-center justify-between gap-3">
+        <Container overrideDefaults className="flex min-w-0 flex-1 items-center gap-2">
+          <AvatarWithFallback avatarUrl={avatarUrl} name={displayName} fallbackSeed={user.id} size="md" />
+          <Container overrideDefaults className="min-w-0 flex-1 truncate">
+            <Typography data-cy="profile-follower-item-name" size="sm" className="truncate font-bold">
+              {displayName}
+            </Typography>
+            <Typography className="truncate text-xs font-medium tracking-[1.2px] text-muted-foreground uppercase">
+              {formattedPublicKey}
+            </Typography>
+          </Container>
+        </Container>
+        <Container overrideDefaults className="hidden lg:block">
+          <UserStats tags={stats.tags} posts={stats.posts} />
+        </Container>
+      </Container>
+
+      <Container overrideDefaults className="hidden items-center gap-3 lg:flex">
+        <TagsList userId={user.id} className="flex-1" />
+        <Container overrideDefaults className="ml-auto">
+          {isCurrentUser ? (
+            <MeButton variant={followButtonVariant} />
+          ) : (
+            <FollowButton
+              isFollowing={isFollowing}
+              isLoading={isLoading}
+              isStatusLoading={isStatusLoading}
+              displayName={displayName}
+              variant={followButtonVariant}
+              onClick={onFollowClick}
+            />
+          )}
+        </Container>
+      </Container>
+    </Link>
+  );
+}
+
 // =============================================================================
 // Main Component
 // =============================================================================
@@ -384,9 +458,10 @@ function FullVariant({
  * UserListItem
  *
  * Unified component for displaying user items in lists.
- * Supports two variants:
+ * Supports three variants:
  * - `compact`: For sidebars (WhoToFollow, ActiveUsers) - avatar, name, subtitle, icon button
  * - `full`: For profile pages (Followers, Following) - avatar, name, pubky, tags, stats, text button
+ * - `card`: For grid surfaces (search People) - self-contained card with stats, tags and follow
  *
  * **TTL Tracking:**
  * Subscribes the user to TTL tracking when visible in the viewport.
@@ -440,7 +515,7 @@ export function UserListItem({
   const handleFollowClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    requireAuth(() => onFollowClick?.(user.id, isFollowing, resolveFollowDisplayName(user.id, user.name)));
+    requireAuth(() => onFollowClick?.(user.id, isFollowing));
   };
   const commonProps: VariantProps = {
     user,
@@ -463,6 +538,9 @@ export function UserListItem({
   };
   if (variant === 'compact') {
     return <CompactVariant {...commonProps} />;
+  }
+  if (variant === 'card') {
+    return <CardVariant {...commonProps} />;
   }
   return <FullVariant {...commonProps} />;
 }

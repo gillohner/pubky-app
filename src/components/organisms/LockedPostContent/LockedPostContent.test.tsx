@@ -22,7 +22,7 @@ vi.mock('@/controllers/locks/locks', () => ({
     fetchOwnContent: vi.fn().mockResolvedValue(null),
   },
 }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({ useToast: () => ({ toast: toastMock }) }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: (...args: unknown[]) => toastMock(...args) }));
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: (selector: (s: { currentUserPubky: string | null; session: object | null }) => unknown) =>
     selector({ currentUserPubky: 'pubkyreader', session: {} }),

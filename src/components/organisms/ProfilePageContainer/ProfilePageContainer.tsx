@@ -77,7 +77,7 @@ export function ProfilePageContainer({ children }: ProfilePageContainerProps) {
   const handleFollowToggle = () => {
     if (!pubky) return;
     requireAuth(async () => {
-      await toggleFollow(pubky, isFollowing, profile.name);
+      await toggleFollow(pubky, isFollowing);
     });
   };
 

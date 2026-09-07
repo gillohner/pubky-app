@@ -46,7 +46,7 @@ vi.mock('@/config/network', () => ({
   getLockServer: () => 'lockpubky',
   getPaykitServerUrl: () => 'https://paykit.server',
 }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: (...args: unknown[]) => mocks.toast(...args) }));
 
 // Fake composer: real state for the fields the lock flow captures/clears, no-ops for the rest.
 vi.mock('@/hooks/usePostInput/usePostInput', async () => {
@@ -70,6 +70,9 @@ vi.mock('@/hooks/usePostInput/usePostInput', async () => {
         setTags,
         attachments,
         setAttachments,
+        existingAttachments: [],
+        removeExistingAttachment: vi.fn(),
+        uploadingCount: 0,
         isArticle,
         setIsArticle,
         handleArticleClick: vi.fn(),

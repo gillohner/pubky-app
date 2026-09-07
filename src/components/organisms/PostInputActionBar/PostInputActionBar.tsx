@@ -34,7 +34,6 @@ export function PostInputActionBar({
   postButtonIcon,
   hideArticleButton,
   isArticle,
-  isEdit,
   lockSwitch,
 }: PostInputActionBarProps) {
   const isMobile = useIsMobile();
@@ -60,7 +59,7 @@ export function PostInputActionBar({
             <ActionButtonContent Icon={Smile} />
           </Button>
         ) : null}
-        {!isArticle && !isEdit ? (
+        {!isArticle ? (
           <Button
             data-cy={getButtonDataCy('Add image')}
             {...COMMON_BUTTON_PROPS}

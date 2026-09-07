@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from '@/molecules/Toaster/toast';
 import type { AttachmentConstructed } from '@/organisms/PostAttachments/PostAttachments.types';
 import { PostAttachmentsImagesAndVideos } from './PostAttachmentsImagesAndVideos';
 
@@ -82,8 +83,6 @@ vi.mock('@/atoms/Dialog/Dialog', () => {
   };
 });
 
-// Mock useToast
-const mockToast = vi.fn();
 vi.mock('@/molecules/PostAttachmentsCarouselImage/PostAttachmentsCarouselImage', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('@/molecules/PostAttachmentsCarouselImage/PostAttachmentsCarouselImage')>();
@@ -105,11 +104,7 @@ vi.mock('@/molecules/PostAttachmentsCarouselImage/PostAttachmentsCarouselImage',
   };
 });
 
-vi.mock('@/molecules/Toaster/use-toast', () => {
-  return {
-    useToast: () => ({ toast: mockToast }),
-  };
-});
+vi.mock('@/molecules/Toaster/toast');
 
 // Track dialog open state for conditional rendering
 // When set to true by a test, it won't be overridden by the component
@@ -153,6 +148,13 @@ vi.mock('@/atoms/Button/Button', () => {
   };
 });
 
+// Controllable carousel API state so tests can drive embla events ('select',
+// 'reInit') and the selected snap position
+const carouselApiState: { handlers: Record<string, () => void>; selectedSnap: number } = {
+  handlers: {},
+  selectedSnap: 0,
+};
+
 vi.mock('@/atoms/Carousel/Carousel', () => {
   return {
     Carousel: ({
@@ -174,8 +176,10 @@ vi.mock('@/atoms/Carousel/Carousel', () => {
       useEffect(() => {
         if (setApi) {
           setApi({
-            selectedScrollSnap: () => 0,
-            on: vi.fn(),
+            selectedScrollSnap: () => carouselApiState.selectedSnap,
+            on: (event: string, handler: () => void) => {
+              carouselApiState.handlers[event] = handler;
+            },
             off: vi.fn(),
           });
         }
@@ -337,6 +341,8 @@ describe('PostAttachmentsImagesAndVideos', () => {
     vi.clearAllMocks();
     dialogOpenState = false;
     dialogOpenStateSetByTest = false;
+    carouselApiState.handlers = {};
+    carouselApiState.selectedSnap = 0;
     // Mock fullscreenEnabled
     Object.defineProperty(document, 'fullscreenEnabled', {
       value: true,
@@ -634,6 +640,25 @@ describe('PostAttachmentsImagesAndVideos', () => {
 
       expect(screen.queryByText('1/1')).not.toBeInTheDocument();
     });
+
+    it('resyncs the current index when the carousel re-initializes after the slide list shrinks', () => {
+      setDialogOpen(true);
+      const imagesAndVideos = [createMockImage(), createMockImage(), createMockImage()];
+      const { rerender } = render(<PostAttachmentsImagesAndVideos imagesAndVideos={imagesAndVideos} />);
+
+      // User swipes to the last slide
+      carouselApiState.selectedSnap = 2;
+      act(() => carouselApiState.handlers['select']?.());
+      expect(screen.getByText('3/3')).toBeInTheDocument();
+
+      // An edit removes an attachment while the lightbox is open — embla clamps
+      // its internal index and emits only 'reInit', never 'select'
+      rerender(<PostAttachmentsImagesAndVideos imagesAndVideos={imagesAndVideos.slice(0, 2)} />);
+      carouselApiState.selectedSnap = 1;
+      act(() => carouselApiState.handlers['reInit']?.());
+
+      expect(screen.getByText('2/2')).toBeInTheDocument();
+    });
   });
 
   describe('Fullscreen functionality', () => {
@@ -718,7 +743,7 @@ describe('PostAttachmentsImagesAndVideos', () => {
 
       // Wait for the promise rejection to be handled
       await vi.waitFor(() => {
-        expect(mockToast).toHaveBeenCalledWith({
+        expect(vi.mocked(toast)).toHaveBeenCalledWith({
           variant: 'error',
           description: mockError.message,
         });

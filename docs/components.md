@@ -144,7 +144,7 @@ export { Home as default } from '@/templates/Feed/Home/Home';
 
 ## Icons (Lucide and custom)
 
-Icons are split on purpose: **stock Lucide** ships from the `lucide-react` package; **app-owned SVGs** (brands, bespoke marks, non-Lucide shapes) live in a single module behind the **`@/icons`** path alias (`src/libs/icons/icons.tsx`).
+Icons are split on purpose: **stock Lucide** ships from the `lucide-react` package; **app-owned SVGs** (brands, bespoke marks, non-Lucide shapes) live in a single module behind the **`@/icons`** path alias (`src/libs/icons/icons.tsx`); **data-driven Lucide icons** (an icon _name_ stored on a record, e.g. a custom feed's icon) render through the `DynamicLucideIcon` atom.
 
 ### Stock Lucide icons
 
@@ -153,6 +153,26 @@ import { ChevronDown, Plus, Trash2 } from 'lucide-react';
 ```
 
 Use named imports from `lucide-react` only.
+
+### Data-driven Lucide icons (`DynamicLucideIcon`)
+
+When the icon is chosen at runtime from data (a kebab-case Lucide name like `"folder-heart"` stored on a feed), a static named import is impossible. Render it with the **`DynamicLucideIcon`** atom (`@/atoms/DynamicLucideIcon/DynamicLucideIcon`):
+
+```tsx
+<DynamicLucideIcon name={feed.icon} className="size-5" />
+```
+
+Icon state lives in a module-level store in **`@/libs/lucide/lucideIcons`** (`subscribeToLucideIcons`, `getLucideIconState`, `requestLucideIcon`, `preloadLucideIcons`), read through `useSyncExternalStore`. The full Lucide catalog (`lucide-react/dynamic.js`, ~116KB raw) and the picker's alias/tag metadata are lazily-loaded chunks — nothing icon-related ships in the initial bundle; sync callers can only normalize a name's shape (`toLucideIconName`, which lowercases so an icon another client stored as `Activity` still resolves), and the store answers unknown names once the catalog is resident. Once an icon has resolved anywhere in the session it renders synchronously everywhere, a loaded icon carries the same `lucide-<name>` class as a static import, and a failed chunk heals every mounted instance when any retry succeeds. While a valid name is still loading, the atom renders an empty size-preserving svg — never a wrong icon; the `fallback` prop (default `Activity`) covers missing, unknown, and failed names. Call `preloadLucideIcons(names)` when the icon names become known (e.g. when feed data lands) so mounts hit the cache. Never use this path for static UI icons — those stay named imports.
+
+The icon picker takes a different route on purpose: it loads **all** canonical icon nodes in a single lazy chunk (`lucideIcons.nodes.ts`) instead of one chunk per cell, because it renders ~1700 of them and the per-icon path would cost ~1700 requests. Feed tabs keep the per-icon path — they render a handful of icons and must not pull the whole set.
+
+Three files under `@/libs/lucide` are generated from the installed `lucide-react` and must be regenerated after a lucide upgrade:
+
+| File                     | Contents                                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `lucideIcons.nodes.ts`   | every canonical icon's node, for the picker's single-chunk load                                              |
+| `lucideIcons.aliases.ts` | deprecated alias → canonical name, so the grid hides duplicate glyphs and search still finds old names       |
+| `lucideIcons.tags.ts`    | search synonyms pruned from `lucide-static`'s `tags.json`, hyphenated to match the picker's normalized query |
 
 ### Custom / brand icons
 
@@ -172,7 +192,9 @@ Component tests must use **real** `lucide-react` and `@/icons` implementations (
 
 ## Toasts
 
-Stack: atom [`Toast`](src/components/atoms/Toast/Toast.tsx) + [`Toast.variants.ts`](src/components/atoms/Toast/Toast.variants.ts) + [`Toast.icons.tsx`](src/components/atoms/Toast/Toast.icons.tsx), molecule [`Toaster`](src/components/molecules/Toaster/Toaster.tsx), API [`toast()`](src/components/molecules/Toaster/use-toast.ts) / `useToast()`. `<Toaster />` is mounted in the app layout.
+Stack: atom [`Toast`](src/components/atoms/Toast/Toast.tsx) + [`Toast.variants.ts`](src/components/atoms/Toast/Toast.variants.ts) + [`Toast.icons.tsx`](src/components/atoms/Toast/Toast.icons.tsx), molecule [`Toaster`](src/components/molecules/Toaster/Toaster.tsx), public API [`toast()`](src/components/molecules/Toaster/toast.ts). `<Toaster />` is mounted in the app layout.
+
+`toast()` from `@/molecules/Toaster/toast` is the **only** public producer API. The state store (`toast.store.ts`), the state hook (`useToastState.ts`), and the Radix renderer atoms in `@/atoms/Toast/*` are private to the Toaster module — an ESLint `no-restricted-imports` rule blocks application code from importing them.
 
 ### Variants (`ToastVariant`)
 
@@ -185,36 +207,58 @@ Icons are **not** stock Lucide — they are bespoke filled shapes with knocked-o
 | `warning` | Caution, rate limits, recoverable problems      | `ToastWarningIcon`   |
 | `info`    | Informational feedback (e.g. copy-to-clipboard) | `ToastInfoIcon`      |
 
-Colors and per-variant styling live in `Toast.variants.ts` (`toastVariants`, `toastIconVariants`, `toastActionVariants`). Update tokens there — do not ad-hoc style toasts with `className` unless intentionally overriding.
+Colors and per-variant styling live in `Toast.variants.ts` (`toastVariants`, `toastIconVariants`, `toastActionVariants`). Update tokens there — toasts cannot be styled ad hoc; the public API exposes no styling props.
 
 ### Calling `toast()`
 
 ```tsx
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 
 // Success / default (brand styling)
-toast({ title: t('saved'), description: t('savedDesc') });
+toast({ title: 'Saved', description: 'Your changes were saved.' });
 
-// Error — omit title to use toast.genericErrorTitle (filled in by Toaster)
-toast({ variant: 'error', description: t('failed') });
+// Error — omit title and the Toaster renders the generic literal `Error` title
+toast({ variant: 'error', description: 'Could not publish post.' });
 
 // Custom error title when domain copy is specific
-toast({ variant: 'error', title: t('uploadFailed'), description: t('uploadFailedDesc') });
+toast({ variant: 'error', title: 'Upload failed', description: 'The file exceeds the size limit.' });
 
 // Warning / info
-toast({ variant: 'warning', title: t('headsUp'), description: t('...') });
-toast({ variant: 'info', title: t('copied'), description: text, dismissButton: true });
+toast({ variant: 'warning', title: 'Heads up', description: 'You are posting quickly.' });
+toast({ variant: 'info', title: 'Copied to clipboard', dismissButton: true });
+
+// Custom action (e.g. repost Undo) — the Toaster renders the button and
+// dismisses the toast when it is clicked
+toast({ title: 'Reposted', action: { label: 'Undo', altText: 'Undo', onClick: () => undoRepost() } });
 ```
 
-- Import `toast` from `@/molecules/Toaster/use-toast` (module-level; works in hooks and providers). Use `useToast()` in components when you only need the hook-bound `toast`.
-- **`variant: 'error'`** for errors — not `title: tToast('error')`, not `className: 'destructive …'`, and **no** `showErrorToast` / `showSuccessToast` wrapper helpers.
-- **`dismissButton: true`** when the toast should show an OK action (styled via `toastActionVariants` for the toast variant).
-- **`action`** for a custom `<ToastAction>` (e.g. repost Undo). Pass `variant` on `ToastAction` when it is not rendered by `Toaster`.
-- **`toast()` return value** supports `dismiss()` / `update()` (e.g. Undo flow).
+- `ToastOptions` requires at least one of `title` / `description` (both `string`), and exposes only app concepts: `variant`, `dismissButton`, `action`. Radix lifecycle, duration, open-state, and styling props are not part of the public API.
+- **`variant: 'error'`** for errors — not `className: 'destructive …'`, and **no** `showErrorToast` / `showSuccessToast` wrapper helpers.
+- **`dismissButton: true`** when the toast should show an OK action (brand-styled on default toasts, muted otherwise, via `toastActionVariants`).
+- **`action`** is a plain descriptor `{ label, altText, onClick }` — never a component. The Toaster owns action rendering and styling, and dismisses the toast before invoking `onClick`.
+- **`toast()` returns a `ToastHandle`** with `dismiss()` for dismissing that toast programmatically.
+
+### Copy is static
+
+Toast `title` / `description` strings are fixed product copy. Never interpolate user-entered text into them — feed names, tag labels, display names, file names, or anything else a user typed. Toasts are narrow and user text is unbounded: a long feed name turns a one-line confirmation into a wrapped block (and, before the title learned to break long words, was clipped at the edge — see [#2419](https://github.com/pubky/pubky-app/issues/2419)). Say what happened generically instead:
+
+```tsx
+// ❌ user-defined value — overflows the toast
+toast({ title: `Feed created: ${feed.name}` });
+toast({ title: `Tag added: ${label}` });
+toast({ description: `${file.name} exceeds the 20MB limit.` });
+
+// ✅ static, still informative
+toast({ title: 'Feed created' });
+toast({ title: 'Tag added' });
+toast({ variant: 'error', description: 'Image exceeds the 20MB limit.' });
+```
+
+Short bounded values are fine to interpolate: build-time config constants (for example `ARTICLE_ATTACHMENT_MAX_FILES` or a size label derived from `IMAGE_MAX_RAW_SIZE`), small numbers such as counts or retry-after seconds, and authored `AppError` messages from the `Err.*` factories. Choosing between two literals with a ternary is also fine.
 
 ### Tests
 
-Mock `@/molecules/Toaster/use-toast` in unit tests; assert `variant: 'error'` (or other variant) instead of `title: 'Error'`.
+Mock `@/molecules/Toaster/toast` in unit tests (`vi.mock('@/molecules/Toaster/toast', () => ({ toast: ... }))`); assert `variant: 'error'` (or other variant) instead of `title: 'Error'`. The Toaster module's own tests render the real `<Toaster />` and trigger notifications through the real `toast()`.
 
 ## Design System Integration
 

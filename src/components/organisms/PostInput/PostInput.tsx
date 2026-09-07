@@ -23,8 +23,10 @@ import { usePostInputAuthHandlers } from '@/hooks/usePostInputAuthHandlers/usePo
 import { usePostInputLock } from '@/hooks/usePostInputLock/usePostInputLock';
 import { getComposerDissolveVariants } from '@/libs/motion/composerMotion';
 import { parseArticleContent } from '@/libs/post/articleContent';
+import { deserializeArticleBody } from '@/libs/post/articleInlineImages';
 import { isLockTeaserWithinLimit } from '@/libs/post/lockTeaser';
 import { canSubmitPost, cn, getCharacterCount } from '@/libs/utils/utils';
+import { parseCompositeId } from '@/models/models.utils';
 import { DialogLockContent } from '@/molecules/DialogLockContent/DialogLockContent';
 import { LockedPostCard } from '@/molecules/LockedPostCard/LockedPostCard';
 import { sanitizeCodeBlockLanguages } from '@/molecules/MarkdownEditor/InitializedMDXEditor.utils';
@@ -37,7 +39,7 @@ import {
 } from '@/molecules/PostHeaderUserInfo/PostHeaderUserInfo.utils';
 import { PostInputAttachments } from '@/molecules/PostInputAttachments/PostInputAttachments';
 import { PostPreviewCard } from '@/molecules/PostPreviewCard/PostPreviewCard';
-import { useToast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { DialogLocksAuth } from '@/organisms/DialogLocksAuth/DialogLocksAuth';
 import { POST_INPUT_HEADER_SIZE_BY_TAGS_LAYOUT } from '@/organisms/PostMain/PostMainLayoutRules';
 import { BODY_TEXT_CLASS_BY_TAGS_LAYOUT } from '@/organisms/PostMain/PostMainTypography';
@@ -66,6 +68,7 @@ export function PostInput({
   onLockModeChange,
   editContent,
   editIsArticle,
+  editAttachments,
   autoFocusTextarea = false,
   initialContent,
   initialAttachments,
@@ -82,6 +85,8 @@ export function PostInput({
     setTags,
     attachments,
     setAttachments,
+    existingAttachments,
+    removeExistingAttachment,
     isArticle,
     setIsArticle,
     handleArticleClick,
@@ -108,6 +113,8 @@ export function PostInput({
     handleDragOver,
     handleDrop,
     handlePaste,
+    inlineImages,
+    uploadingCount,
     // Mention autocomplete
     mentionUsers,
     mentionIsOpen,
@@ -120,6 +127,9 @@ export function PostInput({
     postId,
     originalPostId,
     editPostId,
+    editAttachmentUris: editAttachments,
+    editContent,
+    editIsArticle,
     onSuccess,
     placeholder,
     successToastTitle,
@@ -145,6 +155,7 @@ export function PostInput({
     handleArticleTitleChangeWithAuth,
     handleArticleBodyChangeWithAuth,
     handleArticleClickWithAuth,
+    removeExistingAttachmentWithAuth,
   } = usePostInputAuthHandlers({
     handleExpand,
     handleSubmit,
@@ -158,6 +169,7 @@ export function PostInput({
     handleArticleTitleChange,
     handleArticleBodyChange,
     handleArticleClick,
+    removeExistingAttachment,
   });
 
   const isPostVariant = variant === POST_INPUT_VARIANT.POST;
@@ -213,7 +225,15 @@ export function PostInput({
     // `isPublishingLock` counts as submitting: the action-bar button only disables through this check,
     // so leaving it out lets a second click publish a duplicate lock while the first is in flight.
     return (
-      canSubmitPost(variant, content, attachments, isSubmitting || isPublishingLock, isArticle, articleTitle) &&
+      canSubmitPost(
+        variant,
+        content,
+        [...existingAttachments, ...attachments],
+        isSubmitting || isPublishingLock,
+        isArticle,
+        articleTitle,
+        uploadingCount > 0,
+      ) &&
       // Blocking the click is what prevents an orphaned lock: the publish creates the lock first.
       (!isLockEnabled || isLockTeaserWithinLimit({ lock_title: lockTitle, teaser_description: content }))
     );
@@ -228,7 +248,6 @@ export function PostInput({
 
   const isEdit = variant === POST_INPUT_VARIANT.EDIT;
 
-  const { toast } = useToast();
   const shouldReduceMotion = useReducedMotion();
   const { ref: stateContentMeasureRef, height: stateContentHeight } = useElementHeight();
   // Forced-expanded dialog composers must not use Framer height at all — even
@@ -251,7 +270,31 @@ export function PostInput({
         const parsed = parseArticleContent(editContent);
         if (parsed) {
           setArticleTitle(parsed.title);
-          setContent(parsed.body);
+          // Resolve published attachment:{n} image references back to their
+          // homeserver file URIs so the composer edits real destinations.
+          // Unresolvable references are removed (never a hard failure — the
+          // article must stay editable so the user can repair it).
+          let articleAuthorPubky = '';
+          try {
+            articleAuthorPubky = editPostId ? parseCompositeId(editPostId).pubky : '';
+          } catch {
+            // Malformed composite id — no reference can resolve to an author-owned file
+          }
+          const deserialized = deserializeArticleBody({
+            body: parsed.body,
+            attachments: editAttachments ?? [],
+            authorPubky: articleAuthorPubky,
+          });
+          setContent(deserialized.body);
+          if (deserialized.warnings.length > 0) {
+            toast({
+              variant: 'warning',
+              description:
+                deserialized.warnings.length === 1
+                  ? 'An image with a broken attachment reference was removed from the article.'
+                  : `${deserialized.warnings.length} images with broken attachment references were removed from the article.`,
+            });
+          }
         } else {
           toast({
             variant: 'error',
@@ -309,15 +352,17 @@ export function PostInput({
         isDragging ? 'border-brand' : 'border-input',
       )}
       onClick={handleExpandWithAuth}
-      onDragEnter={isEdit ? undefined : (event) => handleDragEventWithAuth(event, handleDragEnter)}
-      onDragLeave={isEdit ? undefined : (event) => handleDragEventWithAuth(event, handleDragLeave)}
-      onDragOver={isEdit ? undefined : (event) => handleDragEventWithAuth(event, handleDragOver)}
-      onDrop={isEdit ? undefined : (event) => handleDragEventWithAuth(event, handleDrop)}
+      onDragEnter={(event) => handleDragEventWithAuth(event, handleDragEnter)}
+      onDragLeave={(event) => handleDragEventWithAuth(event, handleDragLeave)}
+      onDragOver={(event) => handleDragEventWithAuth(event, handleDragOver)}
+      onDrop={(event) => handleDragEventWithAuth(event, handleDrop)}
     >
-      {/* Drag overlay */}
+      {/* Drag overlay — visual only: it must not intercept the drop, or the
+          article body editors underneath never receive their inline-image
+          drops (the container's bubbled handler would treat them as covers) */}
       {isDragging && (
         <Container
-          className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-brand/10"
+          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-brand/10"
           overrideDefaults
         >
           <Typography className="text-brand">{'Drop files here'}</Typography>
@@ -442,7 +487,7 @@ export function PostInput({
                         onChange={handleChangeWithAuth}
                         onFocus={handleExpandWithAuth}
                         onKeyDown={handleKeyDown}
-                        onPaste={isEdit ? undefined : handlePasteWithAuth}
+                        onPaste={handlePasteWithAuth}
                         maxLength={composerMaxLength}
                         rows={1}
                         disabled={isSubmitting}
@@ -468,17 +513,17 @@ export function PostInput({
                 </Container>
               )}
 
-              {!isEdit && (
-                <PostInputAttachments
-                  ref={fileInputRef}
-                  attachments={attachments}
-                  setAttachments={setAttachmentsWithAuth}
-                  handleFilesAdded={handleFilesAddedWithAuth}
-                  isSubmitting={isSubmitting}
-                  isArticle={isArticle}
-                  handleFileClick={handleFileClickWithAuth}
-                />
-              )}
+              <PostInputAttachments
+                ref={fileInputRef}
+                attachments={attachments}
+                setAttachments={setAttachmentsWithAuth}
+                handleFilesAdded={handleFilesAddedWithAuth}
+                isSubmitting={isSubmitting}
+                isArticle={isArticle}
+                handleFileClick={handleFileClickWithAuth}
+                existingAttachments={isEdit ? existingAttachments : undefined}
+                onRemoveExisting={isEdit ? removeExistingAttachmentWithAuth : undefined}
+              />
 
               {isArticle && (
                 <MarkdownEditor
@@ -487,6 +532,7 @@ export function PostInput({
                   markdown={sanitizeCodeBlockLanguages(content)}
                   onChange={handleArticleBodyChangeWithAuth}
                   readOnly={isSubmitting || !isAuthenticated}
+                  inlineImages={{ ...inlineImages, uploadingCount }}
                 />
               )}
 

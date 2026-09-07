@@ -15,10 +15,11 @@ import { Dialog, DialogClose, DialogContent, DialogTrigger } from '@/atoms/Dialo
 import { Image } from '@/atoms/Image/Image';
 import { Typography } from '@/atoms/Typography/Typography';
 import { Video } from '@/atoms/Video/Video';
+import { getAttachmentPreviewUrl } from '@/libs/file/attachmentPreviewUrl';
 import { cn } from '@/libs/utils/utils';
+import { toast } from '@/molecules/Toaster/toast';
 import type { AttachmentConstructed } from '@/organisms/PostAttachments/PostAttachments.types';
 import { PostAttachmentsCarouselImage } from '../PostAttachmentsCarouselImage/PostAttachmentsCarouselImage';
-import { useToast } from '../Toaster/use-toast';
 
 const MAX_VISIBLE_MEDIA = 4;
 
@@ -52,7 +53,6 @@ export const PostAttachmentsImagesAndVideos = ({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const carouselRef = useRef<HTMLDivElement>(null);
-  const { toast } = useToast();
   const openPreview = (index: number, event?: MouseEvent) => {
     event?.stopPropagation();
     setCurrentIndex(index);
@@ -79,8 +79,13 @@ export const PostAttachmentsImagesAndVideos = ({
     };
     onSelect();
     api.on('select', onSelect);
+    // 'reInit' fires when the slide list changes (e.g. an edit removed
+    // attachments while the lightbox is open) — embla clamps its index but
+    // emits no 'select', so resync here too
+    api.on('reInit', onSelect);
     return () => {
       api.off('select', onSelect);
+      api.off('reInit', onSelect);
     };
   }, [api]);
 
@@ -148,7 +153,7 @@ export const PostAttachmentsImagesAndVideos = ({
               >
                 <Button overrideDefaults onClick={(e) => openPreview(i, e)}>
                   <Image
-                    src={media.type === 'image/gif' ? media.urls.main : (media.urls.feed ?? media.urls.main)}
+                    src={getAttachmentPreviewUrl(media)}
                     alt={media.name}
                     fill={!isOnlyMedia}
                     className={cn(

@@ -37,7 +37,7 @@ vi.mock('@/hooks/useCreateLockContent/useCreateLockContent', () => ({
     return { publish: mocks.publish, isPublishing: false };
   },
 }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: (...args: unknown[]) => mocks.toast(...args) }));
 // The announcement's optimistic commit: no timeline provider in the hook test, so prepend is a no-op
 // path (`streamId` undefined). We only assert the local-blob registration here.
 vi.mock('@/organisms/Timeline/Feed/TimelineFeed/TimelineFeedContext', () => ({

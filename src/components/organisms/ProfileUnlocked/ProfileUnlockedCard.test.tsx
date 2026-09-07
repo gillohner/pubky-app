@@ -1,9 +1,13 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render as rtlRender, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
 import { LocksController } from '@/controllers/locks/locks';
 import type { ReplicatedPost } from '@/services/locks/locks.types';
 import { ProfileUnlockedCard } from './ProfileUnlockedCard';
+
+const render = (ui: ReactElement) => rtlRender(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
 
 // The card renders through PostBody → PostText, which reads the route to decide truncation.
 vi.mock('next/navigation', () => ({ usePathname: () => '/profile/unlocked' }));
@@ -76,7 +80,11 @@ describe('ProfileUnlockedCard', () => {
     it('link: renders the URL from the body', () => {
       render(<ProfileUnlockedCard post={{ ...post(), kind: 'link', content: 'https://example.com/article' }} />);
 
-      expect(screen.getByText('https://example.com/article')).toBeInTheDocument();
+      // PostText compacts the visible label to the host; the full URL stays on the anchor.
+      expect(screen.getByRole('link', { name: 'https://example.com/article' })).toHaveAttribute(
+        'href',
+        'https://example.com/article',
+      );
     });
 
     it('image: renders the attachment from its object URL', async () => {

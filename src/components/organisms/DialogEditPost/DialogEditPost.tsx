@@ -33,7 +33,8 @@ export function DialogEditPost({ open, onOpenChangeAction, postId }: DialogEditP
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent avoidKeyboard className="w-3xl" hiddenTitle={title}>
+      {/* Articles get a wider dialog so the editor toolbar fits on one row on large displays */}
+      <DialogContent avoidKeyboard className={isArticle ? 'w-4xl' : 'w-3xl'} hiddenTitle={title}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
 
@@ -51,6 +52,7 @@ export function DialogEditPost({ open, onOpenChangeAction, postId }: DialogEditP
           editPostId={postDetails.id}
           editContent={postDetails.content}
           editIsArticle={isArticle}
+          editAttachments={postDetails.attachments ?? []}
           layoutOverride="inline"
         />
         {/* Nested inside parent dialog to avoid mobile touch event issues with sibling portals */}

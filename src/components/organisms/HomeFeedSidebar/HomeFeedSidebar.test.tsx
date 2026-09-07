@@ -80,7 +80,8 @@ vi.mock('@/stores/home/home.types', () => ({
   },
 }));
 vi.mock('@/stores/home/home.store', () => ({
-  useHomeStore: () => mockUseHomeStore(),
+  useHomeStore: (selector?: (state: unknown) => unknown) =>
+    selector ? selector(mockUseHomeStore()) : mockUseHomeStore(),
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -93,9 +94,11 @@ vi.mock('@/hooks/useFeedLayoutResolution/useFeedLayoutResolution', () => ({
 }));
 
 vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
+  // Mirror the real hook: authentication is derived from the auth store, so
+  // signed-out tests (mockCurrentUserPubky.value = null) flow through here.
   useRequireAuth: () => ({
     requireAuth: (action: () => unknown) => action(),
-    isAuthenticated: true,
+    isAuthenticated: Boolean(mockCurrentUserPubky.value),
   }),
 }));
 
@@ -185,6 +188,14 @@ describe('HomeFeedSidebar', () => {
     expect(screen.getByTestId('filter-sort')).toBeInTheDocument();
     expect(screen.getByTestId('filter-content')).toBeInTheDocument();
     expect(screen.getByTestId('filter-layout')).toBeInTheDocument();
+  });
+
+  it('can hide sort without hiding layout or content', () => {
+    render(<HomeFeedSidebar hideSortFilter />);
+
+    expect(screen.queryByTestId('filter-sort')).not.toBeInTheDocument();
+    expect(screen.getByTestId('filter-layout')).toBeInTheDocument();
+    expect(screen.getByTestId('filter-content')).toBeInTheDocument();
   });
 
   it('shows visual layout when enabled on desktop/tablet', () => {
@@ -398,6 +409,18 @@ describe('HomeFeedSidebar - Snapshots', () => {
 
   it('matches snapshot', () => {
     const { container } = render(<HomeFeedSidebar allowVisualLayout={true} feedVariant={TIMELINE_FEED_VARIANT.HOME} />);
+    expect(container).toMatchSnapshot();
+  });
+
+  it('matches snapshot with Sort hidden', () => {
+    const { container } = render(
+      <HomeFeedSidebar
+        allowVisualLayout={true}
+        feedVariant={TIMELINE_FEED_VARIANT.SEARCH}
+        hideReachFilter
+        hideSortFilter
+      />,
+    );
     expect(container).toMatchSnapshot();
   });
 });

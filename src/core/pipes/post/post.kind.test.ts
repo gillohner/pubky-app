@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   inferAnnouncementKind,
   inferPostKindForCreate,
+  inferPostKindForEdit,
   resolveTagTargetCompositeIdForPostCreate,
 } from '@/pipes/post/post.kind';
 
@@ -106,6 +107,88 @@ describe('inferPostKindForCreate', () => {
     });
 
     expect(kind).toBe(PubkyAppPostKind.Long);
+  });
+});
+
+describe('inferPostKindForEdit', () => {
+  it('keeps the long kind for articles regardless of content and attachments', () => {
+    const kind = inferPostKindForEdit({
+      content: 'See https://pubky.app',
+      attachmentContentTypes: ['video/mp4'],
+      currentKind: 'long',
+    });
+
+    expect(kind).toBe(PubkyAppPostKind.Long);
+  });
+
+  it('keeps the collection kind for collections', () => {
+    const kind = inferPostKindForEdit({
+      content: JSON.stringify({ name: 'Saved', items: [] }),
+      attachmentContentTypes: [],
+      currentKind: 'collection',
+    });
+
+    expect(kind).toBe(PubkyAppPostKind.Collection);
+  });
+
+  it('prioritizes link over attachments when content has a URL', () => {
+    const kind = inferPostKindForEdit({
+      content: 'Watch https://pubky.app/video',
+      attachmentContentTypes: ['video/mp4'],
+      currentKind: 'short',
+    });
+
+    expect(kind).toBe(PubkyAppPostKind.Link);
+  });
+
+  it('returns video when at least one content type is video', () => {
+    const kind = inferPostKindForEdit({
+      content: 'Look at this',
+      attachmentContentTypes: ['image/png', 'video/mp4'],
+      currentKind: 'image',
+    });
+
+    expect(kind).toBe(PubkyAppPostKind.Video);
+  });
+
+  it('returns image when content types contain image and no video', () => {
+    const kind = inferPostKindForEdit({
+      content: 'Look at this',
+      attachmentContentTypes: ['application/pdf', 'image/png'],
+      currentKind: 'file',
+    });
+
+    expect(kind).toBe(PubkyAppPostKind.Image);
+  });
+
+  it('returns file for non-image, non-video content types', () => {
+    const kind = inferPostKindForEdit({
+      content: 'A document',
+      attachmentContentTypes: ['application/pdf'],
+      currentKind: 'short',
+    });
+
+    expect(kind).toBe(PubkyAppPostKind.File);
+  });
+
+  it('returns short when the resulting attachment set is empty and content has no URL', () => {
+    const kind = inferPostKindForEdit({
+      content: 'Just plain text',
+      attachmentContentTypes: [],
+      currentKind: 'image',
+    });
+
+    expect(kind).toBe(PubkyAppPostKind.Short);
+  });
+
+  it('does not preserve a stale media kind once its attachments are gone', () => {
+    const kind = inferPostKindForEdit({
+      content: '',
+      attachmentContentTypes: [],
+      currentKind: 'video',
+    });
+
+    expect(kind).toBe(PubkyAppPostKind.Short);
   });
 });
 

@@ -24,9 +24,11 @@ import { AuthErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/erro
 import { Err } from '@/libs/error/error.factories';
 import { httpResponseToError } from '@/libs/error/error.http';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { hasHttpStatus } from '@/libs/error/error.utils';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
 import { Identity } from '@/libs/identity/identity';
 import { Logger } from '@/libs/logger/logger';
+import { sleep } from '@/libs/utils/utils';
 import type { Pubky as TPubkyModel } from '@/models/models.types';
 import type {
   TGenerateAuthUrlResult,
@@ -67,6 +69,8 @@ import {
 // Changing this invalidates existing Ring sessions until they re-authenticate.
 const CAPABILITIES = '/pub/pubky.app/:rw,/priv/social/:rw,/priv/locks.app/:r';
 const STORAGE_PATH_PREFIXES = ['/pub/', '/priv/'] as const;
+const DELETE_IDEMPOTENT_MAX_ATTEMPTS = 3;
+const DELETE_IDEMPOTENT_RETRY_DELAY_MS = 500;
 /** Default limit for list operations */
 const LIST_DEFAULT_LIMIT = 500;
 
@@ -568,6 +572,30 @@ export class HomeserverService {
   static async delete(url: string) {
     await this.request({ method: HttpMethod.DELETE, url });
     Logger.debug('Delete successful', { url });
+  }
+
+  /**
+   * Deletes a homeserver resource for cleanup flows: 404 counts as success
+   * ("already gone" is the desired end state) and transient failures retry
+   * with a short backoff. Mirrors the hardened delete account deletion uses
+   * (Sentry PUBKY-APP-6Y) so a single transport blip doesn't orphan resources.
+   */
+  static async deleteIdempotent(url: string) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.delete(url);
+        return;
+      } catch (error) {
+        if (hasHttpStatus(error, HttpStatusCode.NOT_FOUND)) {
+          return;
+        }
+        if (attempt >= DELETE_IDEMPOTENT_MAX_ATTEMPTS) {
+          throw error;
+        }
+        Logger.warn('[HomeserverService] Delete failed, retrying', { url, attempt });
+        await sleep(DELETE_IDEMPOTENT_RETRY_DELAY_MS * attempt);
+      }
+    }
   }
 
   /**

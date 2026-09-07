@@ -95,8 +95,8 @@ describe('posts', () => {
 
     cy.findFirstPostInFeed().within(() => {
       cy.get('[data-cy="post-text"]').should('contain.text', prefix.trim());
-      cy.contains('Show more').should('be.visible').click();
-      cy.contains('Show more').should('not.exist');
+      cy.get('button[aria-label="Show full post content"]').should('be.visible').click();
+      cy.get('button[aria-label="Show full post content"]').should('not.exist');
       cy.get('[data-cy="post-text"]').should('contain.text', postContent);
     });
     cy.location('pathname').should('eq', '/home');
@@ -121,10 +121,70 @@ describe('posts', () => {
     });
   });
 
+  it('can edit a post to change and then remove its image', () => {
+    const postContent = `I can edit this post's image! ${Date.now()}`;
+    createQuickPostWithImage(postContent);
+
+    cy.findFirstPostInFeedFiltered(postContent, CheckForNewPosts.No, WaitForNewPosts.Yes).within(() => {
+      cy.get('[data-cy="post-text"]').should('contain.text', postContent);
+      cy.get('img').should('be.visible');
+    });
+
+    // Local blob URLs stay cached until reload; the unique static URL is only
+    // available after a refresh, so capture that before replacing the image.
+    cy.reload();
+    waitForFeedToLoad();
+    cy.findFirstPostInFeedFiltered(postContent).within(() => {
+      cy.get('[data-cy="post-text"]').should('contain.text', postContent);
+      cy.get('img')
+        .should('be.visible')
+        .and(($img) => {
+          expect($img.attr('src')).to.not.include('blob:');
+        })
+        .invoke('attr', 'src')
+        .as('originalImageSrc');
+    });
+
+    editPost({
+      filterText: postContent,
+      imageAction: { action: 'replace' },
+    });
+
+    cy.reload();
+    waitForFeedToLoad();
+    cy.get('@originalImageSrc').then((originalImageSrc) => {
+      cy.findFirstPostInFeedFiltered(postContent).within(() => {
+        cy.get('[data-cy="post-text"]').should('contain.text', postContent);
+        cy.get('img')
+          .should('be.visible')
+          .and(($img) => {
+            expect($img.attr('src')).to.not.equal(String(originalImageSrc));
+          });
+      });
+    });
+
+    editPost({ filterText: postContent, imageAction: { action: 'remove' } });
+
+    cy.findFirstPostInFeedFiltered(postContent, CheckForNewPosts.No, WaitForNewPosts.Yes).within(() => {
+      cy.get('[data-cy="post-text"]').should('contain.text', postContent);
+      cy.get('img').should('not.exist');
+    });
+
+    cy.reload();
+    waitForFeedToLoad();
+    cy.findFirstPostInFeedFiltered(postContent).within(() => {
+      cy.get('[data-cy="post-text"]').should('contain.text', postContent);
+      cy.get('img').should('not.exist');
+    });
+  });
+
   it('can post with embedded link', () => {
     const link = 'https://www.youtube.com/watch?v=989-7xsRLR4';
     const embedId = '989-7xsRLR4';
-    const postContent = `I can post with an embedded link! ${link} ${Date.now()}`;
+    // A raw URL renders as its host alone, so the text used to find the post again
+    // must be the part of the content that is shown verbatim.
+    const marker = `I can post with an embedded link! ${Date.now()}`;
+    const postContent = `${marker} ${link}`;
 
     cy.get('[data-cy="home-post-input"]').within(() => {
       cy.get('textarea').click().type(postContent);
@@ -135,8 +195,13 @@ describe('posts', () => {
       cy.get('[data-cy="post-input-action-bar-post"]').click();
     });
 
-    cy.findFirstPostInFeedFiltered(postContent, CheckForNewPosts.No, WaitForNewPosts.Yes).within(() => {
-      cy.get('[data-cy="post-text"]').should('contain.text', postContent);
+    cy.findFirstPostInFeedFiltered(marker, CheckForNewPosts.No, WaitForNewPosts.Yes).within(() => {
+      cy.get('[data-cy="post-text"]').should('contain.text', marker);
+      // Compacted to the host, with the full destination kept on the anchor itself.
+      cy.get('[data-cy="post-text"] a')
+        .should('have.text', 'youtube.com')
+        .and('have.attr', 'href', link)
+        .and('have.attr', 'aria-label', link);
       cy.get('iframe[data-testid="YouTube video player"]')
         .should('be.visible')
         .should('have.attr', 'src')
@@ -634,6 +699,8 @@ describe('posts', () => {
   it.skip('can create an article from quick post box');
   it.skip('can create an article from new post');
   it.skip('new article modal is shown infront of new post modal'); // cover bug from pubky-app
+  it.skip('can edit an article');
+  it.skip('can edit an article to change and then remove its image');
 
   // todo: check if we want this functionality
   it.skip('signout when 401 response from homeserver when creating new post');

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TIMELINE_FEED_VARIANT } from '@/config/feed';
 import { PostController } from '@/controllers/post/post';
 import { PostStreamTypes } from '@/models/stream/post/postStream.types';
+import { toast } from '@/molecules/Toaster/toast';
 import { useTimelineFeedContext } from '@/organisms/Timeline/Feed/TimelineFeed/TimelineFeedContext';
 import { useDeletePost } from './useDeletePost';
 
@@ -16,15 +17,18 @@ vi.mock('@/controllers/post/post', () => ({
   },
 }));
 
-// Mock molecules (useToast)
-const mockToast = vi.fn();
-vi.mock('@/molecules/Toaster/use-toast', () => {
-  return {
-    useToast: () => ({
-      toast: mockToast,
-    }),
-  };
-});
+// Mock molecules (toast)
+vi.mock('@/molecules/Toaster/toast');
+
+// Mock useLocalFilesStore
+const mockSetPostAttachments = vi.fn();
+vi.mock('@/stores/localFiles/localFiles.store', () => ({
+  useLocalFilesStore: {
+    getState: vi.fn(() => ({
+      setPostAttachments: mockSetPostAttachments,
+    })),
+  },
+}));
 
 // Mock organisms (useTimelineFeedContext)
 const mockRemovePosts = vi.fn();
@@ -93,6 +97,80 @@ describe('useDeletePost', () => {
     });
   });
 
+  it('clears the local attachment cache after successful deletion', async () => {
+    mockDelete.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useDeletePost());
+
+    await act(async () => {
+      await result.current.deletePost(mockPostId);
+    });
+
+    expect(mockSetPostAttachments).toHaveBeenCalledWith(mockPostId, []);
+    // The cache is only cleared once the delete actually committed
+    expect(mockDelete).toHaveBeenCalledBefore(mockSetPostAttachments);
+  });
+
+  it('does not clear the local attachment cache when the post is restored to the timeline', async () => {
+    mockDelete.mockRejectedValue(new Error('Deletion failed'));
+    // Row exists with live content → local write never committed → restore
+    mockGetPostDetails.mockResolvedValue({ id: mockPostId, content: 'Test post' });
+
+    const { result } = renderHook(() => useDeletePost());
+
+    await act(async () => {
+      await result.current.deletePost(mockPostId);
+    });
+
+    expect(mockPrependPosts).toHaveBeenCalledWith(mockPostId);
+    expect(mockSetPostAttachments).not.toHaveBeenCalled();
+  });
+
+  it('clears the local attachment cache when the local write committed as a tombstone but sync failed', async () => {
+    mockDelete.mockRejectedValue(new Error('homeserver sync failed'));
+    // Row exists but is tombstoned → local write committed → keep removal, clear cache
+    mockGetPostDetails.mockResolvedValue({ id: mockPostId, content: '[DELETED]' });
+
+    const { result } = renderHook(() => useDeletePost());
+
+    await act(async () => {
+      await result.current.deletePost(mockPostId);
+    });
+
+    expect(mockPrependPosts).not.toHaveBeenCalled();
+    expect(mockSetPostAttachments).toHaveBeenCalledWith(mockPostId, []);
+  });
+
+  it('clears the local attachment cache when the local row is gone but sync failed', async () => {
+    mockDelete.mockRejectedValue(new Error('homeserver sync failed'));
+    // Row removed → local write committed → keep removal, clear cache
+    mockGetPostDetails.mockResolvedValue(null);
+
+    const { result } = renderHook(() => useDeletePost());
+
+    await act(async () => {
+      await result.current.deletePost(mockPostId);
+    });
+
+    expect(mockPrependPosts).not.toHaveBeenCalled();
+    expect(mockSetPostAttachments).toHaveBeenCalledWith(mockPostId, []);
+  });
+
+  it('does not clear the local attachment cache when the existence check itself fails', async () => {
+    mockDelete.mockRejectedValue(new Error('Deletion failed'));
+    // Couldn't verify → restore optimistically, keep the cache
+    mockGetPostDetails.mockRejectedValue(new Error('db unavailable'));
+
+    const { result } = renderHook(() => useDeletePost());
+
+    await act(async () => {
+      await result.current.deletePost(mockPostId);
+    });
+
+    expect(mockPrependPosts).toHaveBeenCalledWith(mockPostId);
+    expect(mockSetPostAttachments).not.toHaveBeenCalled();
+  });
+
   it('shows success toast on successful deletion', async () => {
     mockDelete.mockResolvedValue(undefined);
 
@@ -102,7 +180,7 @@ describe('useDeletePost', () => {
       await result.current.deletePost(mockPostId);
     });
 
-    expect(mockToast).toHaveBeenCalledWith({
+    expect(vi.mocked(toast)).toHaveBeenCalledWith({
       title: 'Post deleted',
       dismissButton: true,
     });
@@ -197,7 +275,7 @@ describe('useDeletePost', () => {
       await result.current.deletePost(mockPostId);
     });
 
-    expect(mockToast).toHaveBeenCalledWith({
+    expect(vi.mocked(toast)).toHaveBeenCalledWith({
       variant: 'error',
       description: 'Could not delete post. Try again.',
     });
@@ -256,9 +334,96 @@ describe('useDeletePost', () => {
 
     expect(mockRemovePosts).not.toHaveBeenCalled();
     expect(mockPrependPosts).not.toHaveBeenCalled();
-    expect(mockToast).toHaveBeenCalledWith({
+    expect(vi.mocked(toast)).toHaveBeenCalledWith({
       title: 'Post deleted',
       dismissButton: true,
+    });
+  });
+
+  describe('transactional removal (feeds exposing removePostsOptimistically)', () => {
+    // These feeds route deletes through the commit/rollback transaction so the
+    // skip-stream cursor decrement (owned by useStreamPagination) is applied on
+    // commit. The suite above keeps covering the legacy removePosts fallback.
+    const mockCommit = vi.fn();
+    const mockRollback = vi.fn();
+    const mockRemovePostsOptimistically = vi.fn(() => ({ commit: mockCommit, rollback: mockRollback }));
+    const transactionalFeed = {
+      ...mockTimelineFeed,
+      removePostsOptimistically: mockRemovePostsOptimistically,
+    };
+
+    beforeEach(() => {
+      vi.mocked(useTimelineFeedContext).mockReturnValue(transactionalFeed);
+    });
+
+    it('opens the removal before the delete and commits it on success', async () => {
+      mockDelete.mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => useDeletePost());
+      await act(async () => {
+        await result.current.deletePost(mockPostId);
+      });
+
+      expect(mockRemovePostsOptimistically).toHaveBeenCalledWith(mockPostId);
+      expect(mockRemovePostsOptimistically).toHaveBeenCalledBefore(mockDelete);
+      expect(mockCommit).toHaveBeenCalledTimes(1);
+      expect(mockRollback).not.toHaveBeenCalled();
+      // The transactional path replaces the plain removal entirely.
+      expect(mockRemovePosts).not.toHaveBeenCalled();
+    });
+
+    it('commits the removal when the sync fails but the local row is tombstoned', async () => {
+      mockDelete.mockRejectedValue(new Error('homeserver sync failed'));
+      mockGetPostDetails.mockResolvedValue({ id: mockPostId, content: '[DELETED]' });
+
+      const { result } = renderHook(() => useDeletePost());
+      await act(async () => {
+        await result.current.deletePost(mockPostId);
+      });
+
+      expect(mockCommit).toHaveBeenCalledTimes(1);
+      expect(mockRollback).not.toHaveBeenCalled();
+    });
+
+    it('commits the removal when the sync fails but the local row is gone (hard delete)', async () => {
+      mockDelete.mockRejectedValue(new Error('homeserver sync failed'));
+      mockGetPostDetails.mockResolvedValue(null);
+
+      const { result } = renderHook(() => useDeletePost());
+      await act(async () => {
+        await result.current.deletePost(mockPostId);
+      });
+
+      expect(mockCommit).toHaveBeenCalledTimes(1);
+      expect(mockRollback).not.toHaveBeenCalled();
+    });
+
+    it('rolls back the removal when the sync fails and the local row is still live', async () => {
+      mockDelete.mockRejectedValue(new Error('deletion failed'));
+      mockGetPostDetails.mockResolvedValue({ id: mockPostId, content: 'Test post' });
+
+      const { result } = renderHook(() => useDeletePost());
+      await act(async () => {
+        await result.current.deletePost(mockPostId);
+      });
+
+      expect(mockRollback).toHaveBeenCalledTimes(1);
+      expect(mockCommit).not.toHaveBeenCalled();
+      // Rollback reveals the card in place; no prepend-based restore.
+      expect(mockPrependPosts).not.toHaveBeenCalled();
+    });
+
+    it('rolls back the removal when the local state cannot be verified', async () => {
+      mockDelete.mockRejectedValue(new Error('deletion failed'));
+      mockGetPostDetails.mockRejectedValue(new Error('indexeddb unavailable'));
+
+      const { result } = renderHook(() => useDeletePost());
+      await act(async () => {
+        await result.current.deletePost(mockPostId);
+      });
+
+      expect(mockRollback).toHaveBeenCalledTimes(1);
+      expect(mockCommit).not.toHaveBeenCalled();
     });
   });
 
@@ -278,7 +443,7 @@ describe('useDeletePost', () => {
         await result.current.deletePost(mockPostId);
       });
 
-      expect(mockToast).toHaveBeenCalledWith({
+      expect(vi.mocked(toast)).toHaveBeenCalledWith({
         title: 'Collection deleted',
         dismissButton: true,
       });
@@ -299,7 +464,7 @@ describe('useDeletePost', () => {
         await result.current.deletePost(mockPostId);
       });
 
-      expect(mockToast).toHaveBeenCalledWith({
+      expect(vi.mocked(toast)).toHaveBeenCalledWith({
         variant: 'error',
         description: 'Failed to delete collection. Please try again.',
       });
@@ -318,7 +483,7 @@ describe('useDeletePost', () => {
         await result.current.deletePost(mockPostId);
       });
 
-      expect(mockToast).toHaveBeenCalledWith({
+      expect(vi.mocked(toast)).toHaveBeenCalledWith({
         title: 'Collection deleted',
         dismissButton: true,
       });

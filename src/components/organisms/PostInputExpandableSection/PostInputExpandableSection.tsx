@@ -66,7 +66,6 @@ export function PostInputExpandableSection({
           postButtonAriaLabel={postButtonAriaLabel}
           hideArticleButton={submitMode !== POST_INPUT_VARIANT.POST || !!isArticle || !!lockCard}
           isArticle={isArticle}
-          isEdit={isEdit}
           postButtonIcon={submitIcon ?? IconsButton[submitMode]}
           lockSwitch={lockSwitch}
         />

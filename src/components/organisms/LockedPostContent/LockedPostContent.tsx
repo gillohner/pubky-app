@@ -12,7 +12,7 @@ import { cn } from '@/libs/utils/utils';
 import type { PostDetailsModel } from '@/models/post/details/postDetails';
 import { DialogUnlockContent } from '@/molecules/DialogUnlockContent/DialogUnlockContent';
 import { LockedPostCard } from '@/molecules/LockedPostCard/LockedPostCard';
-import { useToast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type { AttachmentConstructed } from '@/organisms/PostAttachments/PostAttachments.types';
 import { PostArticle } from '../PostArticle/PostArticle';
 import { PostBody } from '../PostBody/PostBody';
@@ -55,7 +55,6 @@ export function LockedPostContent({
       ? { method: 'payment', amountSats: priceSats }
       : { method: 'password' };
   const { unlockedPost, applyUnlockedContent, media, isOwnLock } = useUnlockedContent({ lock, lockFile, authorId });
-  const { toast } = useToast();
 
   if (!lockContent) return null;
 

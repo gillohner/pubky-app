@@ -62,7 +62,7 @@ vi.mock('@/config/network', () => ({
   getLockServer: () => mocks.lockServer,
   getPaykitServerUrl: () => 'https://paykit.server',
 }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: (...args: unknown[]) => mocks.toast(...args) }));
 
 // Minimal specs stand-in: a kind enum (consumed by the real `inferPostKindForCreate`) and a
 // constructor spy so the locked post's content/kind can be asserted.
@@ -107,6 +107,9 @@ vi.mock('@/hooks/usePostInput/usePostInput', async () => {
         setTags,
         attachments,
         setAttachments,
+        existingAttachments: [],
+        removeExistingAttachment: vi.fn(),
+        uploadingCount: 0,
         isArticle,
         setIsArticle,
         handleArticleClick: vi.fn(),

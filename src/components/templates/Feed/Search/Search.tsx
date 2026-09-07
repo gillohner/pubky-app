@@ -1,54 +1,109 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Container } from '@/atoms/Container/Container';
+import { Heading } from '@/atoms/Heading/Heading';
+import { Typography } from '@/atoms/Typography/Typography';
 import { TIMELINE_FEED_VARIANT } from '@/config/feed';
+import { useFeedLayoutResolution } from '@/hooks/useFeedLayoutResolution/useFeedLayoutResolution';
 import { useIsMobile } from '@/hooks/useIsMobile/useIsMobile';
-import { useSearchTags } from '@/hooks/useSearchStreamId/useSearchStreamId';
+import { useSearchCriteria } from '@/hooks/useSearchCriteria/useSearchCriteria';
 import { SearchEmptyState } from '@/molecules/SearchEmptyState/SearchEmptyState';
-import { SearchHeader } from '@/molecules/SearchHeader/SearchHeader';
+import { SearchCollections } from '@/organisms/Collections/SearchCollections/SearchCollections';
+import { SearchContentTags } from '@/organisms/SearchContentTags/SearchContentTags';
 import { SearchInput } from '@/organisms/SearchInput/SearchInput';
+import { SearchPeople } from '@/organisms/SearchPeople/SearchPeople';
 import { TimelineFeed } from '@/organisms/Timeline/Feed/TimelineFeed/TimelineFeed';
+import { useHomeStore } from '@/stores/home/home.store';
+import { CONTENT } from '@/stores/home/home.types';
 
 /**
  * Search Template
  *
- * Template for the Search page that displays posts filtered by tags.
- * Tags are parsed from URL query parameters (?tags=pubky,bitcoin).
+ * Renders results for the URL criteria — a full-text query (?q=bitcoin) wins
+ * over tags (?tags=pubky,bitcoin).
  *
- * Features:
- * - Displays search results when tags are provided
- * - Shows empty state when no tags in URL
- * - Uses TimelineFeed with SEARCH variant for infinite scroll
- * - Shows SearchInput on mobile (hidden on desktop where it's in the header)
+ * Tag search: People and Collections preview sections above the posts feed,
+ * but only in the default view (Content filter = All, no visual layout) —
+ * narrower filters show the bare feed so the Collections content filter isn't
+ * duplicated. Full-text search shows a Tags row instead (prefix matches of the
+ * query terms) as a pivot back to tag search.
  *
- * Rendered as `{children}` inside the shared `(feeds)/layout.tsx`, which hoists
- * the `ContentLayout` shell (sidebars, drawers, right rail) across the feed
- * cluster so it stays mounted across intra-cluster transitions. The shell
- * config for `/search` lives in `app/(feeds)/_shell/configs.tsx`.
+ * An invalid shared `?q=` URL renders an explanation instead of silently
+ * showing nothing; with no criteria at all, the empty state renders.
+ *
+ * Mounted as `{children}` of `(feeds)/layout.tsx`, which keeps the page shell
+ * (sidebars, drawers, right rail) mounted across feed-page navigations. The
+ * shell config for `/search` lives in `app/(feeds)/_shell/configs.tsx`.
  */
 export function Search() {
-  // Get tags from URL query params
-  const tags = useSearchTags();
+  const criteria = useSearchCriteria();
   const isMobile = useIsMobile();
-  const hasTags = tags.length > 0;
+  const content = useHomeStore((state) => state.content);
+  // Same layout resolution the search TimelineFeed uses internally, so the
+  // section gating here can never disagree with what the feed actually renders.
+  const { isVisualActive } = useFeedLayoutResolution(TIMELINE_FEED_VARIANT.SEARCH);
+  const showTagSections = content === CONTENT.ALL && !isVisualActive;
+
+  const feed = (
+    <Container data-cy="post-search-results" overrideDefaults>
+      <TimelineFeed variant={TIMELINE_FEED_VARIANT.SEARCH} />
+    </Container>
+  );
+
+  const renderResults = (): ReactNode => {
+    switch (criteria.mode) {
+      case 'tags':
+        return showTagSections ? (
+          <Container overrideDefaults className="flex w-full flex-col gap-4">
+            <SearchPeople />
+            <SearchCollections />
+            <Container overrideDefaults className="flex w-full flex-col gap-4">
+              <Heading level={2} size="lg" className="font-light text-muted-foreground">
+                {'Posts'}
+              </Heading>
+              {feed}
+            </Container>
+          </Container>
+        ) : (
+          feed
+        );
+      case 'content':
+        return (
+          <Container overrideDefaults className="flex w-full flex-col gap-4">
+            <SearchContentTags />
+            {feed}
+          </Container>
+        );
+      case 'invalid':
+        return (
+          <>
+            <Typography role="alert" data-testid="search-invalid-query" className="text-muted-foreground">
+              {criteria.message}
+            </Typography>
+            <SearchEmptyState />
+          </>
+        );
+      case 'none':
+        return <SearchEmptyState />;
+      default: {
+        const exhaustive: never = criteria;
+        return exhaustive;
+      }
+    }
+  };
 
   return (
     <>
-      {/* Mobile search input - hidden on desktop (shown in header there) */}
+      {/* Mobile-only input — desktop shows it in the header */}
       <Container className="lg:hidden">
-        <SearchInput autoFocus={!hasTags || isMobile} />
+        {/* Autofocus only when empty (or tag mode on mobile): focus opens the
+            suggestions dropdown, which would cover results — or, in invalid
+            mode, the alert explaining why there are none. */}
+        <SearchInput autoFocus={criteria.mode === 'none' || (isMobile && criteria.mode === 'tags')} />
       </Container>
 
-      {hasTags ? (
-        <>
-          <SearchHeader tags={tags} />
-          <Container data-cy="post-search-results" overrideDefaults>
-            <TimelineFeed variant={TIMELINE_FEED_VARIANT.SEARCH} />
-          </Container>
-        </>
-      ) : (
-        <SearchEmptyState />
-      )}
+      {renderResults()}
     </>
   );
 }

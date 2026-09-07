@@ -98,11 +98,9 @@ describe('Home', () => {
     expect(screen.getByTestId('alert-backup')).toBeInTheDocument();
   });
 
-  it('renders FeedNavigation in main content with hidden lg:flex class', () => {
+  it('renders FeedNavigation in main content', () => {
     render(<Home />);
-    const feedNavs = screen.getAllByTestId('feed-navigation');
-    const mainFeedNav = feedNavs.find((el) => el.getAttribute('data-classname') === 'hidden lg:flex');
-    expect(mainFeedNav).toBeInTheDocument();
+    expect(screen.getByTestId('feed-navigation')).toBeInTheDocument();
   });
 
   it('renders TimelineFeed with HOME variant', () => {
