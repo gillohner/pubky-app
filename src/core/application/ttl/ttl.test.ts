@@ -102,12 +102,16 @@ describe('TtlApplication', () => {
       await TtlApplication.forceRefreshPostsByIds({ postIds, viewerId });
 
       expect(queryNexusSpy).toHaveBeenCalledWith({
+        force: true,
         url: '/stream/posts/by_ids',
         method: 'POST',
         body: JSON.stringify({ post_ids: postIds, viewer_id: viewerId }),
       });
       // persistPosts handles TTL updates internally
-      expect(persistPostsSpy).toHaveBeenCalledWith({ posts: nexusPosts });
+      expect(persistPostsSpy).toHaveBeenCalledWith({
+        posts: nexusPosts,
+        tagGuard: expect.objectContaining({ revisions: expect.any(Map) }),
+      });
       expect(persistFilesSpy).toHaveBeenCalledWith([]);
     });
 
@@ -290,7 +294,7 @@ describe('TtlApplication', () => {
       await TtlApplication.forceRefreshUsersByIds({ userIds });
 
       // persistUsers handles TTL updates internally
-      expect(persistUsersSpy).toHaveBeenCalledWith(nexusUsers);
+      expect(persistUsersSpy).toHaveBeenCalledWith(nexusUsers, expect.objectContaining({ revisions: expect.any(Map) }));
     });
 
     it('does not persist when fetch fails', async () => {

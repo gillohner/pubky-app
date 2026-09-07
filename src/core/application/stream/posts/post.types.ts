@@ -49,6 +49,8 @@ export interface TPartialCacheHitParams {
 }
 
 export interface TMissingPostsParams {
+  force?: boolean;
+  isCurrent?: () => boolean;
   cacheMissPostIds: string[];
   /** Optional viewer ID for relationship data. Null/undefined for unauthenticated views. */
   viewerId?: Pubky | null;
@@ -61,6 +63,7 @@ export interface TCacheStreamParams {
 }
 
 export interface TFetchMissingUsersParams {
+  isCurrent?: () => boolean;
   posts: NexusPost[];
   /** Optional viewer ID for relationship data. Null/undefined for unauthenticated views. */
   viewerId?: Pubky | null;

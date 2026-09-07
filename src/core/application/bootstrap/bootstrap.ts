@@ -78,8 +78,8 @@ export class BootstrapApplication {
         lastRead: userLastRead,
         allowedTypes: params.allowedTypes,
       }),
-      LocalStreamUsersService.persistUsers(bootstrapData.users),
-      LocalStreamPostsService.persistPosts({ posts: bootstrapData.posts }),
+      LocalStreamUsersService.persistUsers(bootstrapData.users, { revisions: new Map() }),
+      LocalStreamPostsService.persistPosts({ posts: bootstrapData.posts, tagGuard: { revisions: new Map() } }),
       LocalStreamPostsService.upsert({
         streamId: PostStreamTypes.TIMELINE_ALL_ALL,
         stream: bootstrapData.ids.stream,

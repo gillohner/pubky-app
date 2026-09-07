@@ -10,6 +10,7 @@ import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import type { TCacheUserStreamParams } from '@/services/local/stream/users/users.types';
+import { LocalTagCacheService } from '@/services/local/tag/tag-cache';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 
 /**
@@ -92,17 +93,25 @@ export class UserStreamApplication {
    * @param cacheMissUserIds - Array of user IDs that need to be fetched
    * @param viewerId - Optional viewer ID for relationship data
    */
-  static async fetchMissingUsersFromNexus({ cacheMissUserIds, viewerId }: TMissingUsersParams): Promise<void> {
+  static async fetchMissingUsersFromNexus({
+    cacheMissUserIds,
+    viewerId,
+    isCurrent,
+    force,
+  }: TMissingUsersParams): Promise<void> {
     if (cacheMissUserIds.length === 0) {
       return;
     }
 
     try {
+      if (isCurrent && !isCurrent()) return;
+      const revisions = await LocalTagCacheService.captureRevisions('user', cacheMissUserIds);
       const userBatch = await NexusUserStreamService.fetchByIds({
         user_ids: cacheMissUserIds,
+        force,
         viewer_id: viewerId,
       });
-      await LocalStreamUsersService.persistUsers(userBatch);
+      await LocalStreamUsersService.persistUsers(userBatch, { revisions, isCurrent });
     } catch (error) {
       Logger.warn('Failed to fetch missing users from Nexus:', { error });
     }

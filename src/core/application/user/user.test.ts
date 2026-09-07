@@ -835,7 +835,7 @@ describe('UserApplication.getOrFetch', () => {
     expect(result).toEqual(mockUserDetails);
     expect(localSpy).toHaveBeenCalledTimes(2);
     expect(fetchByIdsSpy).toHaveBeenCalledWith({ user_ids: [userId] });
-    expect(persistSpy).toHaveBeenCalledWith([mockNexusUser]);
+    expect(persistSpy).toHaveBeenCalledWith([mockNexusUser], expect.objectContaining({ revisions: expect.any(Map) }));
   });
 
   it('should return null when Nexus returns empty array (user not indexed)', async () => {
@@ -938,7 +938,7 @@ describe('UserApplication.fetch', () => {
 
     expect(result).toEqual(mockUserDetails);
     expect(fetchByIdsSpy).toHaveBeenCalledWith({ user_ids: [userId] });
-    expect(persistSpy).toHaveBeenCalledWith([mockNexusUser]);
+    expect(persistSpy).toHaveBeenCalledWith([mockNexusUser], expect.objectContaining({ revisions: expect.any(Map) }));
     expect(localSpy).toHaveBeenCalledTimes(1);
     expect(localSpy).toHaveBeenCalledWith({ userId });
   });

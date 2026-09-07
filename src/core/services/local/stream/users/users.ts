@@ -9,9 +9,9 @@ import { UserCountsModel } from '@/models/user/counts/userCounts';
 import { UserDetailsModel } from '@/models/user/details/userDetails';
 import type { UserDetailsModelSchema } from '@/models/user/details/userDetails.schema';
 import { UserRelationshipsModel } from '@/models/user/relationships/userRelationships';
-import { UserTagsModel } from '@/models/user/tags/userTags';
 import { UserTtlModel } from '@/models/user/ttl/userTtl';
 import type { TUserStreamUpsertParams } from '@/services/local/stream/users/users.types';
+import { LocalTagCacheService, type TagPreviewGuard } from '@/services/local/tag/tag-cache';
 import type { NexusTag, NexusUser, NexusUserCounts, NexusUserRelationship } from '@/services/nexus/nexus.types';
 
 /**
@@ -89,7 +89,8 @@ export class LocalStreamUsersService {
    * @param users - Array of users from Nexus API
    * @returns Array of user IDs (Pubky)
    */
-  static async persistUsers(users: NexusUser[]): Promise<Pubky[]> {
+  static async persistUsers(users: NexusUser[], tagGuard: TagPreviewGuard = {}): Promise<Pubky[]> {
+    if (tagGuard.isCurrent && !tagGuard.isCurrent()) return [];
     const userCounts: NexusModelTuple<NexusUserCounts>[] = [];
     const userRelationships: NexusModelTuple<NexusUserRelationship>[] = [];
     const userTags: NexusModelTuple<NexusTag[]>[] = [];
@@ -125,7 +126,7 @@ export class LocalStreamUsersService {
     await Promise.all([
       UserDetailsModel.bulkSave(userDetails),
       UserCountsModel.bulkSave(userCounts),
-      UserTagsModel.bulkSave(userTags),
+      LocalTagCacheService.savePreviews('user', userTags, tagGuard),
       UserRelationshipsModel.bulkSave(userRelationships),
       UserTtlModel.bulkSave(userTtl),
       // Persist moderation records for flagged profiles

@@ -1509,7 +1509,10 @@ describe('PostStreamApplication', () => {
         post_ids: cacheMissPostIds,
         viewer_id: viewerId,
       });
-      expect(mocks.persistPosts).toHaveBeenCalledWith({ posts: mockNexusPosts });
+      expect(mocks.persistPosts).toHaveBeenCalledWith({
+        posts: mockNexusPosts,
+        tagGuard: expect.objectContaining({ revisions: expect.any(Map) }),
+      });
       expect(mocks.persistFiles).toHaveBeenCalledWith([]);
       expect(hydrated).toBe(true);
     });
@@ -1550,7 +1553,10 @@ describe('PostStreamApplication', () => {
         user_ids: [DEFAULT_AUTHOR],
         viewer_id: viewerId,
       });
-      expect(persistUsersSpy).toHaveBeenCalledWith(mockNexusUsers);
+      expect(persistUsersSpy).toHaveBeenCalledWith(
+        mockNexusUsers,
+        expect.objectContaining({ revisions: expect.any(Map) }),
+      );
     });
 
     it('should handle when userBatch is null/undefined', async () => {
@@ -1568,7 +1574,7 @@ describe('PostStreamApplication', () => {
         viewerId,
       });
 
-      expect(persistUsersSpy).toHaveBeenCalledWith(undefined);
+      expect(persistUsersSpy).toHaveBeenCalledWith(undefined, expect.objectContaining({ revisions: expect.any(Map) }));
     });
 
     it('should not fetch users when all users are already cached', async () => {
@@ -1602,7 +1608,10 @@ describe('PostStreamApplication', () => {
         post_ids: [],
         viewer_id: viewerId,
       });
-      expect(mocks.persistPosts).toHaveBeenCalledWith({ posts: [] });
+      expect(mocks.persistPosts).toHaveBeenCalledWith({
+        posts: [],
+        tagGuard: expect.objectContaining({ revisions: expect.any(Map) }),
+      });
     });
 
     it('should handle when postBatch is empty array', async () => {
@@ -1616,7 +1625,10 @@ describe('PostStreamApplication', () => {
         viewerId,
       });
 
-      expect(mocks.persistPosts).toHaveBeenCalledWith({ posts: [] });
+      expect(mocks.persistPosts).toHaveBeenCalledWith({
+        posts: [],
+        tagGuard: expect.objectContaining({ revisions: expect.any(Map) }),
+      });
     });
 
     it('should handle when userBatch is empty array', async () => {
@@ -1634,7 +1646,7 @@ describe('PostStreamApplication', () => {
         viewerId,
       });
 
-      expect(persistUsersSpy).toHaveBeenCalledWith([]);
+      expect(persistUsersSpy).toHaveBeenCalledWith([], expect.objectContaining({ revisions: expect.any(Map) }));
     });
 
     it('should handle error gracefully when NexusPostStreamService.fetchByIds fails', async () => {
@@ -1794,7 +1806,10 @@ describe('PostStreamApplication', () => {
       });
 
       expect(fetchUsersByIdsSpy).toHaveBeenCalled();
-      expect(persistUsersSpy).toHaveBeenCalledWith(mockNexusUsers);
+      expect(persistUsersSpy).toHaveBeenCalledWith(
+        mockNexusUsers,
+        expect.objectContaining({ revisions: expect.any(Map) }),
+      );
     });
 
     it('should handle when getNotPersistedUsersInCache returns partial users', async () => {
@@ -1821,7 +1836,10 @@ describe('PostStreamApplication', () => {
         user_ids: ['author-2'],
         viewer_id: viewerId,
       });
-      expect(persistUsersSpy).toHaveBeenCalledWith(mockNexusUsers);
+      expect(persistUsersSpy).toHaveBeenCalledWith(
+        mockNexusUsers,
+        expect.objectContaining({ revisions: expect.any(Map) }),
+      );
     });
 
     it('should handle error gracefully when getNotPersistedUsersInCache fails', async () => {

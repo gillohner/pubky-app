@@ -25,6 +25,9 @@ const mockMocks = vi.hoisted(() => {
 });
 
 // Mock dependencies
+vi.mock('@/controllers/tag/tag-cache', () => ({
+  TagCacheController: { get: vi.fn(), getOrFetch: mockMocks.mockFetchTags, fetchNext: vi.fn() },
+}));
 vi.mock('@/controllers/user/user', () => ({
   UserController: {
     getTags: mockMocks.mockGetTags,
@@ -68,7 +71,7 @@ let mockLocalTags: NexusTag[] | null = null;
 const mockUseLiveQuery = vi.fn(<T,>(queryFn: () => Promise<T> | T, deps: unknown[], defaultValue: T): T => {
   // For getTags query
   if (deps && deps[0] && typeof deps[0] === 'string') {
-    return (mockLocalTags !== null ? mockLocalTags : defaultValue) as T;
+    return (mockLocalTags !== null ? { tags: mockLocalTags } : defaultValue) as T;
   }
   // For getCounts query (from useProfileStats)
   return defaultValue;
@@ -125,7 +128,7 @@ describe('useTagged', () => {
     expect(typeof result.current.loadMore).toBe('function');
   });
 
-  it('calls UserController.fetchTags with correct params', async () => {
+  it('requests local-first initialization with the correct viewer', async () => {
     renderHook(() => useTagged(mockUserId));
 
     await waitFor(() => {
@@ -133,10 +136,9 @@ describe('useTagged', () => {
     });
 
     expect(mockMocks.mockFetchTags).toHaveBeenCalledWith({
-      user_id: mockUserId,
-      viewer_id: 'mock-current-user',
-      limit_tags: 20,
-      skip_tags: 0,
+      kind: 'user',
+      id: mockUserId,
+      viewerId: 'mock-current-user',
     });
   });
 
@@ -365,10 +367,10 @@ describe('useTagged', () => {
       expect(result.current.hasMore).toBe(false);
     });
 
-    it('sets hasMore to false when less than TAGS_PER_PAGE tags are loaded', async () => {
-      // User has 10 unique tags (less than TAGS_PER_PAGE of 20)
+    it('allows pagination when less than a full page is cached', async () => {
+      // Only 10 of 30 tags are cached.
       mockUseProfileStats.mockReturnValue({
-        stats: { uniqueTags: 10, posts: 0, replies: 0, followers: 0, following: 0, friends: 0, notifications: 0 },
+        stats: { uniqueTags: 30, posts: 0, replies: 0, followers: 0, following: 0, friends: 0, notifications: 0 },
         isLoading: false,
       });
 
@@ -385,8 +387,8 @@ describe('useTagged', () => {
         expect(result.current.isLoading).toBe(false);
       });
 
-      // All tags are loaded, hasMore should be false
-      expect(result.current.hasMore).toBe(false);
+      // The remaining tags are reachable even from a partial preview.
+      expect(result.current.hasMore).toBe(true);
     });
   });
 });

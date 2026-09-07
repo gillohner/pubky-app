@@ -234,3 +234,21 @@ When adding controller methods:
 - [ ] Is UI updated immediately (optimistic)?
 - [ ] Does background sync handle failures gracefully?
 - [ ] Is `useLiveQuery` used only for local reads?
+
+## Tag previews, pagination, and freshness
+
+Tag hooks observe IndexedDB through `TagCacheController`. Mount calls `getOrFetch` to fill a missing collection only; a persisted empty collection is a cache hit. Locally created collections carry `cache.initialized = false` until their first server response. Existing records without the optional metadata remain readable without a database reset or version change.
+
+The tag collection stores the server cursor independently of displayed tags. Optimistic additions, removals and zero-tagger UI placeholders must not change the next server offset. Pagination works from batch previews (normally five tags), deduplicates in-flight loads, and records a short/empty page as exhausted. Post pages remain three tags and profile pages twenty.
+
+Batch hydration cannot replace an expanded window with a shorter preview. It retains that window until `TtlApplication` refreshes the loaded prefix through the tag endpoint, in requests of at most 100 tags. Replacement removes deleted server labels. Failed refreshes retain visible data, and the tag window's own freshness timestamp keeps it eligible for retry even when details/counts have refreshed. Loading another page does not renew the age of earlier pages.
+
+Post and profile writes persist temporary mutation intent in the same IndexedDB transaction as the tag change. Both preview and paginated persistence reconcile that intent against delayed Nexus responses. The existing five-minute mutation protection period is preserved; it is not a guarantee of immediate Nexus indexing. Post counters change by a delta, never by recounting a partial preview. Request revisions prevent an older page from replacing a newer server window. Controller session guards reject page/TTL responses after account replacement.
+
+Tag notifications refresh their affected entities and tag windows once per notification batch. Forced tag refresh bypasses the Nexus query client's short transport cache. They do not depend on remounting a card.
+
+TTL refresh covers visible Visual feed tiles, profile headers, and the Tagged panel (including its mobile/empty state). Public data can refresh without authentication; unrelated authenticated coordinators keep their existing rules. Both post and user subscriptions are reference counted and remain registered across route changes while their owning components remain visible. See [ADR 0012](adr/0012-ttl-coordinator.md).
+
+Batch tag writes capture cache revisions before the network request and compare them within the write transaction. Superseded previews cannot overwrite a newer page or renew its freshness. A forced refresh superseded by notification invalidation retries through the same shared request; retries are bounded and leave the cache invalidated for TTL if contention continues. Notification hydration and writes retain the session captured by their controller.
+
+Reply streams hydrate missing posts before publishing new reply IDs to live queries. This prevents cards mounting during grouped hydration from issuing individual post/tag requests. Cached and optimistic replies remain observable immediately.

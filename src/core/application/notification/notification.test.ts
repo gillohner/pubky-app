@@ -607,6 +607,7 @@ describe('NotificationApplication.fetchMissingEntities', () => {
 
     // CRITICAL: viewerId must be passed to get correct relationship data
     expect(fetchUsersSpy).toHaveBeenCalledWith({
+      force: true,
       cacheMissUserIds: [relatedUserId],
       viewerId, // This was missing before the fix!
     });
@@ -628,6 +629,7 @@ describe('NotificationApplication.fetchMissingEntities', () => {
     await NotificationApplication.fetchMissingEntities({ notifications, viewerId });
 
     expect(fetchPostsSpy).toHaveBeenCalledWith({
+      force: true,
       cacheMissPostIds: [relatedPostId],
       viewerId,
     });
@@ -680,6 +682,7 @@ describe('NotificationApplication.fetchMissingEntities', () => {
     await NotificationApplication.fetchMissingEntities({ notifications, viewerId });
 
     expect(fetchPostsSpy).toHaveBeenCalledWith({
+      force: true,
       cacheMissPostIds: ['author:edited-post'],
       viewerId,
     });

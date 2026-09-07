@@ -88,6 +88,8 @@ export interface TtlCoordinatorState {
    * Set of subscribed post composite IDs (authorPubky:postId)
    */
   subscribedPosts: Set<string>;
+  /** Number of visible instances of a post (including multiple visual tiles). */
+  postRefCount: Map<string, number>;
 
   /**
    * Set of subscribed user IDs (pubky)

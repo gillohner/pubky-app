@@ -9,6 +9,7 @@ import { UserRelationshipsModel } from '@/models/user/relationships/userRelation
 import type { UserRelationshipsModelSchema } from '@/models/user/relationships/userRelationships.schema';
 import { UserTagsModel } from '@/models/user/tags/userTags';
 import { UserTtlModel } from '@/models/user/ttl/userTtl';
+import { LocalTagCacheService, type TagPreviewGuard } from '@/services/local/tag/tag-cache';
 import type { NexusTag, NexusUserCounts, NexusUserDetails, NexusUserRelationship } from '@/services/nexus/nexus.types';
 
 export class LocalUserService {
@@ -162,8 +163,8 @@ export class LocalUserService {
    * @param tags - The user tags to upsert
    * @returns Promise resolving to void
    */
-  static async upsertTags(userId: Pubky, tags: NexusTag[]): Promise<void> {
-    await UserTagsModel.upsert({ id: userId, tags });
+  static async upsertTags(userId: Pubky, tags: NexusTag[], tagGuard?: TagPreviewGuard): Promise<void> {
+    await LocalTagCacheService.savePreviews('user', [[userId, tags]], tagGuard);
   }
 
   /**

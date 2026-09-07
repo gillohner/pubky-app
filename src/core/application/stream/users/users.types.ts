@@ -49,6 +49,8 @@ export type TUserStreamChunkResponse = {
  * Parameters for fetching missing users
  */
 export type TMissingUsersParams = {
+  force?: boolean;
+  isCurrent?: () => boolean;
   cacheMissUserIds: Pubky[];
   viewerId?: Pubky;
 };

@@ -1,4 +1,5 @@
 import { TtlApplication } from '@/application/ttl/ttl';
+import { captureViewerSession } from '@/controllers/tag/tag-cache.utils';
 import type { Pubky } from '@/models/models.types';
 
 export class TtlController {
@@ -12,11 +13,19 @@ export class TtlController {
     return await TtlApplication.findStaleUsersByIds(params);
   }
 
-  static async forceRefreshPostsByIds(params: { postIds: string[]; viewerId: Pubky }): Promise<void> {
-    return await TtlApplication.forceRefreshPostsByIds(params);
+  static async forceRefreshPostsByIds(params: {
+    postIds: string[];
+    viewerId?: Pubky;
+    isCurrent?: () => boolean;
+  }): Promise<void> {
+    return await TtlApplication.forceRefreshPostsByIds({ ...params, isCurrent: captureViewerSession() });
   }
 
-  static async forceRefreshUsersByIds(params: { userIds: Pubky[]; viewerId?: Pubky }): Promise<void> {
-    return await TtlApplication.forceRefreshUsersByIds(params);
+  static async forceRefreshUsersByIds(params: {
+    userIds: Pubky[];
+    viewerId?: Pubky;
+    isCurrent?: () => boolean;
+  }): Promise<void> {
+    return await TtlApplication.forceRefreshUsersByIds({ ...params, isCurrent: captureViewerSession() });
   }
 }

@@ -1,4 +1,5 @@
 import { Table } from 'dexie';
+import { MARKER_TTL_MS } from '@/config/viewerTagMarker';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -12,10 +13,21 @@ import type { NexusTag } from '@/services/nexus/nexus.types';
 export abstract class TagCollection<Id, Schema extends TagCollectionModelSchema<Id>> extends ModelBase<Id, Schema> {
   // TODO: Consider adding multiEntry index on tag labels and if so, update Schema to use it
   tags: TagModel[];
+  cache?: TagCollectionModelSchema<Id>['cache'];
+  mutations?: TagCollectionModelSchema<Id>['mutations'];
 
   constructor(data: Schema) {
     super(data);
     this.tags = data.tags.map((t) => new TagModel(t));
+    this.cache = data.cache;
+    this.mutations = data.mutations;
+  }
+
+  recordMutation(label: string, viewerId: string, relationship: boolean) {
+    this.mutations = {
+      ...this.mutations,
+      [label.toLowerCase()]: { viewerId, relationship, expiresAt: Date.now() + MARKER_TTL_MS },
+    };
   }
 
   // -------- Instance helpers (shared) --------
@@ -99,6 +111,10 @@ export abstract class TagCollection<Id, Schema extends TagCollectionModelSchema<
     if (tagsData) {
       return tagsData;
     }
-    return new this({ id, tags: [] } as unknown as TSchema);
+    return new this({
+      id,
+      tags: [],
+      cache: { cursor: 0, exhausted: false, fetchedAt: 0, revision: 0, initialized: false },
+    } as unknown as TSchema);
   }
 }

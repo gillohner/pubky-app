@@ -2,6 +2,7 @@ import { db } from '@/database/franky/franky';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { isAppError } from '@/libs/error/error.utils';
 import type { Pubky } from '@/models/models.types';
 import { UserCountsModel } from '@/models/user/counts/userCounts';
 import { UserTagsModel, type UserTagsModelSchema } from '@/models/user/tags/userTags';
@@ -22,6 +23,7 @@ export class LocalUserTagService {
         if (tagExists === null) {
           return false;
         }
+        userTagsModel.recordMutation(label, taggerId, true);
         await Promise.all([
           this.saveUserTagsModel(taggedId, userTagsModel),
           UserCountsModel.updateCounts({ userId: taggerId, countChanges: { tagged: 1 } }),
@@ -40,6 +42,7 @@ export class LocalUserTagService {
       }
       return didCreate;
     } catch (error) {
+      if (isAppError(error)) throw error;
       throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to create user tag', {
         service: ErrorService.Local,
         operation: 'create',
@@ -60,19 +63,13 @@ export class LocalUserTagService {
    * @throws {AppError} When database operations fail
    */
   static async delete({ taggerId, taggedId, label }: TLocalTagParams): Promise<boolean> {
-    // Check if user has tags before starting transaction
-    const userTagsModel = await UserTagsModel.findById(taggedId);
-    if (!userTagsModel) {
-      return false; // Nothing to delete
-    }
-
-    const lastTaggerOnTag = userTagsModel.removeTagger(label, taggerId);
-    if (lastTaggerOnTag === null) {
-      return false; // User hasn't tagged this user with this label
-    }
-
     try {
-      await db.transaction('rw', this.TAG_TABLES, async () => {
+      const deleted = await db.transaction('rw', this.TAG_TABLES, async () => {
+        const userTagsModel = await UserTagsModel.findById(taggedId);
+        if (!userTagsModel) return false;
+        const lastTaggerOnTag = userTagsModel.removeTagger(label, taggerId);
+        if (lastTaggerOnTag === null) return false;
+        userTagsModel.recordMutation(label, taggerId, false);
         await Promise.all([
           this.saveUserTagsModel(taggedId, userTagsModel),
           UserCountsModel.updateCounts({ userId: taggerId, countChanges: { tagged: -1 } }),
@@ -81,12 +78,15 @@ export class LocalUserTagService {
             countChanges: { tags: -1, unique_tags: lastTaggerOnTag ? -1 : undefined },
           }),
         ]);
+        return true;
       });
+      if (!deleted) return false;
       // Profile tags define wot_domain (Tagged as) membership. Defer cache
       // invalidation to each domain stream's next initial load (#2302).
       postStreamDirtyRegistry.markDirty('profile_tag');
       return true;
     } catch (error) {
+      if (isAppError(error)) throw error;
       throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to delete user tag', {
         service: ErrorService.Local,
         operation: 'delete',
@@ -107,6 +107,8 @@ export class LocalUserTagService {
     await UserTagsModel.upsert({
       id: userId,
       tags: userTagsModel.tags as NexusTag[],
+      cache: userTagsModel.cache,
+      mutations: userTagsModel.mutations,
     });
   }
 

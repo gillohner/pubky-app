@@ -42,6 +42,8 @@ export type TFetchNexusParams = {
  * @see queryNexus in nexus.utils.ts
  */
 export type TQueryNexusParams = {
+  /** Revalidate even while the transport cache is fresh (TTL/notification refresh). */
+  force?: boolean;
   /** Full API endpoint URL */
   url: string;
   /** HTTP method (defaults to GET) */

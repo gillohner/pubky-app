@@ -3,6 +3,17 @@ import type { NexusTag } from '@/services/nexus/nexus.types';
 export interface TagCollectionModelSchema<Id> {
   id: Id;
   tags: NexusTag[];
+  /** Server pagination is independent of optimistic additions/removals. Optional for legacy records. */
+  cache?: {
+    cursor: number;
+    exhausted: boolean;
+    fetchedAt: number;
+    revision: number;
+    initialized?: boolean;
+    viewerId?: string | null;
+  };
+  /** Local intent survives delayed Nexus responses, independently of server pagination. */
+  mutations?: Record<string, { viewerId: string; relationship: boolean; expiresAt: number }>;
 }
 
 // Keep only the primary key index. Tag arrays are read/updated by id.

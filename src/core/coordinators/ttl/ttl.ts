@@ -62,6 +62,7 @@ export class TtlCoordinator {
     subscribedPosts: new Set(),
     subscribedUsers: new Set(),
     userRefCount: new Map(),
+    postRefCount: new Map(),
     postBatchQueue: new Set(),
     userBatchQueue: new Set(),
   };
@@ -126,31 +127,25 @@ export class TtlCoordinator {
 
   /**
    * Set the current route
-   * Triggers reset when route changes to clear stale subscriptions
+   * Viewport subscriptions survive navigation until their owning component leaves.
    */
   public setRoute(route: string): void {
     if (this.state.currentRoute === route) {
       return;
     }
 
-    const previousRoute = this.updateRoute(route);
-
-    // Reset subscriptions on route change (skip initial mount)
-    if (previousRoute !== '') {
-      this.reset();
-      Logger.debug('TtlCoordinator reset on route change', { from: previousRoute, to: route });
-    }
+    this.updateRoute(route);
+    // Mounted viewport subscribers own their lifetime. Persistent layouts and
+    // overlapping route transitions must not lose freshness on navigation.
   }
 
   /**
    * Subscribe to a post's TTL tracking
    */
   public subscribePost({ compositePostId }: TtlSubscribePostParams): void {
-    // Idempotent: don't double-subscribe
-    if (this.hasPostSubscription(compositePostId)) {
-      Logger.debug('TtlCoordinator: Post already subscribed (skip)', { compositePostId });
-      return;
-    }
+    const count = this.state.postRefCount.get(compositePostId) ?? 0;
+    this.state.postRefCount.set(compositePostId, count + 1);
+    if (count > 0) return;
 
     this.addPostSubscription(compositePostId);
     Logger.debug('TtlCoordinator: Post subscribed', {
@@ -172,6 +167,12 @@ export class TtlCoordinator {
       return;
     }
 
+    const count = this.state.postRefCount.get(compositePostId) ?? 0;
+    if (count > 1) {
+      this.state.postRefCount.set(compositePostId, count - 1);
+      return;
+    }
+    this.state.postRefCount.delete(compositePostId);
     this.removePostSubscription(compositePostId);
     Logger.debug('TtlCoordinator: Post unsubscribed', {
       compositePostId,
@@ -237,20 +238,11 @@ export class TtlCoordinator {
   private setupListeners(): void {
     // Listen to auth store changes
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      const isAuthenticated = state.selectIsAuthenticated();
-      const wasAuthenticated = prevState.selectIsAuthenticated();
-
-      if (isAuthenticated !== wasAuthenticated) {
-        Logger.debug('TtlCoordinator: Auth state changed', { isAuthenticated });
-
-        if (!isAuthenticated) {
-          // User logged out - stop and reset
-          this.stopTicking();
-          this.reset();
-        } else {
-          // User logged in - start if coordinator is started
-          this.evaluateAndStartTicking();
-        }
+      if (state.currentUserPubky !== prevState.currentUserPubky || state.session !== prevState.session) {
+        this.stopTicking();
+        this.state.postBatchQueue.clear();
+        this.state.userBatchQueue.clear();
+        this.evaluateAndStartTicking();
       }
     });
 
@@ -309,12 +301,6 @@ export class TtlCoordinator {
   private shouldTick(): boolean {
     // Must be manually started
     if (!this.state.isStarted) {
-      return false;
-    }
-
-    // Must be authenticated
-    const authState = useAuthStore.getState();
-    if (!authState.selectIsAuthenticated() || !authState.hasProfile) {
       return false;
     }
 
@@ -388,12 +374,13 @@ export class TtlCoordinator {
 
   /**
    * Reset all subscription state
-   * Called on route change and logout
+   * Called when the coordinator stops
    */
   private reset(): void {
     this.state.subscribedPosts.clear();
     this.state.subscribedUsers.clear();
     this.state.userRefCount.clear();
+    this.state.postRefCount.clear();
     this.state.postBatchQueue.clear();
     this.state.userBatchQueue.clear();
   }
@@ -494,9 +481,10 @@ export class TtlCoordinator {
       batchQueue: this.state.postBatchQueue,
       ttlMs: this.config.postTtlMs,
       maxBatchSize: this.config.postMaxBatchSize,
-      requiresViewerId: true,
+      requiresViewerId: false,
       findStaleByIds: (ids) => TtlController.findStalePostsByIds({ postIds: ids, ttlMs: this.config.postTtlMs }),
-      forceRefresh: (ids, viewerId) => TtlController.forceRefreshPostsByIds({ postIds: ids, viewerId: viewerId! }),
+      forceRefresh: (ids, viewerId) =>
+        TtlController.forceRefreshPostsByIds({ postIds: ids, viewerId: viewerId ?? undefined }),
     };
   }
 
@@ -615,14 +603,7 @@ export class TtlCoordinator {
    * Checks all subscriptions for staleness and fires batch refreshes
    */
   private async onBatchTick(): Promise<void> {
-    // Skip if not authenticated
-    const authState = useAuthStore.getState();
-    if (!authState.selectIsAuthenticated()) {
-      Logger.debug('TtlCoordinator: Batch tick skipped (not authenticated)');
-      return;
-    }
-
-    const viewerId = authState.currentUserPubky;
+    const { currentUserPubky: viewerId, session } = useAuthStore.getState();
     const postOps = this.getPostOps();
     const userOps = this.getUserOps();
 
@@ -640,6 +621,9 @@ export class TtlCoordinator {
       postBatchQueue: this.state.postBatchQueue.size,
       userBatchQueue: this.state.userBatchQueue.size,
     });
+
+    const current = useAuthStore.getState();
+    if (current.currentUserPubky !== viewerId || current.session !== session) return;
 
     // Fire batch refreshes (parallel)
     await Promise.all([this.refreshStaleEntities(postOps, viewerId), this.refreshStaleEntities(userOps, viewerId)]);

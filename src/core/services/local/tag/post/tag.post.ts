@@ -2,8 +2,8 @@ import { db } from '@/database/franky/franky';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { isAppError } from '@/libs/error/error.utils';
 import { HttpMethod } from '@/libs/http/http.types';
-import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { PostCountsModel } from '@/models/post/counts/postCounts';
 import { PostTagsModel, type PostTagsModelSchema } from '@/models/post/tags/postTags';
@@ -50,15 +50,20 @@ export class LocalPostTagService {
         if (status === null) {
           return false;
         }
+        postTagsModel.recordMutation(label, taggerId, true);
         await Promise.all([
           this.savePostTagsModel(postId, postTagsModel),
-          this.updatePostCounts(postId, postTagsModel),
+          PostCountsModel.updateCounts({
+            postCompositeId: postId,
+            countChanges: { tags: 1, unique_tags: !status ? 1 : undefined },
+          }),
           UserCountsModel.updateCounts({ userId: taggerId, countChanges: { tagged: 1 } }),
           PostTtlModel.upsert({ id: postId, lastUpdatedAt: Date.now() }),
         ]);
         return true;
       });
     } catch (error) {
+      if (isAppError(error)) throw error;
       throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to create post tag', {
         service: ErrorService.Local,
         operation: 'create',
@@ -93,26 +98,25 @@ export class LocalPostTagService {
    * @throws {DatabaseError} When database operations fail
    */
   static async delete({ taggedId: postId, label, taggerId }: TLocalTagParams): Promise<boolean> {
-    // Check if post has tags before starting transaction
-    const tagsData = await PostTagsModel.findById(postId);
-    if (!tagsData) {
-      return false; // Nothing to delete
-    }
-
-    const postTagsModel = new PostTagsModel(tagsData);
-    const status = postTagsModel.removeTagger(label, taggerId);
-    if (status === null) {
-      return false; // User hasn't tagged this post with this label
-    }
-
+    let deleted: boolean;
     try {
-      await db.transaction('rw', this.TAG_TABLES, async () => {
+      deleted = await db.transaction('rw', this.TAG_TABLES, async () => {
+        const postTagsModel = await PostTagsModel.findById(postId);
+        if (!postTagsModel) return false;
+        const status = postTagsModel.removeTagger(label, taggerId);
+        if (status === null) return false;
+        postTagsModel.recordMutation(label, taggerId, false);
         await this.savePostTagsModel(postId, postTagsModel);
-        await this.updatePostCounts(postId, postTagsModel);
+        await PostCountsModel.updateCounts({
+          postCompositeId: postId,
+          countChanges: { tags: -1, unique_tags: status ? -1 : undefined },
+        });
         await UserCountsModel.updateCounts({ userId: taggerId, countChanges: { tagged: -1 } });
         await PostTtlModel.upsert({ id: postId, lastUpdatedAt: Date.now() });
+        return true;
       });
     } catch (error) {
+      if (isAppError(error)) throw error;
       throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to delete post tag', {
         service: ErrorService.Local,
         operation: 'delete',
@@ -120,6 +124,7 @@ export class LocalPostTagService {
         cause: error,
       });
     }
+    if (!deleted) return false;
 
     // Record this viewer change so mergeTags ignores stale Nexus responses
     // for the next ~5 minutes (until Nexus catches up).
@@ -138,33 +143,9 @@ export class LocalPostTagService {
     await PostTagsModel.upsert({
       id: postId,
       tags: postTagsModel.tags as NexusTag[],
+      cache: postTagsModel.cache,
+      mutations: postTagsModel.mutations,
     });
-  }
-
-  /**
-   * Updates post counts based on the current tag state.
-   *
-   * This helper method calculates and updates the total tags and unique tags
-   * for a post based on the current PostTagsModel state.
-   *
-   * @param postId - Unique identifier of the post
-   * @param postTagsModel - The PostTagsModel instance with current tag data
-   * @private
-   */
-  private static async updatePostCounts(postId: Pubky, postTagsModel: PostTagsModel) {
-    const tags = postTagsModel.tags.reduce((sum, tag) => sum + tag.taggers_count, 0);
-    const unique_tags = postTagsModel.tags.length;
-
-    const countsExist = await PostCountsModel.findById(postId);
-    if (countsExist) {
-      await PostCountsModel.update(postId, {
-        tags,
-        unique_tags,
-      });
-    } else {
-      // TODO: Maybe fetch counts from Nexus and reconcile local tag counts.
-      Logger.warn('Post counts not found, skipping update', { postId });
-    }
   }
 
   /**
@@ -248,9 +229,12 @@ export class LocalPostTagService {
         await PostTagsModel.upsert({
           id: postId,
           tags: mergedTags,
+          cache: existing?.cache,
+          mutations: existing?.mutations,
         });
       });
     } catch (error) {
+      if (isAppError(error)) throw error;
       throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to merge post tags', {
         service: ErrorService.Local,
         operation: 'mergeTags',

@@ -13,7 +13,6 @@ import { PostDetailsModel } from '@/models/post/details/postDetails';
 import { DELETED } from '@/models/post/details/postDetails.constants';
 import type { PostDetailsModelSchema } from '@/models/post/details/postDetails.schema';
 import { PostRelationshipsModel } from '@/models/post/relationships/postRelationships';
-import { PostTagsModel } from '@/models/post/tags/postTags';
 import { PostTtlModel } from '@/models/post/ttl/postTtl';
 import type { RecordModelBase } from '@/models/shared/base/record/baseRecord';
 import type { NexusModelTuple } from '@/models/shared/base/tuple/baseTuple.type';
@@ -34,6 +33,7 @@ import type {
   TPrependToStreamParams,
   TStreamResult,
 } from '@/services/local/stream/posts/post.types';
+import { LocalTagCacheService, type TagPreviewGuard } from '@/services/local/tag/tag-cache';
 import type { NexusFileDetails, NexusPostCounts, NexusPostRelationships, NexusTag } from '@/services/nexus/nexus.types';
 import { StreamSource } from '@/services/nexus/stream/posts/postStream.types';
 import { sortPostIdsByTimestamp } from '@/utils/sorting';
@@ -229,7 +229,10 @@ export class LocalStreamPostsService {
    * @param posts - Array of posts from Nexus API to persist
    * @returns Object containing an array of all post attachment URIs collected from the posts
    */
-  static async persistPosts({ posts }: TPersistPostsParams): Promise<TPostStreamPersistResult> {
+  static async persistPosts({
+    posts,
+    tagGuard = {},
+  }: TPersistPostsParams & { tagGuard?: TagPreviewGuard }): Promise<TPostStreamPersistResult> {
     // Defensive check: if posts is empty or undefined, return early
     if (!posts?.length) return { attachmentMetadata: [] };
 
@@ -332,10 +335,11 @@ export class LocalStreamPostsService {
     const liveBookmarks = postBookmarks.filter((b) => !tombstonedIds.has(b.id));
     const liveModerations = postModerations.filter((m) => !tombstonedIds.has(m.id));
 
+    if (tagGuard.isCurrent && !tagGuard.isCurrent()) return { attachmentMetadata: [] };
     await Promise.all([
       PostDetailsModel.bulkSave(liveDetails),
       PostCountsModel.bulkSave(liveCounts),
-      PostTagsModel.bulkSave(liveTags),
+      LocalTagCacheService.savePreviews('post', liveTags, tagGuard),
       PostRelationshipsModel.bulkSave(liveRelationships),
       PostTtlModel.bulkSave(liveTtl),
       // Persist bookmarks from Nexus (viewer's bookmark status for each post)

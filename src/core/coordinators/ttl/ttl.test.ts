@@ -356,7 +356,7 @@ describe('TtlCoordinator', () => {
       expect(findStalePostsSpy).not.toHaveBeenCalled();
     });
 
-    it('start() without authentication does not tick', async () => {
+    it('start() also ticks for public views', async () => {
       // Do NOT authenticate
       const coordinator = TtlCoordinator.getInstance();
       coordinator.configure({ batchIntervalMs: 1_000 });
@@ -371,7 +371,7 @@ describe('TtlCoordinator', () => {
 
       // Should not tick
       await advanceAndFlush(5_000);
-      expect(findStalePostsSpy).not.toHaveBeenCalled();
+      expect(findStalePostsSpy).toHaveBeenCalled();
     });
   });
 
@@ -739,7 +739,7 @@ describe('TtlCoordinator', () => {
       );
     });
 
-    it('setRoute change triggers reset of subscriptions', async () => {
+    it('setRoute preserves subscriptions owned by mounted components', async () => {
       setupAuthenticatedUser();
 
       const coordinator = TtlCoordinator.getInstance();
@@ -763,22 +763,8 @@ describe('TtlCoordinator', () => {
       findStaleUsersSpy.mockClear();
       await waitForTick();
 
-      // Subscriptions should be cleared (empty arrays)
-      const postCalls = findStalePostsSpy.mock.calls;
-      const userCalls = findStaleUsersSpy.mock.calls;
-
-      // If called, should have empty arrays (no subscriptions)
-      if (postCalls.length > 0) {
-        const lastPostCall = postCalls[postCalls.length - 1];
-        const postParams = lastPostCall[0] as { postIds: string[] };
-        expect(postParams.postIds).toHaveLength(0);
-      }
-
-      if (userCalls.length > 0) {
-        const lastUserCall = userCalls[userCalls.length - 1];
-        const userParams = lastUserCall[0] as { userIds: Pubky[] };
-        expect(userParams.userIds).toHaveLength(0);
-      }
+      expect(findStalePostsSpy).toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
+      expect(findStaleUsersSpy).toHaveBeenCalledWith(expect.objectContaining({ userIds: [userId] }));
     });
 
     it('setRoute to same route is a no-op', async () => {
@@ -830,8 +816,8 @@ describe('TtlCoordinator', () => {
       coordinator.subscribeUser({ pubky: userId }); // ref count = 2
       coordinator.subscribeUser({ pubky: userId }); // ref count = 3
 
-      // Change route to trigger reset
-      coordinator.setRoute('/profile');
+      // Stopping the coordinator releases all subscriptions.
+      coordinator.stop();
 
       // Re-subscribe just one user
       coordinator.subscribeUser({ pubky: userId });
@@ -978,22 +964,40 @@ describe('TtlCoordinator', () => {
   // ===========================================================================
 
   describe('Auth State Changes', () => {
-    it('does not tick when unauthenticated even if started', async () => {
+    it('keeps a visible subscription across route changes and until its final subscriber leaves', async () => {
+      const coordinator = TtlCoordinator.getInstance();
+      const postId = 'author:shared';
+      coordinator.setRoute('/home');
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.setRoute('/profile/author');
+      coordinator.unsubscribePost({ compositePostId: postId });
+      findStalePostsSpy.mockResolvedValue([postId]);
+      coordinator.start();
+      await waitForTick();
+      expect(forceRefreshPostsSpy).toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
+      coordinator.unsubscribePost({ compositePostId: postId });
+      forceRefreshPostsSpy.mockClear();
+      await advanceAndFlush(5000);
+      expect(forceRefreshPostsSpy).not.toHaveBeenCalled();
+    });
+    it('refreshes visible public posts without authentication', async () => {
       // Do NOT authenticate
       const coordinator = TtlCoordinator.getInstance();
       coordinator.configure({ batchIntervalMs: 1_000 });
 
       const postId = createCompositePostId('author1', 'post1');
       coordinator.subscribePost({ compositePostId: postId });
-      findStalePostsSpy.mockClear();
+      findStalePostsSpy.mockResolvedValue([postId]);
 
       coordinator.start();
 
       await advanceAndFlush(5_000);
-      expect(findStalePostsSpy).not.toHaveBeenCalled();
+      expect(findStalePostsSpy).toHaveBeenCalled();
+      expect(forceRefreshPostsSpy).toHaveBeenCalledWith(expect.objectContaining({ viewerId: undefined }));
     });
 
-    it('starts ticking when conditions are met after start()', async () => {
+    it('keeps ticking when a visitor signs in', async () => {
       // Start unauthenticated - coordinator won't tick
       const coordinator = TtlCoordinator.getInstance();
       coordinator.configure({ batchIntervalMs: 1_000 });
@@ -1006,7 +1010,7 @@ describe('TtlCoordinator', () => {
 
       // Advance time - should not tick (not authenticated)
       await advanceAndFlush(2_000);
-      expect(findStalePostsSpy).not.toHaveBeenCalled();
+      expect(findStalePostsSpy).toHaveBeenCalled();
 
       // Now authenticate and restart to re-evaluate conditions
       setupAuthenticatedUser();
@@ -1055,7 +1059,7 @@ describe('TtlCoordinator', () => {
       expect(findStalePostsSpy).toHaveBeenCalled();
     });
 
-    it('requires hasProfile to be true to tick', async () => {
+    it('refreshes public data before profile creation is complete', async () => {
       // Authenticate but without profile
       useAuthStore.getState().init({
         session: mockSession(),
@@ -1074,7 +1078,7 @@ describe('TtlCoordinator', () => {
 
       await advanceAndFlush(5_000);
       // Should not tick without profile (shouldTick returns false)
-      expect(findStalePostsSpy).not.toHaveBeenCalled();
+      expect(findStalePostsSpy).toHaveBeenCalled();
 
       // Now set hasProfile to true and restart
       useAuthStore.getState().init({

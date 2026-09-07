@@ -19,6 +19,7 @@ import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalFollowService } from '@/services/local/follow/follow';
 import { LocalProfileService } from '@/services/local/profile/profile';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
+import { LocalTagCacheService } from '@/services/local/tag/tag-cache';
 import { LocalUserTagService } from '@/services/local/tag/user/tag.user';
 import { LocalUserService } from '@/services/local/user/user';
 import type {
@@ -97,6 +98,7 @@ export class UserApplication {
 
     // 2. Fetch full user from Nexus batch endpoint
     try {
+      const revisions = await LocalTagCacheService.captureRevisions('user', [userId]);
       const users = await NexusUserStreamService.fetchByIds({ user_ids: [userId] });
 
       if (!users || users.length === 0) {
@@ -105,7 +107,7 @@ export class UserApplication {
       }
 
       // 3. Persist full user entity (details, counts, relationships, tags, TTL, moderation)
-      await LocalStreamUsersService.persistUsers(users);
+      await LocalStreamUsersService.persistUsers(users, { revisions });
     } catch (error) {
       Logger.warn('Failed to fetch user from Nexus', { userId, error });
       return null;
@@ -125,6 +127,7 @@ export class UserApplication {
    */
   static async fetch({ userId }: TReadProfileParams): Promise<NexusUserDetails | null> {
     try {
+      const revisions = await LocalTagCacheService.captureRevisions('user', [userId]);
       const users = await NexusUserStreamService.fetchByIds({ user_ids: [userId] });
 
       if (!users || users.length === 0) {
@@ -132,7 +135,7 @@ export class UserApplication {
         return null;
       }
 
-      await LocalStreamUsersService.persistUsers(users);
+      await LocalStreamUsersService.persistUsers(users, { revisions });
     } catch (error) {
       Logger.warn('Failed to fetch user from Nexus', { userId, error });
       return null;
@@ -353,8 +356,9 @@ export class UserApplication {
 
     const fetchPromises = cacheMissUserIds.map(async (userId) => {
       try {
+        const revisions = await LocalTagCacheService.captureRevisions('user', [userId]);
         const tags = await NexusUserService.tags({ user_id: userId, skip_tags: 0, limit_tags: 10 });
-        await LocalUserService.upsertTags(userId, tags);
+        await LocalUserService.upsertTags(userId, tags, { revisions });
       } catch {
         // Silently fail for individual user - they'll just have no tags
       }

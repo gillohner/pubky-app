@@ -56,14 +56,23 @@ export function buildUrlWithQuery({ baseRoute, params, excludeKeys = [] }: TBuil
 /**
  * Utility function to create fetch options with common headers.
  * Body must be a string (typically JSON.stringify'd) to ensure safe query key serialization.
+ *
+ * Content-Type is omitted on bodyless GETs: the header makes such requests
+ * non-"simple", forcing a CORS preflight OPTIONS round trip for every call.
+ * GETs have no body, so the header carries no information and only doubles
+ * the request count. All other requests (bodies, non-simple methods) keep it.
  */
 export function createFetchOptions({ method = HttpMethod.GET, body }: TCreateFetchOptionsParams = {}): RequestInit {
   const options: RequestInit = {
     method,
-    headers: JSON_HEADERS,
   };
 
-  if (body) options.body = body;
+  if (body) {
+    options.body = body;
+    options.headers = JSON_HEADERS;
+  } else if (method !== HttpMethod.GET) {
+    options.headers = JSON_HEADERS;
+  }
 
   return options;
 }
@@ -109,9 +118,15 @@ export async function fetchNexusNoContent({ url, method }: Pick<TFetchNexusParam
  * @returns Parsed response data
  * @throws {NexusError} When response is not ok after all retries
  */
-export async function queryNexus<T>({ url, method = HttpMethod.GET, body = null }: TQueryNexusParams): Promise<T> {
+export async function queryNexus<T>({
+  url,
+  method = HttpMethod.GET,
+  body = null,
+  force = false,
+}: TQueryNexusParams): Promise<T> {
   return nexusQueryClient.fetchQuery({
     queryKey: ['nexus', url, method, body],
+    ...(force ? { staleTime: 0 } : {}),
     queryFn: () => fetchNexus<T>({ url, method, body }),
   });
 }
