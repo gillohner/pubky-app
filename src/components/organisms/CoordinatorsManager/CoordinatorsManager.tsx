@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
+import { FollowSyncCoordinator } from '@/coordinators/follow-sync/follow-sync';
 import { MuteListSyncCoordinator } from '@/coordinators/mute-list-sync/mute-list-sync';
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
 import { StreamCoordinator } from '@/coordinators/streams/stream';
@@ -12,6 +13,7 @@ function getAppCoordinators() {
     notification: NotificationCoordinator.getInstance(),
     stream: StreamCoordinator.getInstance(),
     ttl: TtlCoordinator.getInstance(),
+    followSync: FollowSyncCoordinator.getInstance(),
     muteListSync: MuteListSyncCoordinator.getInstance(),
   };
 }
@@ -21,6 +23,7 @@ function applyRouteToCoordinators(pathname: string): void {
   void coordinators.notification.setRoute(pathname);
   void coordinators.stream.setRoute(pathname);
   coordinators.ttl.setRoute(pathname);
+  coordinators.followSync.setRoute(pathname);
   coordinators.muteListSync.setRoute(pathname);
 }
 
@@ -29,6 +32,7 @@ function startAppCoordinators(): void {
   void coordinators.notification.start();
   void coordinators.stream.start();
   coordinators.ttl.start();
+  coordinators.followSync.start();
   coordinators.muteListSync.start();
 }
 
@@ -37,6 +41,7 @@ function stopAppCoordinators(): void {
   coordinators.notification.stop();
   coordinators.stream.stop();
   coordinators.ttl.stop();
+  coordinators.followSync.stop();
   coordinators.muteListSync.stop();
 }
 

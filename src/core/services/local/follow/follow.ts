@@ -57,11 +57,18 @@ export class LocalFollowService {
 
           // Upsert relationship (create or update)
           if (rel) {
-            if (rel.following === false) {
-              ops.push(UserRelationshipsModel.update(followee, { following: true }));
+            if (rel.following === false || rel.followingBy !== follower) {
+              ops.push(UserRelationshipsModel.update(followee, { following: true, followingBy: follower }));
             }
           } else {
-            ops.push(UserRelationshipsModel.create({ id: followee, following: true, followed_by: false }));
+            ops.push(
+              UserRelationshipsModel.create({
+                id: followee,
+                following: true,
+                followed_by: false,
+                followingBy: follower,
+              }),
+            );
           }
 
           await Promise.all(ops);
@@ -127,11 +134,18 @@ export class LocalFollowService {
 
           // Upsert relationship (create or update) with following=false
           if (rel) {
-            if (rel.following === true) {
-              ops.push(UserRelationshipsModel.update(followee, { following: false }));
+            if (rel.following === true || rel.followingBy !== follower) {
+              ops.push(UserRelationshipsModel.update(followee, { following: false, followingBy: follower }));
             }
           } else {
-            ops.push(UserRelationshipsModel.create({ id: followee, following: false, followed_by: false }));
+            ops.push(
+              UserRelationshipsModel.create({
+                id: followee,
+                following: false,
+                followed_by: false,
+                followingBy: follower,
+              }),
+            );
           }
 
           await Promise.all(ops);

@@ -9,6 +9,7 @@ import { UserRelationshipsModel } from '@/models/user/relationships/userRelation
 import type { UserRelationshipsModelSchema } from '@/models/user/relationships/userRelationships.schema';
 import { UserTagsModel } from '@/models/user/tags/userTags';
 import { UserTtlModel } from '@/models/user/ttl/userTtl';
+import { LocalFollowSyncService } from '@/services/local/follow/followSync';
 import type { NexusTag, NexusUserCounts, NexusUserDetails, NexusUserRelationship } from '@/services/nexus/nexus.types';
 
 export class LocalUserService {
@@ -60,11 +61,7 @@ export class LocalUserService {
    * @returns Promise resolving to void
    */
   static async upsertCounts(params: TReadProfileParams, userCounts: NexusUserCounts): Promise<void> {
-    // Use proper upsert (put) to create the record if it doesn't exist
-    await UserCountsModel.upsert({
-      id: params.userId,
-      ...userCounts,
-    });
+    await LocalFollowSyncService.upsertCounts(params.userId, userCounts);
   }
 
   /**

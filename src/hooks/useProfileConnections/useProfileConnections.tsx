@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { NEXUS_USERS_PER_PAGE } from '@/config/nexus';
 import { FileController } from '@/controllers/file/file';
+import { FollowSyncController } from '@/controllers/follow-sync/follow-sync';
 import { StreamUserController } from '@/controllers/stream/users/users';
 import { UserController } from '@/controllers/user/user';
 import { isAppError } from '@/libs/error/error.utils';
@@ -64,6 +65,16 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
   // Build stream ID: userId:connectionType (e.g., 'user123:followers')
   const streamId = targetUserId ? (`${targetUserId}:${type}` as UserStreamCompositeId) : null;
 
+  const followingStatus = useLiveQuery(
+    () =>
+      targetUserId && targetUserId === currentUserPubky && type === CONNECTION_TYPE.FOLLOWING
+        ? FollowSyncController.getStatus(targetUserId)
+        : null,
+    [targetUserId, currentUserPubky, type],
+    null,
+  );
+  const syncingFollowing = useRef(false);
+
   // Subscribe to stream changes for reactive updates (follow/unfollow)
   const cachedStream = useLiveQuery(
     async () => {
@@ -82,6 +93,17 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
   // Sync userIds when stream changes in cache (e.g., after follow/unfollow)
   useEffect(() => {
     if (cachedStream !== null && !isLoading) {
+      if (targetUserId === currentUserPubky && type === CONNECTION_TYPE.FOLLOWING) {
+        if (isLoadingMore) return;
+        // Merge by identity even after pagination; retain visible unfollowed rows for immediate re-follow.
+        const existing = new Set(userIdsRef.current);
+        const additions = cachedStream.filter((id) => !existing.has(id));
+        if (!additions.length) return;
+        const next = [...additions, ...userIdsRef.current];
+        userIdsRef.current = next;
+        setUserIds(next);
+        return;
+      }
       const hasPaginated = skip > NEXUS_USERS_PER_PAGE;
       if (hasPaginated) return;
 
@@ -96,7 +118,7 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
       userIdsRef.current = cachedStream;
       setUserIds(cachedStream);
     }
-  }, [cachedStream, isLoading, skip, targetUserId, currentUserPubky, type]);
+  }, [cachedStream, isLoading, isLoadingMore, skip, targetUserId, currentUserPubky, type]);
 
   // Subscribe to user details from local database (reactive via Controller)
   const userDetailsMap = useLiveQuery(
@@ -277,6 +299,23 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
     },
     [streamId, skip],
   );
+
+  useEffect(() => {
+    if (
+      !followingStatus ||
+      isLoading ||
+      isLoadingMore ||
+      syncingFollowing.current ||
+      followingStatus.total <= followingStatus.loaded
+    )
+      return;
+    if (hasMore) return;
+    // An exhausted list can gain follows remotely. Hydrate one page, then leave overflow to pagination.
+    syncingFollowing.current = true;
+    void fetchStreamSlice(false).finally(() => {
+      syncingFollowing.current = false;
+    });
+  }, [followingStatus, isLoading, isLoadingMore, hasMore, fetchStreamSlice]);
 
   /**
    * Clears all state

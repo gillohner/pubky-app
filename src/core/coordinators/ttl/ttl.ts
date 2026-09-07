@@ -237,20 +237,22 @@ export class TtlCoordinator {
   private setupListeners(): void {
     // Listen to auth store changes
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      const isAuthenticated = state.selectIsAuthenticated();
-      const wasAuthenticated = prevState.selectIsAuthenticated();
+      const isAuthenticated = state.session !== null;
+      const wasAuthenticated = prevState.session !== null;
 
-      if (isAuthenticated !== wasAuthenticated) {
+      if (
+        isAuthenticated !== wasAuthenticated ||
+        state.hasProfile !== prevState.hasProfile ||
+        state.currentUserPubky !== prevState.currentUserPubky
+      ) {
         Logger.debug('TtlCoordinator: Auth state changed', { isAuthenticated });
 
-        if (!isAuthenticated) {
-          // User logged out - stop and reset
+        if (wasAuthenticated && (!isAuthenticated || state.currentUserPubky !== prevState.currentUserPubky)) {
+          // Clear the previous account, but retain visible subscriptions mounted before session restoration.
           this.stopTicking();
           this.reset();
-        } else {
-          // User logged in - start if coordinator is started
-          this.evaluateAndStartTicking();
         }
+        this.evaluateAndStartTicking();
       }
     });
 

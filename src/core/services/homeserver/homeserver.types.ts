@@ -82,6 +82,7 @@ export type THomeserverListAllParams = Pick<THomeserverListParams, 'baseDirector
 export type THomeserverUserEvent = {
   cursor: string;
   eventType: string;
+  resourcePath: string;
 };
 
 // Utility function parameter types

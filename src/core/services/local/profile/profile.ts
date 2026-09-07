@@ -19,6 +19,7 @@ import { UserDetailsModel } from '@/models/user/details/userDetails';
 import { UserRelationshipsModel } from '@/models/user/relationships/userRelationships';
 import { UserTagsModel } from '@/models/user/tags/userTags';
 import { UserTtlModel } from '@/models/user/ttl/userTtl';
+import { LocalFollowSyncService } from '@/services/local/follow/followSync';
 import type { NexusUserCounts, NexusUserDetails } from '@/services/nexus/nexus.types';
 
 export class LocalProfileService {
@@ -40,10 +41,7 @@ export class LocalProfileService {
    * @returns Promise resolving to void
    */
   static async upsertCounts(userId: Pubky, userCounts: NexusUserCounts): Promise<void> {
-    await UserCountsModel.upsert({
-      id: userId,
-      ...userCounts,
-    });
+    await LocalFollowSyncService.upsertCounts(userId, userCounts);
   }
 
   /**

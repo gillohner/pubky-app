@@ -18,6 +18,7 @@ import type { UserRelationshipsModelSchema } from '@/models/user/relationships/u
 import { FollowNormalizer } from '@/pipes/follow/follow.normalizer';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalFollowService } from '@/services/local/follow/follow';
+import { followSyncGuard } from '@/services/local/follow/followSyncGuard';
 import { LocalProfileService } from '@/services/local/profile/profile';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import { LocalUserTagService } from '@/services/local/tag/user/tag.user';
@@ -248,15 +249,20 @@ export class UserApplication {
   }: TUserApplicationFollowParams) {
     if (signal?.aborted) return;
 
-    if (eventType === HttpMethod.PUT) {
-      await LocalFollowService.create({ follower, followee });
-    } else if (eventType === HttpMethod.DELETE) {
-      await LocalFollowService.delete({ follower, followee });
+    const finish = followSyncGuard.begin(follower);
+    try {
+      if (eventType === HttpMethod.PUT) {
+        await LocalFollowService.create({ follower, followee });
+      } else if (eventType === HttpMethod.DELETE) {
+        await LocalFollowService.delete({ follower, followee });
+      }
+
+      if (signal?.aborted) return;
+
+      await HomeserverService.request({ method: eventType, url: followUrl, bodyJson: followJson });
+    } finally {
+      finish();
     }
-
-    if (signal?.aborted) return;
-
-    await HomeserverService.request({ method: eventType, url: followUrl, bodyJson: followJson });
   }
 
   /**

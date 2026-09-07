@@ -8,6 +8,7 @@ import type {
 import { NEXUS_USERS_PER_PAGE } from '@/config/nexus';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
+import { LocalFollowSyncService } from '@/services/local/follow/followSync';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import type { TCacheUserStreamParams } from '@/services/local/stream/users/users.types';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
@@ -43,6 +44,8 @@ export class UserStreamApplication {
     viewerId,
     allowPartialCache,
   }: TFetchUserStreamChunkParams): Promise<TUserStreamChunkResponse> {
+    const following = await this.getFollowingSlice({ streamId, skip, limit, viewerId });
+    if (following) return following;
     // Try cache first
     const cachedStream = await LocalStreamUsersService.findById(streamId);
     if (cachedStream) {
@@ -128,6 +131,10 @@ export class UserStreamApplication {
       params: { skip, limit, viewer_id: viewerId },
     });
 
+    // A homeserver snapshot may have completed while Nexus was in flight.
+    const following = await this.getFollowingSlice({ streamId, skip, limit, viewerId }, { ids: userIds, replaceCache });
+    if (following) return following;
+
     const isExhausted = userIds.length < limit;
 
     // Handle empty response
@@ -154,6 +161,19 @@ export class UserStreamApplication {
     const nextSkip = skip + userIds.length;
 
     return { nextPageIds: userIds, cacheMissUserIds, skip: nextSkip, isExhausted };
+  }
+
+  private static async getFollowingSlice(
+    { streamId, skip = 0, limit = NEXUS_USERS_PER_PAGE, viewerId }: TFetchUserStreamChunkParams,
+    nexusPage?: { ids: Pubky[]; replaceCache: boolean },
+  ): Promise<TUserStreamChunkResponse | null> {
+    if (!viewerId || streamId !== `${viewerId}:following`) return null;
+    const slice = await LocalFollowSyncService.getFollowingSlice(viewerId, skip, limit, nexusPage);
+    if (!slice) return null;
+    return {
+      ...slice,
+      cacheMissUserIds: await LocalStreamUsersService.getNotPersistedUsersInCache(slice.nextPageIds),
+    };
   }
 
   /**

@@ -1398,15 +1398,55 @@ describe('HomeserverService', () => {
       });
     });
 
+    describe('fetchUserEventStreamCursor', () => {
+      it.each([true, false])(
+        'captures the most recent matching event (nonempty: %s) and closes the reader',
+        async (nonempty) => {
+          const free = vi.fn();
+          const cancel = vi.fn();
+          const path = vi.fn().mockReturnThis();
+          const reverse = vi.fn().mockReturnThis();
+          const limit = vi.fn().mockReturnThis();
+          const subscribe = vi.fn().mockResolvedValue(
+            new ReadableStream({
+              start(controller) {
+                if (nonempty) controller.enqueue({ cursor: '123', free });
+                else controller.close();
+              },
+              cancel,
+            }),
+          );
+          mockState.eventStreamForUser.mockReturnValue({ path, reverse, limit, subscribe });
+
+          const cursor = await HomeserverService.fetchUserEventStreamCursor({
+            userZ32: 'user-pubky',
+            pathPrefix: '/pub/pubky.app/follows/',
+          });
+          expect(cursor).toBe(nonempty ? '123' : '0');
+          expect(path).toHaveBeenCalledWith('/pub/pubky.app/follows/');
+          expect(reverse).toHaveBeenCalledTimes(1);
+          expect(limit).toHaveBeenCalledWith(1);
+          expect(free).toHaveBeenCalledTimes(nonempty ? 1 : 0);
+          expect(cancel).toHaveBeenCalledTimes(nonempty ? 1 : 0);
+        },
+      );
+    });
+
     describe('subscribeUserEventStreamForPath', () => {
       it('normalizes SDK events and disposes raw WASM objects internally', async () => {
         const free = vi.fn();
+        const resourceFree = vi.fn();
         const path = vi.fn().mockReturnThis();
         const live = vi.fn().mockReturnThis();
         const subscribe = vi.fn().mockResolvedValue(
           new ReadableStream({
             start(controller) {
-              controller.enqueue({ cursor: 'cursor-1', eventType: 'PUT', free });
+              controller.enqueue({
+                cursor: 'cursor-1',
+                eventType: 'PUT',
+                resource: { path: '/pub/pubky.app/mutes/target', free: resourceFree },
+                free,
+              });
               controller.close();
             },
           }),
@@ -1426,9 +1466,14 @@ describe('HomeserverService', () => {
         expect(path).toHaveBeenCalledWith('/pub/pubky.app/mutes/');
         expect(live).toHaveBeenCalled();
         expect(subscribe).toHaveBeenCalled();
-        expect(result.value).toEqual({ cursor: 'cursor-1', eventType: 'PUT' });
+        expect(result.value).toEqual({
+          cursor: 'cursor-1',
+          eventType: 'PUT',
+          resourcePath: '/pub/pubky.app/mutes/target',
+        });
         expect(result.value).not.toHaveProperty('free');
         expect(free).toHaveBeenCalledTimes(1);
+        expect(resourceFree).toHaveBeenCalledTimes(1);
       });
     });
 
