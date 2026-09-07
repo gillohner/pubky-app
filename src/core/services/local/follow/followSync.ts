@@ -51,11 +51,21 @@ export class LocalFollowSyncService {
         }
         // Local follows prepend to the displayed stream. Keep that prefix before paginating the remainder.
         const set = new Set(authoritative);
-        const following = [...new Set([...(cached?.stream ?? []).filter((id) => set.has(id)), ...authoritative])];
-        await UserConnectionsModel.update(viewerId, { following });
-        const offset = cached ? Math.min(skip, cached.stream.length) : skip;
+        const prefix = (cached?.stream ?? []).filter((id) => set.has(id));
+        const orderChanged = prefix.some((id, index) => id !== authoritative[index]);
+        const following = orderChanged ? [...new Set([...prefix, ...authoritative])] : authoritative;
+        if (orderChanged) await UserConnectionsModel.update(viewerId, { following });
+        const offset = cached ? Math.min(skip, prefix.length) : skip;
         const nextPageIds = following.slice(offset, offset + limit);
-        await UserStreamModel.upsert(streamId, following.slice(0, offset + limit));
+        // A smaller consumer must not rewind the shared cache used by an already paginated list.
+        const stream = following.slice(0, Math.max(prefix.length, offset + limit));
+        if (
+          !cached ||
+          cached.stream.length !== stream.length ||
+          stream.some((id, index) => id !== cached.stream[index])
+        ) {
+          await UserStreamModel.upsert(streamId, stream);
+        }
         return {
           nextPageIds,
           skip: offset + nextPageIds.length,

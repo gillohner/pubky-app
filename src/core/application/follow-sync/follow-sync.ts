@@ -26,8 +26,12 @@ export class FollowSyncApplication {
   static async refreshFollowing(viewerId: Pubky, signal: AbortSignal): Promise<boolean> {
     const version = followSyncGuard.capture();
     if (signal.aborted || !followSyncGuard.canApply(viewerId, version)) return false;
-    const uris = await HomeserverService.listAll({ baseDirectory: `${baseUriBuilder(viewerId)}follows/` });
-    const following = uris.map((uri) => uri.slice(uri.lastIndexOf('/') + 1)).filter(isPubkyIdentifier);
+    const baseDirectory = `${baseUriBuilder(viewerId)}follows/`;
+    const uris = await HomeserverService.listAll({ baseDirectory });
+    const following = uris
+      .filter((uri) => uri.startsWith(baseDirectory))
+      .map((uri) => uri.slice(baseDirectory.length))
+      .filter(isPubkyIdentifier);
     return LocalFollowSyncService.apply({ viewerId, following, version, signal });
   }
 

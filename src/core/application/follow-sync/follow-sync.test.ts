@@ -48,6 +48,17 @@ const page = (skip: number, limit = 2) =>
 afterEach(() => vi.restoreAllMocks());
 
 describe('homeserver follow synchronization', () => {
+  it('accepts only canonical follow resources, not nested files or another account’s resources', async () => {
+    vi.spyOn(HomeserverService, 'listAll').mockResolvedValue([
+      followUriBuilder(viewer, a),
+      followUriBuilder(viewer, b).replace('/follows/', '/follows/archive/'),
+      followUriBuilder(viewer, c).replace('/follows/', '/other/'),
+      followUriBuilder(a, d),
+    ]);
+    await FollowSyncApplication.refreshFollowing(viewer, signal());
+    expect(await LocalFollowSyncService.readFollowing(viewer)).toEqual([a]);
+  });
+
   it('repairs both directions of stale following flags and protects them from later Nexus responses', async () => {
     await LocalStreamUsersService.persistUsers([user(a, false), user(b, true), user(viewer, false)], viewer);
     vi.spyOn(HomeserverService, 'listAll').mockResolvedValue([followUriBuilder(viewer, a)]);
@@ -191,6 +202,27 @@ describe('homeserver follow synchronization', () => {
 });
 
 describe('authoritative following pagination', () => {
+  it('does not rewind a larger list when another consumer requests a smaller prefix', async () => {
+    const ids = Array.from({ length: 60 }, (_, i) => String(i).padStart(52, 'a'));
+    await snapshot(ids);
+    await page(0, 20);
+    await page(20, 20);
+    // For example, opening the account hover card while its Following page is still mounted.
+    await page(0, 10);
+    expect((await UserStreamModel.findById(`${viewer}:following`))?.stream).toHaveLength(40);
+    expect((await page(40, 20)).nextPageIds).toEqual(ids.slice(40, 60));
+  });
+
+  it('does not rewrite an unchanged authoritative list or previously loaded page', async () => {
+    await snapshot([a, b, c, d]);
+    await page(0);
+    const updateConnections = vi.spyOn(UserConnectionsModel, 'update');
+    const upsertStream = vi.spyOn(UserStreamModel, 'upsert');
+    await page(0);
+    expect(updateConnections).not.toHaveBeenCalled();
+    expect(upsertStream).not.toHaveBeenCalled();
+  });
+
   it('keeps the previously loaded Nexus prefix without skipping directory entries', async () => {
     await UserStreamModel.upsert(`${viewer}:following`, [b, d]);
     await snapshot([a, b, c, d]);

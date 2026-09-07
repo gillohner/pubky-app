@@ -97,9 +97,21 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
         if (isLoadingMore) return;
         // Merge by identity even after pagination; retain visible unfollowed rows for immediate re-follow.
         const existing = new Set(userIdsRef.current);
-        const additions = cachedStream.filter((id) => !existing.has(id));
-        if (!additions.length) return;
-        const next = [...additions, ...userIdsRef.current];
+        if (cachedStream.every((id) => existing.has(id))) return;
+        // New follows can be prepended, while another consumer's next page is appended.
+        // Anchor additions to existing rows so neither case moves visible unfollowed rows.
+        const before = new Map<Pubky, Pubky[]>();
+        let additions: Pubky[] = [];
+        for (const id of cachedStream) {
+          if (existing.has(id)) {
+            before.set(id, additions);
+            additions = [];
+          } else {
+            additions.push(id);
+          }
+        }
+        const next = userIdsRef.current.flatMap((id) => [...(before.get(id) ?? []), id]);
+        next.push(...additions);
         userIdsRef.current = next;
         setUserIds(next);
         return;
@@ -107,12 +119,11 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
       const hasPaginated = skip > NEXUS_USERS_PER_PAGE;
       if (hasPaginated) return;
 
-      // For own following/friends lists: only sync when cache has MORE users (new follows)
+      // For own friends lists: only sync when cache has MORE users (new follows)
       // Block sync when cache has fewer users (unfollows) to preserve UI state
       // This allows new follows to appear reactively while keeping unfollowed users visible
       const isOwnProfile = targetUserId === currentUserPubky;
-      const preserveOnUnfollow =
-        isOwnProfile && (type === CONNECTION_TYPE.FOLLOWING || type === CONNECTION_TYPE.FRIENDS);
+      const preserveOnUnfollow = isOwnProfile && type === CONNECTION_TYPE.FRIENDS;
       if (preserveOnUnfollow && cachedStream.length <= userIdsRef.current.length) return;
 
       userIdsRef.current = cachedStream;

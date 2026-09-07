@@ -50,6 +50,35 @@ afterEach(() => {
 });
 
 describe('mounted own Following list with homeserver updates', () => {
+  it('keeps row order when another mounted consumer loads its next page', async () => {
+    await snapshot(ids.slice(0, NEXUS_USERS_PER_PAGE * 2));
+    const first = renderHook(() => useProfileConnections(CONNECTION_TYPE.FOLLOWING));
+    await waitFor(() => expect(first.result.current.isLoading).toBe(false));
+    const second = renderHook(() => useProfileConnections(CONNECTION_TYPE.FOLLOWING));
+    await waitFor(() => expect(second.result.current.isLoading).toBe(false));
+    await act(async () => {
+      await second.result.current.loadMore();
+    });
+    await waitFor(() => expect(first.result.current.connections).toHaveLength(NEXUS_USERS_PER_PAGE * 2));
+    expect(first.result.current.connections.map((row) => row.id)).toEqual(ids.slice(0, NEXUS_USERS_PER_PAGE * 2));
+  });
+
+  it('retains an unfollowed middle row when a new local follow is prepended', async () => {
+    await snapshot(ids.slice(0, 3));
+    const { result } = renderHook(() => useProfileConnections(CONNECTION_TYPE.FOLLOWING));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(async () => {
+      await LocalFollowService.delete({ follower: viewer, followee: ids[1] });
+    });
+    await act(async () => {
+      await LocalFollowService.create({ follower: viewer, followee: ids[3] });
+    });
+    await waitFor(() =>
+      expect(result.current.connections.map((row) => row.id)).toEqual([ids[3], ids[0], ids[1], ids[2]]),
+    );
+    expect(result.current.connections[2].isFollowing).toBe(false);
+  });
+
   it('keeps later pages below existing rows while their profile data loads slowly', async () => {
     await snapshot(ids.slice(0, NEXUS_USERS_PER_PAGE * 2));
     const { result } = renderHook(() => useProfileConnections(CONNECTION_TYPE.FOLLOWING));
