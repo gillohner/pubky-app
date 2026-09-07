@@ -666,6 +666,99 @@ describe('TimelineFeedContent', () => {
     });
   });
 
+  describe('Collection membership sync', () => {
+    const renderCollectionFeed = (membershipPostIds: string[] | undefined) =>
+      render(
+        <TimelineFeedWithStream
+          streamId={COLLECTION_STREAM_ID}
+          variant={TIMELINE_FEED_VARIANT.COLLECTION}
+          tagsLayout="inline"
+          membershipPostIds={membershipPostIds}
+        />,
+      );
+    const rerenderCollectionFeed = (
+      rerender: ReturnType<typeof render>['rerender'],
+      membershipPostIds: string[] | undefined,
+    ) =>
+      rerender(
+        <TimelineFeedWithStream
+          streamId={COLLECTION_STREAM_ID}
+          variant={TIMELINE_FEED_VARIANT.COLLECTION}
+          tagsLayout="inline"
+          membershipPostIds={membershipPostIds}
+        />,
+      );
+
+    beforeEach(() => {
+      // Loaded feed: post1, post2, post3 (defaultPaginationResult); no more pages
+      // so the collection eager-load effect stays quiet.
+      mockUseStreamPagination.mockReturnValue({ ...defaultPaginationResult, hasMore: false });
+    });
+
+    it('treats the first envelope as the baseline and does not refetch', () => {
+      const { rerender } = renderCollectionFeed(undefined);
+      rerenderCollectionFeed(rerender, ['post1', 'post2', 'post3']);
+
+      expect(mockRefresh).not.toHaveBeenCalled();
+    });
+
+    it('refetches when the envelope gains an id the feed has not loaded', () => {
+      const { rerender } = renderCollectionFeed(['post1', 'post2', 'post3']);
+      rerenderCollectionFeed(rerender, ['post4', 'post1', 'post2', 'post3']);
+
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('refetches when the envelope drops an id the feed still shows', () => {
+      const { rerender } = renderCollectionFeed(['post1', 'post2', 'post3']);
+      rerenderCollectionFeed(rerender, ['post1', 'post3']);
+
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not refetch when the added id is already loaded (optimistic insert landed first)', () => {
+      const { rerender } = renderCollectionFeed(['post1', 'post2']);
+      rerenderCollectionFeed(rerender, ['post3', 'post1', 'post2']);
+
+      expect(mockRefresh).not.toHaveBeenCalled();
+    });
+
+    it('does not refetch on a reorder-only change', () => {
+      const { rerender } = renderCollectionFeed(['post1', 'post2', 'post3']);
+      rerenderCollectionFeed(rerender, ['post3', 'post1', 'post2']);
+
+      expect(mockRefresh).not.toHaveBeenCalled();
+    });
+
+    it('does not refetch while the initial load is still in flight', () => {
+      mockUseStreamPagination.mockReturnValue({
+        ...defaultPaginationResult,
+        postIds: [],
+        loading: true,
+        hasMore: false,
+      });
+      const { rerender } = renderCollectionFeed(['post1']);
+      rerenderCollectionFeed(rerender, ['post4', 'post1']);
+
+      expect(mockRefresh).not.toHaveBeenCalled();
+    });
+
+    it('refetches once per membership change, not on every re-render', () => {
+      const { rerender } = renderCollectionFeed(['post1', 'post2', 'post3']);
+      rerenderCollectionFeed(rerender, ['post4', 'post1', 'post2', 'post3']);
+      rerenderCollectionFeed(rerender, ['post4', 'post1', 'post2', 'post3']);
+
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('never refetches without a membership (owner path)', () => {
+      const { rerender } = renderCollectionFeed(undefined);
+      rerenderCollectionFeed(rerender, undefined);
+
+      expect(mockRefresh).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Mute set changes', () => {
     const renderHomeFeed = () =>
       render(

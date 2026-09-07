@@ -61,6 +61,17 @@ interface TimelineFeedContentProps {
    * stream by the local-first envelope order. Must be pure.
    */
   transformPostIds?: (postIds: string[]) => string[];
+  /**
+   * Optional local-first membership (composite post ids) the feed should track.
+   * When it changes in a way the loaded stream does not already reflect — an
+   * id added that is not loaded, or an id removed that is still loaded — the
+   * feed refetches from Nexus. Used by the COLLECTION variant for viewers,
+   * whose envelope `items` refresh through the TTL coordinator while the
+   * skip-paginated items stream is never polled. Reorders are handled by
+   * `transformPostIds` and do not refetch. The first non-undefined value is
+   * the baseline (the initial load already fetched that membership).
+   */
+  membershipPostIds?: string[];
 }
 
 interface TimelineFeedWithStreamProps {
@@ -76,6 +87,7 @@ interface TimelineFeedWithStreamProps {
   trailingSlot?: TimelineFeedTrailingSlot;
   visualHiddenItemsNotice?: TimelineFeedVisualHiddenItemsNotice;
   transformPostIds?: TimelineFeedContentProps['transformPostIds'];
+  membershipPostIds?: TimelineFeedContentProps['membershipPostIds'];
 }
 
 /**
@@ -97,6 +109,7 @@ export function TimelineFeedWithStream({
   trailingSlot,
   visualHiddenItemsNotice,
   transformPostIds,
+  membershipPostIds,
 }: TimelineFeedWithStreamProps) {
   if (!streamId) {
     return <TimelineLoading />;
@@ -115,6 +128,7 @@ export function TimelineFeedWithStream({
       persistentHeader={persistentHeader}
       visualHiddenItemsNotice={visualHiddenItemsNotice}
       transformPostIds={transformPostIds}
+      membershipPostIds={membershipPostIds}
     >
       {children}
     </TimelineFeedContent>
@@ -147,6 +161,7 @@ function TimelineFeedContent({
   trailingSlot,
   visualHiddenItemsNotice,
   transformPostIds,
+  membershipPostIds,
 }: TimelineFeedContentProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const refreshContainerRef = pullToRefreshContainerRef ?? containerRef;
@@ -199,6 +214,37 @@ function TimelineFeedContent({
 
   const dedupedPostIds = [...new Set(rawPostIds)];
   const postIds = transformPostIds ? transformPostIds(dedupedPostIds) : dedupedPostIds;
+
+  // Membership sync. The single-collection grid is a skip-paginated Nexus
+  // stream fetched once on mount and never polled (the StreamCoordinator only
+  // watches /home, /post and /feed), while the envelope's `items` keep
+  // refreshing through the TTL coordinator. Without this, a viewer's count
+  // badge would move while the grid stayed frozen until a reload. Refetch only
+  // when the membership change is not already visible in the loaded ids, so
+  // reorders and changes the feed already reflects stay free. Idempotent: the
+  // effect re-runs on every dep change but only acts on a real membership diff.
+  const previousMembershipRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!membershipPostIds) return;
+    const previous = previousMembershipRef.current;
+    const current = new Set(membershipPostIds);
+    if (previous === null) {
+      // Baseline — the initial load fetches this membership.
+      previousMembershipRef.current = current;
+      return;
+    }
+    const membershipChanged = current.size !== previous.size || [...current].some((id) => !previous.has(id));
+    if (!membershipChanged) return;
+    previousMembershipRef.current = current;
+    // An in-flight initial load restarts from page one anyway.
+    if (loading) return;
+    const loaded = new Set(rawPostIds);
+    const hasUnloadedAddition = [...current].some((id) => !previous.has(id) && !loaded.has(id));
+    const hasLoadedRemoval = [...previous].some((id) => !current.has(id) && loaded.has(id));
+    if (hasUnloadedAddition || hasLoadedRemoval) {
+      void refresh();
+    }
+  }, [membershipPostIds, rawPostIds, loading, refresh]);
 
   // Drain optimistic posts the global FAB enqueued for this feed. The FAB lives
   // outside this feed's React tree, so it cannot call `prependOptimisticPosts`

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sortPostIdsByCollectionOrder } from './collectionItemOrder';
+import { collectionItemsToPostIds, sortPostIdsByCollectionOrder } from './collectionItemOrder';
 
 const uriFor = (pubky: string, postId: string) => `pubky://${pubky}/pub/pubky.app/posts/${postId}`;
 
@@ -44,5 +44,20 @@ describe('sortPostIdsByCollectionOrder', () => {
 
   it('uses the first occurrence for duplicate envelope URIs', () => {
     expect(sortPostIdsByCollectionOrder([idB, idA], [uriB, uriA, uriB])).toEqual([idB, idA]);
+  });
+});
+
+describe('collectionItemsToPostIds', () => {
+  it('maps envelope URIs to composite post ids in envelope order', () => {
+    expect(collectionItemsToPostIds([uriB, uriA, uriC])).toEqual([idB, idA, idC]);
+  });
+
+  it('returns undefined for an unresolved envelope and an empty array for an empty one', () => {
+    expect(collectionItemsToPostIds(undefined)).toBeUndefined();
+    expect(collectionItemsToPostIds([])).toEqual([]);
+  });
+
+  it('drops malformed URIs and duplicates', () => {
+    expect(collectionItemsToPostIds(['https://example.com/post', uriA, uriB, uriA])).toEqual([idA, idB]);
   });
 });

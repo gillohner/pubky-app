@@ -41,3 +41,26 @@ export function sortPostIdsByCollectionOrder(postIds: string[], envelopeItems: s
 
   return [...inEnvelope, ...rest];
 }
+
+/**
+ * Maps a collection envelope's `items` (`pubky://` post URIs) to composite
+ * post ids, dropping malformed URIs and duplicates while preserving order.
+ * Returns `undefined` when the envelope has not resolved yet so callers can
+ * tell "unknown" apart from "empty".
+ *
+ * Pure function — safe to call from any layer.
+ */
+export function collectionItemsToPostIds(envelopeItems: string[] | undefined): string[] | undefined {
+  if (!envelopeItems) return undefined;
+
+  const postIds: string[] = [];
+  const seen = new Set<string>();
+  for (const uri of envelopeItems) {
+    const compositeId = buildCompositeIdFromPubkyUri({ uri, domain: CompositeIdDomain.POSTS });
+    if (compositeId !== null && !seen.has(compositeId)) {
+      seen.add(compositeId);
+      postIds.push(compositeId);
+    }
+  }
+  return postIds;
+}

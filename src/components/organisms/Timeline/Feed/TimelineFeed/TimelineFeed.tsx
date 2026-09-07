@@ -10,7 +10,7 @@ import { useSearchStreamId } from '@/hooks/useSearchStreamId/useSearchStreamId';
 import { useStreamIdFromFilters } from '@/hooks/useStreamIdFromFilters/useStreamIdFromFilters';
 import { useSyncInteractiveVisualContent } from '@/hooks/useSyncInteractiveVisualContent/useSyncInteractiveVisualContent';
 import { parseCollectionContent } from '@/libs/post/collectionContent';
-import { sortPostIdsByCollectionOrder } from '@/libs/post/collectionItemOrder';
+import { collectionItemsToPostIds, sortPostIdsByCollectionOrder } from '@/libs/post/collectionItemOrder';
 import { buildCompositeId } from '@/models/models.utils';
 import {
   type AuthorStreamCompositeId,
@@ -23,6 +23,7 @@ import { TimelineLoading } from '@/molecules/Timeline/TimelineLoading';
 import { getTagsLayoutForSurfaceLayout } from '@/organisms/PostMain/PostMainLayoutRules';
 import { useProfileContext } from '@/providers/ProfileProvider/ProfileProvider';
 import { StreamSource } from '@/services/nexus/stream/posts/postStream.types';
+import { useAuthStore } from '@/stores/auth/auth.store';
 import { useHomeStore } from '@/stores/home/home.store';
 import { LAYOUT } from '@/stores/home/home.types';
 import { TimelineFeedWithStream } from '../TimelineFeedContent/TimelineFeedContent';
@@ -229,6 +230,17 @@ function CollectionTimelineFeed({
   const { postDetails } = usePostDetails(collectionId);
   const envelopeItems = postDetails ? parseCollectionContent(postDetails.content)?.items : undefined;
 
+  // Viewers also hand the envelope membership to the feed: the items stream is
+  // fetched once and never polled, so when the TTL coordinator refreshes the
+  // envelope (the owner added or removed posts elsewhere) the feed refetches
+  // and the grid catches up with the count badge. Owners are excluded on
+  // purpose — their commits already update this feed optimistically (and
+  // `refresh` preserves those optimistic ids), so a refetch would only flash
+  // the grid and race Nexus's asynchronous re-index of the stream.
+  const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
+  const isOwn = !!userId && currentUserPubky === userId;
+  const membershipPostIds = isOwn ? undefined : collectionItemsToPostIds(envelopeItems);
+
   return (
     <TimelineFeedWithStream
       streamId={streamId}
@@ -241,6 +253,7 @@ function CollectionTimelineFeed({
       trailingSlot={trailingSlot}
       visualHiddenItemsNotice={visualHiddenItemsNotice}
       transformPostIds={(postIds) => sortPostIdsByCollectionOrder(postIds, envelopeItems)}
+      membershipPostIds={membershipPostIds}
     >
       {children}
     </TimelineFeedWithStream>
