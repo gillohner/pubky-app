@@ -7,11 +7,11 @@ export class TagCacheController {
     return TagCacheApplication.get(entity);
   }
 
-  static getOrFetch(request: TagRequest) {
+  static getOrFetch(request: Omit<TagRequest, 'isCurrent'>) {
     return TagCacheApplication.getOrFetch({ ...request, isCurrent: captureViewerSession() });
   }
 
-  static getOrFetchNext(request: TagRequest) {
+  static getOrFetchNext(request: Omit<TagRequest, 'isCurrent'>) {
     return TagCacheApplication.fetchNext({ ...request, isCurrent: captureViewerSession() });
   }
 }

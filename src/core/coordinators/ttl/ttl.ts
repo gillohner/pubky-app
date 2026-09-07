@@ -59,8 +59,6 @@ export class TtlCoordinator {
     isStarted: false,
     currentRoute: '',
     isPageVisible: true,
-    subscribedPosts: new Set(),
-    subscribedUsers: new Set(),
     userRefCount: new Map(),
     postRefCount: new Map(),
     postBatchQueue: new Set(),
@@ -71,6 +69,7 @@ export class TtlCoordinator {
   private authStoreUnsubscribe: (() => void) | null = null;
   private visibilityChangeHandler: (() => void) | null = null;
   private isTickLoopActive = false;
+  private indexingRetries = new Set<Pubky>();
 
   private constructor() {
     this.setupListeners();
@@ -147,10 +146,9 @@ export class TtlCoordinator {
     this.state.postRefCount.set(compositePostId, count + 1);
     if (count > 0) return;
 
-    this.addPostSubscription(compositePostId);
     Logger.debug('TtlCoordinator: Post subscribed', {
       compositePostId,
-      totalSubscribedPosts: this.state.subscribedPosts.size,
+      totalSubscribedPosts: this.state.postRefCount.size,
     });
 
     // Check if post is stale and queue for refresh
@@ -176,7 +174,7 @@ export class TtlCoordinator {
     this.removePostSubscription(compositePostId);
     Logger.debug('TtlCoordinator: Post unsubscribed', {
       compositePostId,
-      totalSubscribedPosts: this.state.subscribedPosts.size,
+      totalSubscribedPosts: this.state.postRefCount.size,
     });
   }
 
@@ -188,7 +186,7 @@ export class TtlCoordinator {
     this.addUserSubscription(pubky);
     Logger.debug('TtlCoordinator: User subscribed', {
       pubky,
-      totalSubscribedUsers: this.state.subscribedUsers.size,
+      totalSubscribedUsers: this.state.userRefCount.size,
     });
     void this.checkAndQueueEntity(pubky, this.getUserOps());
   }
@@ -200,8 +198,15 @@ export class TtlCoordinator {
     this.removeUserSubscription(pubky);
     Logger.debug('TtlCoordinator: User unsubscribed', {
       pubky,
-      totalSubscribedUsers: this.state.subscribedUsers.size,
+      totalSubscribedUsers: this.state.userRefCount.size,
     });
+  }
+
+  /** Bootstrap owns one temporary reference until Nexus returns the indexed user. */
+  public retryUserIndexing({ pubky }: TtlSubscribeUserParams): void {
+    if (this.indexingRetries.has(pubky)) return;
+    this.indexingRetries.add(pubky);
+    this.subscribeUser({ pubky });
   }
 
   /**
@@ -240,6 +245,8 @@ export class TtlCoordinator {
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
       if (state.currentUserPubky !== prevState.currentUserPubky || state.session !== prevState.session) {
         this.stopTicking();
+        for (const pubky of this.indexingRetries) this.unsubscribeUser({ pubky });
+        this.indexingRetries.clear();
         this.state.postBatchQueue.clear();
         this.state.userBatchQueue.clear();
         this.evaluateAndStartTicking();
@@ -377,8 +384,7 @@ export class TtlCoordinator {
    * Called when the coordinator stops
    */
   private reset(): void {
-    this.state.subscribedPosts.clear();
-    this.state.subscribedUsers.clear();
+    this.indexingRetries.clear();
     this.state.userRefCount.clear();
     this.state.postRefCount.clear();
     this.state.postBatchQueue.clear();
@@ -390,17 +396,9 @@ export class TtlCoordinator {
   // ============================================================================
 
   /**
-   * Add a post to the subscription set
-   */
-  private addPostSubscription(compositePostId: string): void {
-    this.state.subscribedPosts.add(compositePostId);
-  }
-
-  /**
    * Remove a post from subscription and any pending refresh queue
    */
   private removePostSubscription(compositePostId: string): void {
-    this.state.subscribedPosts.delete(compositePostId);
     this.state.postBatchQueue.delete(compositePostId);
   }
 
@@ -408,7 +406,7 @@ export class TtlCoordinator {
    * Check if a post is currently subscribed
    */
   private hasPostSubscription(compositePostId: string): boolean {
-    return this.state.subscribedPosts.has(compositePostId);
+    return this.state.postRefCount.has(compositePostId);
   }
 
   /**
@@ -418,10 +416,6 @@ export class TtlCoordinator {
   private addUserSubscription(userId: Pubky): void {
     const currentCount = this.state.userRefCount.get(userId) ?? 0;
     this.state.userRefCount.set(userId, currentCount + 1);
-
-    if (currentCount === 0) {
-      this.state.subscribedUsers.add(userId);
-    }
   }
 
   /**
@@ -433,7 +427,6 @@ export class TtlCoordinator {
 
     if (currentCount <= 1) {
       this.state.userRefCount.delete(userId);
-      this.state.subscribedUsers.delete(userId);
       this.state.userBatchQueue.delete(userId);
     } else {
       this.state.userRefCount.set(userId, currentCount - 1);
@@ -477,7 +470,7 @@ export class TtlCoordinator {
   private getPostOps(): EntityOps<string> {
     return {
       entityName: 'post',
-      subscribed: this.state.subscribedPosts,
+      subscribed: this.state.postRefCount,
       batchQueue: this.state.postBatchQueue,
       ttlMs: this.config.postTtlMs,
       maxBatchSize: this.config.postMaxBatchSize,
@@ -494,14 +487,18 @@ export class TtlCoordinator {
   private getUserOps(): EntityOps<Pubky> {
     return {
       entityName: 'user',
-      subscribed: this.state.subscribedUsers,
+      subscribed: this.state.userRefCount,
       batchQueue: this.state.userBatchQueue,
       ttlMs: this.config.userTtlMs,
       maxBatchSize: this.config.userMaxBatchSize,
       requiresViewerId: false,
       findStaleByIds: (ids) => TtlController.findStaleUsersByIds({ userIds: ids, ttlMs: this.config.userTtlMs }),
-      forceRefresh: (ids, viewerId) =>
-        TtlController.forceRefreshUsersByIds({ userIds: ids, viewerId: viewerId ?? undefined }),
+      forceRefresh: async (ids, viewerId) => {
+        const refreshed = await TtlController.forceRefreshUsersByIds({ userIds: ids, viewerId: viewerId ?? undefined });
+        for (const pubky of refreshed) {
+          if (this.indexingRetries.delete(pubky)) this.unsubscribeUser({ pubky });
+        }
+      },
     };
   }
 
@@ -533,7 +530,7 @@ export class TtlCoordinator {
    * Check all subscribed entities and queue stale ones
    */
   private async checkAllEntitiesForStaleness<T extends string>(ops: EntityOps<T>): Promise<void> {
-    const ids = Array.from(ops.subscribed);
+    const ids = Array.from(ops.subscribed.keys());
     if (ids.length === 0) return;
 
     try {
@@ -608,8 +605,8 @@ export class TtlCoordinator {
     const userOps = this.getUserOps();
 
     Logger.debug('TtlCoordinator: Batch tick started', {
-      subscribedPosts: this.state.subscribedPosts.size,
-      subscribedUsers: this.state.subscribedUsers.size,
+      subscribedPosts: this.state.postRefCount.size,
+      subscribedUsers: this.state.userRefCount.size,
       postBatchQueue: this.state.postBatchQueue.size,
       userBatchQueue: this.state.userBatchQueue.size,
     });

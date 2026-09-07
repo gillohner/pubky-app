@@ -356,6 +356,12 @@ export class NotificationApplication {
     const profileTagged = flatNotifications.some((n) => n.type === NotificationType.TagProfile);
     const postIdsToFetch = [...new Set([...notPersistedPostIds, ...editedPostIds, ...taggedPostIds])];
 
+    // A tag notification is evidence that the cached window changed. Refresh the
+    // affected entity once, including any pages the viewer already expanded.
+    const taggedEntities: TagEntity[] = taggedPostIds.map((id) => ({ kind: 'post', id }));
+    if (profileTagged) taggedEntities.push({ kind: 'user', id: viewerId });
+    await Promise.all(taggedEntities.map((entity) => LocalTagCacheService.invalidate(entity, isCurrent)));
+
     if (isCurrent && !isCurrent()) return [];
     if (postIdsToFetch.length > 0) {
       await PostStreamApplication.fetchMissingPostsFromNexus({
@@ -375,13 +381,11 @@ export class NotificationApplication {
         force: true,
       });
     }
-    // A tag notification is evidence that the cached window changed. Refresh the
-    // affected entity once, including any pages the viewer already expanded.
-    const taggedEntities: TagEntity[] = taggedPostIds.map((id) => ({ kind: 'post', id }));
-    if (profileTagged) taggedEntities.push({ kind: 'user', id: viewerId });
     await Promise.all(
       taggedEntities.map(async (entity) => {
-        await LocalTagCacheService.invalidate(entity, isCurrent);
+        const cached = await TagCacheApplication.get(entity);
+        // Invalidation above makes this proof specific to hydration after this event.
+        if (cached?.cache?.exhausted && cached.cache.fetchedAt > 0 && cached.cache.viewerId === viewerId) return;
         try {
           await TagCacheApplication.forceRefresh({ ...entity, viewerId, isCurrent });
         } catch (error) {

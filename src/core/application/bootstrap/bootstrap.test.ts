@@ -654,7 +654,7 @@ describe('BootstrapApplication', () => {
       const mockSubscribeUser = vi.fn();
       const mockGetInstance = vi.spyOn(TtlCoordinator, 'getInstance').mockReturnValue(
         asOpaque<TtlCoordinator>({
-          subscribeUser: mockSubscribeUser,
+          retryUserIndexing: mockSubscribeUser,
         }),
       );
       const loggerWarnSpy = vi.spyOn(Logger, 'warn').mockImplementation(() => {});
@@ -684,7 +684,7 @@ describe('BootstrapApplication', () => {
       const mockSubscribeUser = vi.fn();
       vi.spyOn(TtlCoordinator, 'getInstance').mockReturnValue(
         asOpaque<TtlCoordinator>({
-          subscribeUser: mockSubscribeUser,
+          retryUserIndexing: mockSubscribeUser,
         }),
       );
       const loggerWarnSpy = vi.spyOn(Logger, 'warn').mockImplementation(() => {});

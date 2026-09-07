@@ -8,7 +8,6 @@ import { CompositeIdDomain } from '@/models/models.types';
 import { buildCompositeId, buildCompositeIdFromPubkyUri } from '@/models/models.utils';
 import { ModerationModel } from '@/models/moderation/moderation';
 import { type ModerationModelSchema, ModerationType } from '@/models/moderation/moderation.schema';
-import { PostCountsModel } from '@/models/post/counts/postCounts';
 import { PostDetailsModel } from '@/models/post/details/postDetails';
 import { DELETED } from '@/models/post/details/postDetails.constants';
 import type { PostDetailsModelSchema } from '@/models/post/details/postDetails.schema';
@@ -338,8 +337,7 @@ export class LocalStreamPostsService {
     if (tagGuard.isCurrent && !tagGuard.isCurrent()) return { attachmentMetadata: [] };
     await Promise.all([
       PostDetailsModel.bulkSave(liveDetails),
-      PostCountsModel.bulkSave(liveCounts),
-      LocalTagCacheService.savePreviews('post', liveTags, tagGuard),
+      LocalTagCacheService.savePreviews('post', liveTags, tagGuard, liveCounts),
       PostRelationshipsModel.bulkSave(liveRelationships),
       PostTtlModel.bulkSave(liveTtl),
       // Persist bookmarks from Nexus (viewer's bookmark status for each post)

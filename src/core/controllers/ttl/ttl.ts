@@ -13,19 +13,11 @@ export class TtlController {
     return await TtlApplication.findStaleUsersByIds(params);
   }
 
-  static async forceRefreshPostsByIds(params: {
-    postIds: string[];
-    viewerId?: Pubky;
-    isCurrent?: () => boolean;
-  }): Promise<void> {
+  static async forceRefreshPostsByIds(params: { postIds: string[]; viewerId?: Pubky }): Promise<void> {
     return await TtlApplication.forceRefreshPostsByIds({ ...params, isCurrent: captureViewerSession() });
   }
 
-  static async forceRefreshUsersByIds(params: {
-    userIds: Pubky[];
-    viewerId?: Pubky;
-    isCurrent?: () => boolean;
-  }): Promise<void> {
+  static async forceRefreshUsersByIds(params: { userIds: Pubky[]; viewerId?: Pubky }): Promise<Pubky[]> {
     return await TtlApplication.forceRefreshUsersByIds({ ...params, isCurrent: captureViewerSession() });
   }
 }

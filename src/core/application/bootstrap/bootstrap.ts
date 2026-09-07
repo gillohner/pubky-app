@@ -69,7 +69,7 @@ export class BootstrapApplication {
       await LocalUserService.upsertTtlWithDelay(pubky, retryDelayMs);
 
       // Subscribe to TTL coordinator for periodic staleness checks
-      TtlCoordinator.getInstance().subscribeUser({ pubky });
+      TtlCoordinator.getInstance().retryUserIndexing({ pubky });
     }
 
     const [{ unread, nextPollCursor }] = await Promise.all([
@@ -78,8 +78,11 @@ export class BootstrapApplication {
         lastRead: userLastRead,
         allowedTypes: params.allowedTypes,
       }),
-      LocalStreamUsersService.persistUsers(bootstrapData.users, { revisions: new Map() }),
-      LocalStreamPostsService.persistPosts({ posts: bootstrapData.posts, tagGuard: { revisions: new Map() } }),
+      LocalStreamUsersService.persistUsers(bootstrapData.users, { revisions: new Map(), viewerId: pubky }),
+      LocalStreamPostsService.persistPosts({
+        posts: bootstrapData.posts,
+        tagGuard: { revisions: new Map(), viewerId: pubky },
+      }),
       LocalStreamPostsService.upsert({
         streamId: PostStreamTypes.TIMELINE_ALL_ALL,
         stream: bootstrapData.ids.stream,

@@ -21,6 +21,30 @@ describe('nexus.utils', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     fetch.mockRestore();
   });
+  it('starts forced revalidation after an already in-flight identical request', async () => {
+    let resolveOld!: (response: Response) => void;
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+      )
+      .mockResolvedValue(new Response(JSON.stringify(['new'])));
+    try {
+      const url = `${getNexusUrl()}/in-flight-forced-tag-refresh-test`;
+      const old = queryNexus({ url });
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+      const fresh = queryNexus({ url, force: true });
+      resolveOld(new Response(JSON.stringify(['old'])));
+      expect(await old).toEqual(['old']);
+      expect(await fresh).toEqual(['new']);
+      expect(fetch).toHaveBeenCalledTimes(2);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
   describe('buildNexusUrl', () => {
     it('should build correct Nexus URL', () => {
       expect(buildNexusUrl('v0/users')).toBe(`${getNexusUrl()}/v0/users`);

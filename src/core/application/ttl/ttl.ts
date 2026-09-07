@@ -1,6 +1,7 @@
 import { FileApplication } from '@/application/file/file';
 import { PostStreamApplication } from '@/application/stream/posts/post';
 import { TagCacheApplication } from '@/application/tag/tag-cache';
+import { isAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { buildCompositeId } from '@/models/models.utils';
@@ -9,7 +10,6 @@ import { UserTtlModel } from '@/models/user/ttl/userTtl';
 import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import { LocalTagCacheService } from '@/services/local/tag/tag-cache';
-import type { NexusPost } from '@/services/nexus/nexus.types';
 import { NexusPostStreamService } from '@/services/nexus/stream/posts/postStream';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 
@@ -82,10 +82,10 @@ export class TtlApplication {
 
     const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({
       posts: postBatch,
-      tagGuard: { revisions, isCurrent: params.isCurrent },
+      tagGuard: { revisions, isCurrent: params.isCurrent, viewerId: params.viewerId },
     });
     await FileApplication.persistFiles(attachmentMetadata);
-    await Promise.all(
+    await this.refreshTagWindows(
       postBatch.map((post) =>
         TagCacheApplication.refreshExpanded(
           {
@@ -100,7 +100,7 @@ export class TtlApplication {
     );
 
     // Opportunistic cache warm: fetch missing authors
-    await this.fetchAndPersistMissingAuthors({
+    await PostStreamApplication.fetchMissingPostAuthors({
       posts: postBatch,
       viewerId: params.viewerId,
       isCurrent: params.isCurrent,
@@ -124,9 +124,9 @@ export class TtlApplication {
     userIds: Pubky[];
     viewerId?: Pubky;
     isCurrent?: () => boolean;
-  }): Promise<void> {
+  }): Promise<Pubky[]> {
     const uniqueIds = Array.from(new Set(params.userIds));
-    if (uniqueIds.length === 0) return;
+    if (uniqueIds.length === 0) return [];
 
     const revisions = await LocalTagCacheService.captureRevisions('user', uniqueIds);
     const userBatch = await NexusUserStreamService.fetchByIds({
@@ -135,9 +135,13 @@ export class TtlApplication {
       viewer_id: params.viewerId,
     });
 
-    if (params.isCurrent && !params.isCurrent()) return;
-    await LocalStreamUsersService.persistUsers(userBatch, { revisions, isCurrent: params.isCurrent });
-    await Promise.all(
+    if (params.isCurrent && !params.isCurrent()) return [];
+    await LocalStreamUsersService.persistUsers(userBatch, {
+      revisions,
+      isCurrent: params.isCurrent,
+      viewerId: params.viewerId,
+    });
+    await this.refreshTagWindows(
       userBatch.map((user) =>
         TagCacheApplication.refreshExpanded(
           { kind: 'user', id: user.details.id, viewerId: params.viewerId, isCurrent: params.isCurrent },
@@ -145,28 +149,15 @@ export class TtlApplication {
         ),
       ),
     );
+    return params.isCurrent && !params.isCurrent() ? [] : userBatch.map((user) => user.details.id);
   }
 
-  /**
-   * Fetch and persist missing post authors for cache warming.
-   */
-  private static async fetchAndPersistMissingAuthors(params: {
-    posts: NexusPost[];
-    viewerId?: Pubky;
-    isCurrent?: () => boolean;
-  }): Promise<void> {
-    const authors = Array.from(new Set(params.posts.map((post) => post.details.author)));
-    if (authors.length === 0) return;
-
-    const cacheMissUserIds = await LocalStreamUsersService.getNotPersistedUsersInCache(authors);
-    if (cacheMissUserIds.length === 0) return;
-
-    const revisions = await LocalTagCacheService.captureRevisions('user', cacheMissUserIds);
-    const userBatch = await NexusUserStreamService.fetchByIds({
-      user_ids: cacheMissUserIds,
-      viewer_id: params.viewerId,
-    });
-    if (params.isCurrent && !params.isCurrent()) return;
-    await LocalStreamUsersService.persistUsers(userBatch, { revisions, isCurrent: params.isCurrent });
+  private static async refreshTagWindows(tasks: Promise<void>[]): Promise<void> {
+    const results = await Promise.allSettled(tasks);
+    for (const result of results) {
+      if (result.status === 'rejected' && !isAppError(result.reason)) {
+        Logger.warn('TTL tag window refresh failed; retained window remains stale', { error: result.reason });
+      }
+    }
   }
 }

@@ -30,6 +30,10 @@ export abstract class TagCollection<Id, Schema extends TagCollectionModelSchema<
     };
   }
 
+  private initializeLegacyCursor() {
+    this.cache ??= { cursor: this.tags.length, exhausted: false, fetchedAt: 0, revision: 0 };
+  }
+
   // -------- Instance helpers (shared) --------
 
   findByLabel(label: string): TagModel | null {
@@ -44,6 +48,7 @@ export abstract class TagCollection<Id, Schema extends TagCollectionModelSchema<
   }
 
   addTagger(label: string, taggerId: Pubky): boolean | null {
+    this.initializeLegacyCursor();
     let tagExists = true;
     let labelTagData = this.findByLabel(label);
     // The label does not exist, create it
@@ -62,6 +67,7 @@ export abstract class TagCollection<Id, Schema extends TagCollectionModelSchema<
   }
 
   removeTagger(label: string, taggerId: Pubky): boolean | null {
+    this.initializeLegacyCursor();
     const labelTagData = this.findByLabel(label);
     if (!labelTagData || !labelTagData?.relationship) {
       return null;

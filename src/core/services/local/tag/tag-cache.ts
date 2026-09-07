@@ -6,10 +6,14 @@ import { PostTagsModel } from '@/models/post/tags/postTags';
 import type { NexusModelTuple } from '@/models/shared/base/tuple/baseTuple.type';
 import type { TagCollectionModelSchema } from '@/models/shared/tag/tag.schema';
 import { UserTagsModel } from '@/models/user/tags/userTags';
-import { reconcileTagWindow } from '@/pipes/tag/tag-cache';
-import type { NexusTag } from '@/services/nexus/nexus.types';
+import { reconcileTagCounts, reconcileTagWindow } from '@/pipes/tag/tag-cache';
+import type { NexusPostCounts, NexusTag, NexusUserCounts } from '@/services/nexus/nexus.types';
 
-export type TagPreviewGuard = { revisions?: Map<string, number | null>; isCurrent?: () => boolean };
+export type TagPreviewGuard = {
+  revisions?: Map<string, number | null>;
+  isCurrent?: () => boolean;
+  viewerId?: string | null;
+};
 
 export type TagEntity = { kind: 'post' | 'user'; id: string };
 
@@ -45,15 +49,18 @@ export class LocalTagCacheService {
     await this.write(table.name, () =>
       db.transaction('rw', table, async () => {
         const existing = await table.get(entity.id);
-        if (!existing || (isCurrent && !isCurrent())) return;
+        if (isCurrent && !isCurrent()) return;
         await table.put({
+          id: entity.id,
+          tags: [],
           ...existing,
           cache: {
-            ...existing.cache,
-            cursor: existing.cache?.cursor ?? existing.tags.length,
+            ...existing?.cache,
+            ...(!existing ? { initialized: false } : {}),
+            cursor: existing?.cache?.cursor ?? existing?.tags.length ?? 0,
             exhausted: false,
             fetchedAt: 0,
-            revision: (existing.cache?.revision ?? 0) + 1,
+            revision: (existing?.cache?.revision ?? 0) + 1,
           },
         });
       }),
@@ -64,25 +71,45 @@ export class LocalTagCacheService {
     kind: TagEntity['kind'],
     entries: NexusModelTuple<NexusTag[]>[],
     guard: TagPreviewGuard = {},
+    counts: NexusModelTuple<NexusPostCounts | NexusUserCounts>[] = [],
   ) {
     const table = this.table({ kind, id: '' });
+    const countsTable = db.table<(NexusPostCounts | NexusUserCounts) & { id: string }>(`${kind}_counts`);
+    const incomingCounts = new Map(counts);
     await this.write(table.name, () =>
-      db.transaction('rw', table, async () => {
+      db.transaction('rw', table, countsTable, async () => {
         for (const [id, tags] of entries) {
           const existing = await table.get(id);
           if (guard.isCurrent && !guard.isCurrent()) return;
           const revision = existing ? (existing.cache?.revision ?? 0) : null;
-          if (guard.revisions && revision !== (guard.revisions.get(id) ?? null)) continue;
+          const superseded = !!guard.revisions && revision !== (guard.revisions.get(id) ?? null);
+          const totals = incomingCounts.get(id);
+          if (totals) {
+            const previousCounts = await countsTable.get(id);
+            const tagCounts =
+              superseded && previousCounts
+                ? { tags: previousCounts.tags, unique_tags: previousCounts.unique_tags }
+                : reconcileTagCounts(totals, tags, existing, previousCounts, guard.viewerId ?? undefined, Date.now());
+            if (guard.isCurrent && !guard.isCurrent()) return;
+            await countsTable.put({ ...totals, ...tagCounts, id });
+          }
+          const foreignPreview =
+            (guard.viewerId == null && existing?.cache?.viewerId != null) ||
+            Object.values(existing?.mutations ?? {}).some(
+              (mutation) => mutation.expiresAt > Date.now() && mutation.viewerId !== guard.viewerId,
+            );
+          if (superseded || foreignPreview) continue;
           // A preview cannot establish which labels disappeared from an expanded list.
           // Keep that window until its full refresh succeeds (including when offline).
           if ((existing?.cache?.cursor ?? existing?.tags.length ?? 0) > tags.length) continue;
           await table.put({
             id,
-            ...reconcileTagWindow(tags, existing, Date.now()),
+            ...reconcileTagWindow(tags, existing, Date.now(), guard.viewerId ?? undefined),
             cache: {
               cursor: tags.length,
-              exhausted: false,
+              exhausted: totals !== undefined && totals.unique_tags <= tags.length,
               fetchedAt: Date.now(),
+              viewerId: guard.viewerId ?? null,
               revision: (existing?.cache?.revision ?? 0) + 1,
             },
           });
@@ -109,7 +136,10 @@ export class LocalTagCacheService {
         // A newer batch/page won the race. Never overwrite it with an older response.
         if (options.isCurrent && !options.isCurrent()) return false;
         const revision = existing ? (existing.cache?.revision ?? 0) : null;
-        if (revision !== options.revision && !(options.revision === null && existing?.cache?.initialized === false))
+        if (
+          revision !== options.revision &&
+          !(options.revision === null && existing?.cache?.initialized === false && existing.cache.revision === 0)
+        )
           return false;
         const merged = new Map(
           (options.skip ? (existing?.tags ?? []) : []).map((tag) => [tag.label.toLowerCase(), tag]),
@@ -117,7 +147,7 @@ export class LocalTagCacheService {
         for (const tag of tags) merged.set(tag.label.toLowerCase(), tag);
         await table.put({
           id: entity.id,
-          ...reconcileTagWindow([...merged.values()], existing, Date.now()),
+          ...reconcileTagWindow([...merged.values()], existing, Date.now(), options.viewerId),
           cache: {
             cursor: options.skip + tags.length,
             exhausted: tags.length < options.limit,

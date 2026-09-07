@@ -80,7 +80,7 @@ describe('TtlCoordinator', () => {
     findStalePostsSpy = vi.spyOn(TtlController, 'findStalePostsByIds').mockResolvedValue([]);
     findStaleUsersSpy = vi.spyOn(TtlController, 'findStaleUsersByIds').mockResolvedValue([]);
     forceRefreshPostsSpy = vi.spyOn(TtlController, 'forceRefreshPostsByIds').mockResolvedValue(undefined);
-    forceRefreshUsersSpy = vi.spyOn(TtlController, 'forceRefreshUsersByIds').mockResolvedValue(undefined);
+    forceRefreshUsersSpy = vi.spyOn(TtlController, 'forceRefreshUsersByIds').mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -1679,5 +1679,37 @@ describe('TtlCoordinator', () => {
       // Should not crash or cause issues
       coordinator.stop();
     });
+  });
+  it('releases bootstrap indexing ownership after success while retaining viewport ownership', async () => {
+    setupAuthenticatedUser();
+    const coord = TtlCoordinator.getInstance();
+    const pubky = 'indexing-user';
+    findStaleUsersSpy.mockImplementation(async (ids: { userIds: string[] }) => ids.userIds);
+    forceRefreshUsersSpy.mockResolvedValue([pubky]);
+    coord.retryUserIndexing({ pubky });
+    coord.retryUserIndexing({ pubky }); // repeated bootstrap does not leak a reference
+    coord.subscribeUser({ pubky });
+    coord.start();
+    await waitForTick();
+    expect(forceRefreshUsersSpy).toHaveBeenCalledTimes(1);
+    await waitForTick();
+    expect(forceRefreshUsersSpy).toHaveBeenCalledTimes(2); // viewport reference still active
+    coord.unsubscribeUser({ pubky });
+    await waitForTick();
+    expect(forceRefreshUsersSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains bootstrap retry when Nexus still omits the user', async () => {
+    setupAuthenticatedUser();
+    const coord = TtlCoordinator.getInstance();
+    const pubky = 'indexing-user';
+    findStaleUsersSpy.mockImplementation(async (ids: { userIds: string[] }) => ids.userIds);
+    forceRefreshUsersSpy.mockResolvedValueOnce([]).mockResolvedValue([pubky]);
+    coord.retryUserIndexing({ pubky });
+    coord.start();
+    await waitForTick();
+    await waitForTick();
+    await waitForTick();
+    expect(forceRefreshUsersSpy).toHaveBeenCalledTimes(2);
   });
 });

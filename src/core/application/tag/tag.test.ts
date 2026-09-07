@@ -7,7 +7,6 @@ import { HttpMethod } from '@/libs/http/http.types';
 import type { Pubky } from '@/models/models.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalPostTagService } from '@/services/local/tag/post/tag.post';
-import { ViewerTagMarkerStorage } from '@/services/local/tag/post/viewerTagMarkerStorage';
 import { LocalUserTagService } from '@/services/local/tag/user/tag.user';
 import { TagApplication } from './tag';
 import type { TCreateTagInput, TDeleteTagInput } from './tag.types';
@@ -280,16 +279,6 @@ describe('Tag Application', () => {
       // Without this, rollback re-creates the tag and the user is stuck with a
       // ghost tag they can't remove (HS keeps returning 404 on every retry).
       expect(createSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('clearViewerMarkers', () => {
-    it('delegates to ViewerTagMarkerStorage.clearForUser', () => {
-      const spy = vi.spyOn(ViewerTagMarkerStorage, 'clearForUser').mockImplementation(() => {});
-
-      TagApplication.clearViewerMarkers('user-pubky' as Pubky);
-
-      expect(spy).toHaveBeenCalledWith('user-pubky');
     });
   });
 });

@@ -46,7 +46,7 @@ UI (stream viewport)
 │  │  Batch interval: config     │  │  Batch interval: config     │  │
 │  │  Max batch: configurable    │  │  Max batch: configurable    │  │
 │  │                             │  │                             │  │
-│  │  subscribedPosts: Set       │  │  subscribedUsers: Set       │  │
+│  │  postRefCount: Map          │  │  userRefCount: Map         │  │
 │  │  postBatchQueue: Set        │  │  userBatchQueue: Set        │  │
 │  │                             │  │  userRefCount: Map          │  │
 │  └─────────────────────────────┘  └─────────────────────────────┘  │
@@ -134,7 +134,7 @@ class TtlCoordinator {
 ```
 subscribePost(compositePostId)
     │
-    ├──► Add postId to subscribedPosts
+    ├──► Increment postRefCount[postId]
     │    └──► Check post_ttl table
     │         ├── Not found → Add to postBatchQueue (cache miss)
     │         ├── Stale (now - lastUpdatedAt > config.POST_TTL_MS) → Add to postBatchQueue
@@ -142,7 +142,7 @@ subscribePost(compositePostId)
 
 subscribeUser(pubky)
     │
-    └──► Add pubky to subscribedUsers (increment refCount)
+    └──► Increment userRefCount[pubky]
          └──► Check user_ttl table
               ├── Not found → Add to userBatchQueue (cache miss)
               ├── Stale (now - lastUpdatedAt > config.USER_TTL_MS) → Add to userBatchQueue
@@ -154,10 +154,10 @@ subscribeUser(pubky)
 ```
 onBatchTick()
     │
-    ├──► Check all subscribedPosts against post_ttl table
+    ├──► Check all postRefCount keys against post_ttl table
     │    └──► Add stale posts to postBatchQueue
     │
-    ├──► Check all subscribedUsers against user_ttl table
+    ├──► Check all userRefCount keys against user_ttl table
     │    └──► Add stale users to userBatchQueue
     │
     ├──► If postBatchQueue.size > 0
@@ -234,7 +234,7 @@ unsubscribeUser(pubky)
     │
     ├──► Decrement userRefCount[pubky]
     └──► If refCount === 0
-         ├──► Remove from subscribedUsers
+         ├──► Remove from userRefCount
          └──► Remove from userBatchQueue if present
 ```
 
@@ -245,8 +245,6 @@ Stopping the coordinator clears its subscriptions. Route changes only update the
 ```
 reset()
     │
-    ├──► Clear subscribedPosts set
-    ├──► Clear subscribedUsers set
     ├──► Clear postRefCount map
     ├──► Clear userRefCount map
     ├──► Clear postBatchQueue
@@ -372,3 +370,5 @@ useEffect(() => {
 Removing per-mount tag requests requires complete TTL coverage. Visual feed tiles and the Tagged panel subscribe explicitly, including on mobile. Public entity refreshes are allowed without enabling authenticated notification/stream coordinators. Route changes no longer reset subscriptions behind mounted components. Post IDs now use reference counting like user IDs because several visible tiles/cards can refer to the same post.
 
 Tag pagination has independent cache metadata and mutation protection. Batch previews preserve expanded lists; TTL refreshes their loaded prefix atomically instead of truncating it or retaining deleted labels indefinitely. See [the tag cache contract](../local-first.md#tag-previews-pagination-and-freshness).
+
+Bootstrap retry ownership is distinct from viewport ownership. `retryUserIndexing` adds one temporary reference per user; successful Nexus user hydration releases it while preserving any visible subscribers. Missing users remain eligible for retry. Expanded-tag failures retain their stale window but do not reject an otherwise successful entity batch, preventing repeated downloads of healthy batch members.

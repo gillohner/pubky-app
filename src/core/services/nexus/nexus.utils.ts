@@ -124,8 +124,15 @@ export async function queryNexus<T>({
   body = null,
   force = false,
 }: TQueryNexusParams): Promise<T> {
+  const queryKey = ['nexus', url, method, body];
+  if (force) {
+    // staleTime alone still joins a request started before the invalidating event.
+    // Wait for that request, then let concurrent revalidations share a new one.
+    const pending = nexusQueryClient.getQueryCache().find({ queryKey, exact: true });
+    if (pending?.state.fetchStatus === 'fetching') await pending.promise?.catch(() => {});
+  }
   return nexusQueryClient.fetchQuery({
-    queryKey: ['nexus', url, method, body],
+    queryKey,
     ...(force ? { staleTime: 0 } : {}),
     queryFn: () => fetchNexus<T>({ url, method, body }),
   });

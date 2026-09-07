@@ -3,10 +3,8 @@ import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
-import type { Pubky } from '@/models/models.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalPostTagService } from '@/services/local/tag/post/tag.post';
-import { ViewerTagMarkerStorage } from '@/services/local/tag/post/viewerTagMarkerStorage';
 import { LocalUserTagService } from '@/services/local/tag/user/tag.user';
 
 /**
@@ -121,14 +119,5 @@ export class TagApplication {
         throw error;
       }
     }
-  }
-
-  /**
-   * Clears all viewer-mutation tag markers (sessionStorage) for the given user.
-   * Called from logout / session-cleanup paths to drop stale markers before the
-   * next user signs in on the same tab.
-   */
-  static clearViewerMarkers(pubky: Pubky) {
-    ViewerTagMarkerStorage.clearForUser(pubky);
   }
 }

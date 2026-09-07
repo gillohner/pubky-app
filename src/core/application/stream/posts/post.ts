@@ -586,11 +586,11 @@ export class PostStreamApplication {
       });
       const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({
         posts: postBatch,
-        tagGuard: { revisions, isCurrent },
+        tagGuard: { revisions, isCurrent, viewerId },
       });
       await FileApplication.persistFiles(attachmentMetadata);
       // Persist the missing authors of the posts
-      await this.fetchMissingUsersFromNexus({ posts: postBatch, viewerId, isCurrent });
+      await this.fetchMissingPostAuthors({ posts: postBatch, viewerId, isCurrent });
       // Fetch original posts for any reposts (to display embedded repost content)
       const repostedUris = postBatch
         .map((post) => post.relationships.reposted)
@@ -658,10 +658,10 @@ export class PostStreamApplication {
       });
       const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({
         posts: originalPosts,
-        tagGuard: { revisions, isCurrent },
+        tagGuard: { revisions, isCurrent, viewerId },
       });
       await FileApplication.persistFiles(attachmentMetadata);
-      await this.fetchMissingUsersFromNexus({ posts: originalPosts, viewerId, isCurrent });
+      await this.fetchMissingPostAuthors({ posts: originalPosts, viewerId, isCurrent });
     } catch (error) {
       Logger.warn('Failed to fetch original posts for reposts', { missingOriginalPostIds, error });
     }
@@ -711,7 +711,7 @@ export class PostStreamApplication {
     };
   }
 
-  private static async fetchMissingUsersFromNexus({ posts, viewerId, isCurrent }: TFetchMissingUsersParams) {
+  static async fetchMissingPostAuthors({ posts, viewerId, isCurrent }: TFetchMissingUsersParams) {
     const cacheMissUserIds = await this.getNotPersistedUsersInCache(posts.map((post) => post.details.author));
     if (cacheMissUserIds.length > 0) {
       if (isCurrent && !isCurrent()) return;
@@ -720,7 +720,7 @@ export class PostStreamApplication {
         user_ids: cacheMissUserIds,
         viewer_id: viewerId ?? undefined,
       });
-      await LocalStreamUsersService.persistUsers(userBatch, { revisions, isCurrent });
+      await LocalStreamUsersService.persistUsers(userBatch, { revisions, isCurrent, viewerId });
     }
   }
 

@@ -10,7 +10,6 @@ import type {
   TDeletePostParams,
   TEditCollectionParams,
   TEditPostParams,
-  TFetchMorePostTagsParams,
   TFetchPostTaggersParams,
   TFileAttachmentsParams,
   TNormalizeTagsParams,
@@ -42,7 +41,7 @@ import {
 import { PostNormalizer } from '@/pipes/post/post.normalizer';
 import { PostValidators } from '@/pipes/post/post.validators';
 import { TagNormalizer } from '@/pipes/tag/tag.normalizer';
-import type { NexusTag, NexusTaggers } from '@/services/nexus/nexus.types';
+import type { NexusTaggers } from '@/services/nexus/nexus.types';
 import type { TCompositeId } from '@/services/nexus/post/post.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
@@ -141,18 +140,6 @@ export class PostController {
 
   static async fetchAuthoredCollections(params: TAuthoredCollectionsParams): Promise<CollectionPost[] | null> {
     return await PostApplication.fetchAuthoredCollections(params);
-  }
-
-  /**
-   * Fetch more post tags from Nexus with pagination
-   * @param params - Parameters object
-   * @param params.compositeId - Composite post ID in format "authorId:postId"
-   * @param params.skip - Number of tags to skip
-   * @param params.limit - Maximum number of tags to return
-   * @returns Array of tags from Nexus
-   */
-  static async fetchTags({ compositeId, skip, limit, viewerId }: TFetchMorePostTagsParams): Promise<NexusTag[]> {
-    return await PostApplication.fetchTags({ compositeId, skip, limit, viewerId });
   }
 
   /**

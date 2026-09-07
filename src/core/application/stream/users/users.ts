@@ -111,7 +111,7 @@ export class UserStreamApplication {
         force,
         viewer_id: viewerId,
       });
-      await LocalStreamUsersService.persistUsers(userBatch, { revisions, isCurrent });
+      await LocalStreamUsersService.persistUsers(userBatch, { revisions, isCurrent, viewerId });
     } catch (error) {
       Logger.warn('Failed to fetch missing users from Nexus:', { error });
     }

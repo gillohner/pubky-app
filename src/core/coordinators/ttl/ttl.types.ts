@@ -84,17 +84,8 @@ export interface TtlCoordinatorState {
    */
   isPageVisible: boolean;
 
-  /**
-   * Set of subscribed post composite IDs (authorPubky:postId)
-   */
-  subscribedPosts: Set<string>;
   /** Number of visible instances of a post (including multiple visual tiles). */
   postRefCount: Map<string, number>;
-
-  /**
-   * Set of subscribed user IDs (pubky)
-   */
-  subscribedUsers: Set<Pubky>;
 
   /**
    * Reference count for users (multiple posts can have same author)
@@ -169,7 +160,7 @@ export interface EntityOps<T extends string> {
   /** Name for logging purposes */
   entityName: 'post' | 'user';
   /** Set of currently subscribed entity IDs */
-  subscribed: Set<T>;
+  subscribed: ReadonlyMap<T, number>;
   /** Queue of entity IDs pending refresh */
   batchQueue: Set<T>;
   /** TTL in milliseconds for this entity type */

@@ -30,7 +30,14 @@ export class TagCacheApplication {
 
   static async refreshExpanded(request: TagRequest, previewSize: number) {
     const cached = await this.get(request);
-    if ((cached?.cache?.cursor ?? cached?.tags.length ?? 0) > previewSize) await this.forceRefresh(request);
+    if ((cached?.cache?.cursor ?? cached?.tags.length ?? 0) <= previewSize) return;
+    try {
+      await this.forceRefresh(request);
+    } catch (error) {
+      // Legacy expanded records also need a stale tag timestamp when refresh fails.
+      await LocalTagCacheService.invalidate(request, request.isCurrent);
+      throw error;
+    }
   }
 
   private static run(request: TagRequest, mode: 'missing' | 'next' | 'refresh'): Promise<void> {
@@ -52,8 +59,7 @@ export class TagCacheApplication {
   private static async load(request: TagRequest, mode: 'missing' | 'next' | 'refresh', attempt = 0): Promise<void> {
     const existing = await this.get(request);
     if (request.isCurrent && !request.isCurrent()) return;
-    const viewerChanged =
-      existing?.cache?.viewerId !== undefined && existing.cache.viewerId !== (request.viewerId ?? null);
+    const viewerChanged = !!existing && (existing.cache?.viewerId ?? null) !== (request.viewerId ?? null);
     if (viewerChanged) mode = 'refresh';
     if (
       existing &&

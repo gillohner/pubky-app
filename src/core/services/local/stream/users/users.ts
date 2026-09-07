@@ -5,7 +5,6 @@ import { type ModerationModelSchema, ModerationType } from '@/models/moderation/
 import type { NexusModelTuple } from '@/models/shared/base/tuple/baseTuple.type';
 import { UserStreamModel } from '@/models/stream/user/userStream';
 import type { UserStreamId } from '@/models/stream/user/userStream.types';
-import { UserCountsModel } from '@/models/user/counts/userCounts';
 import { UserDetailsModel } from '@/models/user/details/userDetails';
 import type { UserDetailsModelSchema } from '@/models/user/details/userDetails.schema';
 import { UserRelationshipsModel } from '@/models/user/relationships/userRelationships';
@@ -125,8 +124,7 @@ export class LocalStreamUsersService {
     // Bulk save to normalized tables
     await Promise.all([
       UserDetailsModel.bulkSave(userDetails),
-      UserCountsModel.bulkSave(userCounts),
-      LocalTagCacheService.savePreviews('user', userTags, tagGuard),
+      LocalTagCacheService.savePreviews('user', userTags, tagGuard, userCounts),
       UserRelationshipsModel.bulkSave(userRelationships),
       UserTtlModel.bulkSave(userTtl),
       // Persist moderation records for flagged profiles

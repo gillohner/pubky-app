@@ -11,11 +11,7 @@ import { PostStreamApplication } from '@/application/stream/posts/post';
 import { TagApplication } from '@/application/tag/tag';
 import { NEXUS_STREAM_MAX_LIMIT } from '@/config/nexus';
 import { ModerationController } from '@/controllers/moderation/moderation';
-import type {
-  TDeletePostParams,
-  TFetchMorePostTagsParams,
-  TFetchPostTaggersParams,
-} from '@/controllers/post/post.types';
+import type { TDeletePostParams, TFetchPostTaggersParams } from '@/controllers/post/post.types';
 import { NOT_FOUND_CACHED_STREAM, SKIP_FETCH_NEW_POSTS } from '@/controllers/stream/posts/post.constants';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -37,8 +33,7 @@ import { PostNormalizer } from '@/pipes/post/post.normalizer';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalPostService } from '@/services/local/post/post';
 import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
-import { LocalPostTagService } from '@/services/local/tag/post/tag.post';
-import type { NexusTag, NexusTaggers } from '@/services/nexus/nexus.types';
+import type { NexusTaggers } from '@/services/nexus/nexus.types';
 import { NexusPostService } from '@/services/nexus/post/post';
 import type { TCompositeId } from '@/services/nexus/post/post.types';
 
@@ -102,24 +97,6 @@ export class PostApplication {
     const { pubky, id } = parseCompositeId(compositeId);
     const parentPostUri = postUriBuilder(pubky, id);
     return await LocalPostService.readReplies(parentPostUri);
-  }
-
-  /**
-   * Fetch more post tags from Nexus with pagination and persist to local DB
-   * @param compositeId - Composite post ID in format "authorId:postId"
-   * @param skip - Number of tags to skip
-   * @param limit - Maximum number of tags to return
-   * @returns Array of tags from Nexus
-   */
-  static async fetchTags({ compositeId, skip, limit, viewerId }: TFetchMorePostTagsParams): Promise<NexusTag[]> {
-    const nexusTags = await NexusPostService.getPostTags({ compositeId, skip, limit, viewerId });
-
-    // Persist new tags to local DB (merge with existing)
-    if (nexusTags.length > 0) {
-      await LocalPostTagService.mergeTags({ postId: compositeId, tags: nexusTags, viewerId: viewerId ?? null });
-    }
-
-    return nexusTags;
   }
 
   /**
