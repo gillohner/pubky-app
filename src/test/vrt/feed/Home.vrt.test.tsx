@@ -15,6 +15,8 @@ import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { tryResolveFeedsShellConfig } from '@/app/(feeds)/_shell/configs';
 import { Home } from '@/templates/Feed/Home/Home';
 import { Fab } from '@/molecules/Fab/Fab';
+import { buildFeatureDiscoveryStorageKey } from '@/config/featureDiscovery';
+import { VIBES_ALERT_STORAGE_ID } from '@/config/vibes';
 
 // Browser-mode vi.mock factories run before top-level imports resolve and have
 // no synchronous require(), so each factory loads its fixture via async import
@@ -501,6 +503,38 @@ async function waitForArticleComposer() {
   await expect.element(page.getByText('Publish')).toBeVisible();
   await waitForMarkdownEditorReady();
 }
+
+// Existing feed scenarios represent a returning user who has already tried Vibes.
+// Fresh-user alert coverage below removes this saved choice explicitly.
+beforeEach(async () => {
+  const f = await fixtures;
+  localStorage.setItem(
+    buildFeatureDiscoveryStorageKey(f.viewerPubky, VIBES_ALERT_STORAGE_ID),
+    JSON.stringify({ tried: true, laterCount: 0, nextShowAt: 0 }),
+  );
+});
+
+describe('Home — Vibes alert — visual regression', () => {
+  beforeEach(async () => {
+    feedState.mode = 'default';
+    const f = await fixtures;
+    localStorage.removeItem(buildFeatureDiscoveryStorageKey(f.viewerPubky, VIBES_ALERT_STORAGE_ID));
+  });
+
+  it('renders Vibes above the composer at desktop viewport', async () => {
+    const screen = await renderForVRT(<HomeWithLayout />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await expect.element(screen.getByRole('region', { name: 'Discover Pubky Vibes' })).toBeVisible();
+    await matchVrtFrameScreenshot('home-feed-vibes-desktop');
+  });
+
+  it('renders Vibes with wrapped copy and actions at mobile viewport', async () => {
+    const screen = await renderForVRT(<HomeWithLayout />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect.element(screen.getByRole('region', { name: 'Discover Pubky Vibes' })).toBeVisible();
+    await matchVrtFrameScreenshot('home-feed-vibes-mobile');
+    await screen.getByRole('button', { name: 'Later', exact: true }).click();
+    await expect.element(screen.getByRole('region', { name: 'Discover Pubky Vibes' })).not.toBeInTheDocument();
+  });
+});
 
 describe('Home (global feed) — visual regression', () => {
   beforeEach(() => {

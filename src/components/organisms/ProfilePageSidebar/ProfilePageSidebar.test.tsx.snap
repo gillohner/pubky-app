@@ -123,6 +123,11 @@ exports[`ProfilePageSidebar - Snapshots > matches snapshot with default state 1`
     </div>
   </div>
   <div
+    data-testid="vibes-card"
+  >
+    VibesCard
+  </div>
+  <div
     class="flex w-full max-w-(--filter-bar-width) flex-col gap-2"
     data-testid="feedback-card"
   >

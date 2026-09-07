@@ -13,6 +13,7 @@ import { ProfilePageLinks } from '@/molecules/ProfilePageLinks/ProfilePageLinks'
 import { ProfilePageTaggedAs } from '@/molecules/ProfilePageTaggedAs/ProfilePageTaggedAs';
 import { useProfileContext } from '@/providers/ProfileProvider/ProfileProvider';
 import { FeedbackCard } from '../FeedbackCard/FeedbackCard';
+import { VibesCard } from '../VibesCard/VibesCard';
 import { MAX_SIDEBAR_TAGS } from './ProfilePageSidebar.constants';
 
 export function ProfilePageSidebar() {
@@ -63,6 +64,7 @@ export function ProfilePageSidebar() {
         <ProfilePageTaggedAs tags={topTags} isLoading={isLoadingTags} onTagClick={handleTagClick} pubky={pubky ?? ''} />
       )}
       <ProfilePageLinks links={profile?.links} isOwnProfile={isOwnProfile} />
+      <VibesCard />
       {isAuthenticated && <FeedbackCard />}
     </Container>
   );

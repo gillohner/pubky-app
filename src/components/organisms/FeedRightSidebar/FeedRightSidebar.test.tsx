@@ -3,6 +3,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { HomeFeedRightDrawer, HomeFeedRightSidebar, HotFeedRightDrawer, HotFeedRightSidebar } from './FeedRightSidebar';
 
 // Mock Molecules
+vi.mock('@/organisms/VibesCard/VibesCard', () => ({
+  VibesCard: () => <div data-testid="vibes-card">VibesCard</div>,
+}));
+
+describe('Vibes sidebar placement', () => {
+  it.each([HomeFeedRightSidebar, HomeFeedRightDrawer])('excludes Vibes from regular feed sidebars', (Sidebar) => {
+    render(<Sidebar />);
+    expect(screen.queryByTestId('vibes-card')).not.toBeInTheDocument();
+  });
+
+  it.each([HotFeedRightSidebar, HotFeedRightDrawer])('places Vibes directly above Hot feedback', (Sidebar) => {
+    render(<Sidebar />);
+    expect(screen.getByTestId('feedback-card').previousElementSibling).toBe(screen.getByTestId('vibes-card'));
+  });
+});
+
 // Mock Organisms
 vi.mock('@/organisms/ActiveUsers/ActiveUsers', () => {
   return {

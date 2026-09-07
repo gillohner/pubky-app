@@ -12,6 +12,7 @@ import { Container } from '@/atoms/Container/Container';
 import { ActiveUsers } from '../ActiveUsers/ActiveUsers';
 import { FeedbackCard } from '../FeedbackCard/FeedbackCard';
 import { HotTags } from '../HotTags/HotTags';
+import { VibesCard } from '../VibesCard/VibesCard';
 import { WhoToFollowSidebar } from '../WhoToFollowSidebar/WhoToFollowSidebar';
 
 function HomeFeedContent() {
@@ -66,7 +67,8 @@ export function HotFeedRightSidebar() {
   return (
     <>
       <WhoToFollowSidebar />
-      <Container overrideDefaults className="sticky top-[100px] self-start">
+      <Container overrideDefaults className="sticky top-[100px] flex w-full flex-col gap-6 self-start">
+        <VibesCard />
         <FeedbackCard />
       </Container>
     </>
@@ -82,6 +84,7 @@ export function HotFeedRightDrawer() {
   return (
     <Container overrideDefaults className="flex flex-col gap-6">
       <WhoToFollowSidebar />
+      <VibesCard />
       <FeedbackCard />
     </Container>
   );
