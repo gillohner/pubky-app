@@ -10,7 +10,7 @@ import { getTtlUserMs } from '@/config/sync';
 import { FollowSyncController } from '@/controllers/follow-sync/follow-sync';
 import { ErrorService } from '@/libs/error/error.types';
 import { toAppError } from '@/libs/error/error.utils';
-import { isPubkyIdentifier } from '@/libs/utils/utils';
+import { isCanonicalPubky } from '@/libs/utils/pubky';
 import type { Pubky } from '@/models/models.types';
 import type { THomeserverUserEvent } from '@/services/homeserver/homeserver.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -120,6 +120,15 @@ export class FollowSyncCoordinator {
           checkpoint.lastSnapshotAt = Date.now();
           checkpoint.cursor = cursor;
         }
+        // Resume against elapsed wall time, not a fresh TTL on every short visit.
+        if (Date.now() - checkpoint.lastSnapshotAt >= getTtlUserMs()) {
+          if (!(await FollowSyncController.refreshFollowing(checkpoint.viewerId, signal))) {
+            await this.pause(FOLLOW_SYNC_RETRY_MS, signal);
+            continue;
+          }
+          checkpoint.lastSnapshotAt = Date.now();
+        }
+        if (signal.aborted) return;
         const stream = await FollowSyncController.subscribeFollowing(checkpoint.viewerId, checkpoint.cursor);
         if (signal.aborted) {
           await stream
@@ -164,63 +173,69 @@ export class FollowSyncCoordinator {
     let failure: unknown;
     let snapshotDue = false;
 
-    const flush = async (): Promise<void> => {
-      if (flushing) {
-        await flushing;
-        return flush();
-      }
-      if (signal.aborted || (pendingCursor === null && !snapshotDue)) return;
-      const userIds = [...pending];
-      const cursor = pendingCursor;
-      let needsSnapshot = snapshotDue;
-      snapshotDue = false;
-      pending.clear();
-      pendingCursor = null;
-      const work = async () => {
-        while (!signal.aborted) {
-          if (needsSnapshot) {
-            if (!(await FollowSyncController.refreshFollowing(checkpoint.viewerId, signal))) {
-              await this.pause(FOLLOW_SYNC_RETRY_MS, signal);
-              continue;
+    const flush = (): Promise<void> => {
+      if (flushing) return flushing;
+      flushing = (async () => {
+        while (!signal.aborted && (pendingCursor !== null || snapshotDue)) {
+          const userIds = [...pending];
+          const cursor = pendingCursor;
+          pending.clear();
+          pendingCursor = null;
+          while (!signal.aborted) {
+            if (snapshotDue) {
+              if (!(await FollowSyncController.refreshFollowing(checkpoint.viewerId, signal))) {
+                await this.pause(FOLLOW_SYNC_RETRY_MS, signal);
+                continue;
+              }
+              checkpoint.lastSnapshotAt = Date.now();
+              snapshotDue = false;
+              armReconciliation();
             }
-            checkpoint.lastSnapshotAt = Date.now();
-            needsSnapshot = false;
+            if (
+              !userIds.length ||
+              (await FollowSyncController.refreshRelationships(checkpoint.viewerId, userIds, signal))
+            ) {
+              if (!signal.aborted && cursor !== null) checkpoint.cursor = cursor;
+              break;
+            }
+            await this.pause(FOLLOW_SYNC_RETRY_MS, signal);
           }
-          if (
-            !userIds.length ||
-            (await FollowSyncController.refreshRelationships(checkpoint.viewerId, userIds, signal))
-          ) {
-            if (!signal.aborted && cursor !== null) checkpoint.cursor = cursor;
-            return;
-          }
-          await this.pause(FOLLOW_SYNC_RETRY_MS, signal);
         }
-      };
-      flushing = work();
-      try {
-        await flushing;
-      } finally {
-        flushing = null;
-      }
+      })()
+        .catch((error) => {
+          failure = error;
+          throw error;
+        })
+        .finally(() => {
+          flushing = null;
+          if (!failure && !signal.aborted && (pendingCursor !== null || snapshotDue)) schedule();
+        });
+      return flushing;
     };
 
     const schedule = () => {
-      if (timer !== undefined) return;
+      if (timer !== undefined || flushing) return;
       timer = setTimeout(() => {
         timer = undefined;
-        void flush().catch((error) => {
-          failure = error;
+        void flush().catch(() => {
           void reader.cancel().catch(() => {});
         });
       }, FOLLOW_SYNC_DEBOUNCE_MS);
     };
     const settleFlush = () => flushing?.catch(() => {});
-    // Also repair failed optimistic writes or silently missed events while the stream stays open.
-    // Share the flush queue so a slow snapshot cannot overwrite an already applied live batch.
-    const reconciliationTimer = setInterval(() => {
-      snapshotDue = true;
-      schedule();
-    }, getTtlUserMs());
+    // One timer measured from the last successful snapshot, and one worker draining live updates.
+    let reconciliationTimer: ReturnType<typeof setTimeout> | undefined;
+    const armReconciliation = () => {
+      clearTimeout(reconciliationTimer);
+      reconciliationTimer = setTimeout(
+        () => {
+          snapshotDue = true;
+          schedule();
+        },
+        Math.max(0, getTtlUserMs() - (Date.now() - checkpoint.lastSnapshotAt)),
+      );
+    };
+    armReconciliation();
 
     try {
       while (!signal.aborted) {
@@ -230,7 +245,7 @@ export class FollowSyncCoordinator {
         const target = value.resourcePath.startsWith(FOLLOW_SYNC_PATH)
           ? value.resourcePath.slice(FOLLOW_SYNC_PATH.length)
           : '';
-        if ((value.eventType === 'PUT' || value.eventType === 'DEL') && isPubkyIdentifier(target)) pending.add(target);
+        if ((value.eventType === 'PUT' || value.eventType === 'DEL') && isCanonicalPubky(target)) pending.add(target);
         pendingCursor = value.cursor;
         if (pending.size >= FOLLOW_SYNC_BATCH_SIZE) await flush();
         else schedule();
@@ -239,7 +254,7 @@ export class FollowSyncCoordinator {
       await flush();
     } finally {
       clearTimeout(timer);
-      clearInterval(reconciliationTimer);
+      clearTimeout(reconciliationTimer);
       // A checkpoint advances only after a successful write. Failed/aborted batches replay on reconnect.
       await settleFlush();
       await reader.cancel().catch(() => {});

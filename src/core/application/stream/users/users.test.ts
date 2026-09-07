@@ -81,7 +81,10 @@ describe('UserStreamApplication', () => {
 
       // Setup: Create cache
       await LocalStreamUsersService.upsert({ streamId, stream: cachedUserIds });
-      await createUserDetails(cachedUserIds);
+      await LocalStreamUsersService.persistUsers(
+        cachedUserIds.map((id) => createMockNexusUser(id)),
+        DEFAULT_VIEWER_ID,
+      );
 
       // Test
       const result = await UserStreamApplication.getOrFetchStreamSlice({

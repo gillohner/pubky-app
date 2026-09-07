@@ -102,7 +102,9 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
         // Anchor additions to existing rows so neither case moves visible unfollowed rows.
         const before = new Map<Pubky, Pubky[]>();
         let additions: Pubky[] = [];
-        for (const id of cachedStream) {
+        // A shared cache can contain other consumers' pages. Merge only through our last visible member.
+        const lastVisible = cachedStream.findLastIndex((id) => existing.has(id));
+        for (const id of cachedStream.slice(0, lastVisible + 1)) {
           if (existing.has(id)) {
             before.set(id, additions);
             additions = [];
@@ -268,6 +270,9 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
           streamId,
           skip: currentSkip,
           limit: NEXUS_USERS_PER_PAGE,
+          ...(!isInitialLoad && targetUserId === currentUserPubky && type === CONNECTION_TYPE.FOLLOWING
+            ? { anchorIds: userIdsRef.current }
+            : {}),
         });
 
         const pageIds = result.nextPageIds;
@@ -288,7 +293,7 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
         setSkip(nextSkip);
 
         // Check hasMore based on response length
-        const hasMoreConnections = pageIds.length >= NEXUS_USERS_PER_PAGE;
+        const hasMoreConnections = !result.isExhausted && pageIds.length >= NEXUS_USERS_PER_PAGE;
         setHasMore(hasMoreConnections);
 
         // Update state with all IDs (including duplicates for cursor tracking)
@@ -308,16 +313,18 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
         }
       }
     },
-    [streamId, skip],
+    [streamId, skip, targetUserId, currentUserPubky, type],
   );
 
   useEffect(() => {
+    const visible = new Set(userIdsRef.current);
     if (
       !followingStatus ||
       isLoading ||
       isLoadingMore ||
+      error ||
       syncingFollowing.current ||
-      followingStatus.total <= followingStatus.loaded
+      followingStatus.total <= (cachedStream?.filter((id) => visible.has(id)).length ?? 0)
     )
       return;
     if (hasMore) return;
@@ -326,7 +333,7 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
     void fetchStreamSlice(false).finally(() => {
       syncingFollowing.current = false;
     });
-  }, [followingStatus, isLoading, isLoadingMore, hasMore, fetchStreamSlice]);
+  }, [followingStatus, cachedStream, error, isLoading, isLoadingMore, hasMore, fetchStreamSlice]);
 
   /**
    * Clears all state

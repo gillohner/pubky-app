@@ -538,11 +538,13 @@ export class HomeserverService {
    * @param {string} baseDirectory - Base directory path to list all files from.
    * @returns {Promise<string[]>} Array of every file URL under the directory.
    */
-  static async listAll({ baseDirectory }: THomeserverListAllParams): Promise<string[]> {
+  static async listAll({ baseDirectory, signal }: THomeserverListAllParams): Promise<string[]> {
     const files: string[] = [];
     let cursor: string | undefined;
 
     for (;;) {
+      // SDK requests cannot be aborted, but an obsolete traversal must not request another page.
+      if (signal?.aborted) return [];
       const batch = await this.list({ baseDirectory, cursor, limit: LIST_DEFAULT_LIMIT });
       files.push(...batch);
 

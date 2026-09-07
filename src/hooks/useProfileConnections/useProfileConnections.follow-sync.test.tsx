@@ -2,16 +2,17 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NEXUS_USERS_PER_PAGE } from '@/config/nexus';
 import { UserController } from '@/controllers/user/user';
+import { UserStreamModel } from '@/models/stream/user/userStream';
 import { LocalFollowService } from '@/services/local/follow/follow';
 import { LocalFollowSyncService } from '@/services/local/follow/followSync';
 import { followSyncGuard } from '@/services/local/follow/followSyncGuard';
 import type { NexusUser } from '@/services/nexus/nexus.types';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { mockSession, PUBKY_52_STAGING_FIXTURE as viewer } from '@/test-utils/pubky';
+import { canonicalPubky, mockSession, PUBKY_52_STAGING_FIXTURE as viewer } from '@/test-utils/pubky';
 import { CONNECTION_TYPE, useProfileConnections } from './useProfileConnections';
 
-const ids = Array.from({ length: 50 }, (_, i) => String(i).padStart(52, 'a'));
+const ids = Array.from({ length: 50 }, (_, i) => canonicalPubky(i + 1));
 const user = (id: string): NexusUser => ({
   details: { id, name: `User ${id}`, bio: '', links: null, status: null, image: null, indexed_at: 0 },
   counts: {
@@ -29,12 +30,12 @@ const user = (id: string): NexusUser => ({
   relationship: { following: false, followed_by: false },
   tags: [],
 });
-const snapshot = (following: string[]) =>
+const snapshot = async (following: string[]) =>
   LocalFollowSyncService.apply({
     viewerId: viewer,
     following,
     signal: new AbortController().signal,
-    version: followSyncGuard.capture(),
+    version: await followSyncGuard.capture(viewer),
   });
 
 beforeEach(() => {
@@ -50,7 +51,40 @@ afterEach(() => {
 });
 
 describe('mounted own Following list with homeserver updates', () => {
-  it('keeps row order when another mounted consumer loads its next page', async () => {
+  it('keeps a remounted list bounded even when the shared cache contains many pages', async () => {
+    await snapshot(ids);
+    await UserStreamModel.upsert(`${viewer}:following`, ids);
+    const { result } = renderHook(() => useProfileConnections(CONNECTION_TYPE.FOLLOWING));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(result.current.connections).toHaveLength(NEXUS_USERS_PER_PAGE);
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    expect(result.current.connections).toHaveLength(NEXUS_USERS_PER_PAGE * 2);
+  });
+
+  it('stops automatic hydration after a persistent database write error', async () => {
+    await snapshot([]);
+    const { result } = renderHook(() => useProfileConnections(CONNECTION_TYPE.FOLLOWING));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const write = vi.spyOn(UserStreamModel, 'upsert').mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      throw new Error('quota exceeded');
+    });
+    await act(async () => {
+      await snapshot([ids[0]]);
+    });
+    await waitFor(() => expect(result.current.error).toBeTruthy());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    });
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps each consumer bounded when another loads its next page', async () => {
     await snapshot(ids.slice(0, NEXUS_USERS_PER_PAGE * 2));
     const first = renderHook(() => useProfileConnections(CONNECTION_TYPE.FOLLOWING));
     await waitFor(() => expect(first.result.current.isLoading).toBe(false));
@@ -59,7 +93,10 @@ describe('mounted own Following list with homeserver updates', () => {
     await act(async () => {
       await second.result.current.loadMore();
     });
-    await waitFor(() => expect(first.result.current.connections).toHaveLength(NEXUS_USERS_PER_PAGE * 2));
+    expect(first.result.current.connections).toHaveLength(NEXUS_USERS_PER_PAGE);
+    await act(async () => {
+      await first.result.current.loadMore();
+    });
     expect(first.result.current.connections.map((row) => row.id)).toEqual(ids.slice(0, NEXUS_USERS_PER_PAGE * 2));
   });
 

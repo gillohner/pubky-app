@@ -80,9 +80,13 @@ export class LocalStreamUsersService {
    * @param userIds - Array of user IDs to check
    * @returns Array of user IDs that are not persisted in cache
    */
-  static async getNotPersistedUsersInCache(userIds: Pubky[]): Promise<Pubky[]> {
-    const existingUserIds = await UserDetailsModel.findByIdsPreserveOrder(userIds);
-    return userIds.filter((_userId, index) => existingUserIds[index] === undefined);
+  static async getNotPersistedUsersInCache(userIds: Pubky[], viewerId?: Pubky): Promise<Pubky[]> {
+    const [details, relationships] = await Promise.all([
+      UserDetailsModel.findByIdsPreserveOrder(userIds),
+      viewerId ? UserRelationshipsModel.findByIds(userIds) : Promise.resolve([]),
+    ]);
+    const hydratedRelationships = new Set(relationships.map((row) => row.id));
+    return userIds.filter((id, index) => details[index] === undefined || (viewerId && !hydratedRelationships.has(id)));
   }
 
   /**

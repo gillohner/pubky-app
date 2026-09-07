@@ -952,6 +952,16 @@ describe('HomeserverService', () => {
       const makeFiles = (count: number, offset = 0) =>
         Array.from({ length: count }, (_, i) => `${baseDirectory}file${String(offset + i).padStart(4, '0')}`);
 
+      it('does not request another page after the traversal is cancelled', async () => {
+        const controller = new AbortController();
+        mockState.publicStorageList.mockImplementation(async () => {
+          controller.abort();
+          return makeFiles(500);
+        });
+        expect(await HomeserverService.listAll({ baseDirectory, signal: controller.signal })).toEqual([]);
+        expect(mockState.publicStorageList).toHaveBeenCalledTimes(1);
+      });
+
       it('should return all files in a single page when below the page limit', async () => {
         const files = makeFiles(3);
         mockState.publicStorageList.mockResolvedValue(files);

@@ -6,6 +6,8 @@ export interface UserConnectionsModelSchema {
   followers: Pubky[];
   /** Present only after the complete following directory was read from the homeserver. */
   followingSyncedAt?: number;
+  /** Changes at both boundaries of an optimistic mutation, including in other windows. */
+  followingRevision?: string;
 }
 
 // Keep only the primary key index. Connection arrays are read/modified by id.

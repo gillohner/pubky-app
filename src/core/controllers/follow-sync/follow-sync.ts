@@ -3,6 +3,10 @@ import type { Pubky } from '@/models/models.types';
 
 /** System entry points. The coordinator cancels its account-scoped signal on logout/account changes. */
 export class FollowSyncController {
+  static getFollowingCount(viewerId: Pubky) {
+    return FollowSyncApplication.getFollowingCount(viewerId);
+  }
+
   static getStatus(viewerId: Pubky) {
     return FollowSyncApplication.getStatus(viewerId);
   }

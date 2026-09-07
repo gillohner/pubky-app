@@ -38,7 +38,7 @@ vi.mock('dexie-react-hooks', () => ({
   useLiveQuery: vi.fn((queryFn) => {
     // Execute the query function to return mock data
     if (queryFn) {
-      void queryFn();
+      if (queryFn() === null) return null;
     }
     return mockUserCounts.current;
   }),

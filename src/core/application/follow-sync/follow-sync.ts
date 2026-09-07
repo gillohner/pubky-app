@@ -1,12 +1,17 @@
-import { baseUriBuilder, followUriBuilder } from 'pubky-app-specs';
-import { FOLLOW_SYNC_CONCURRENCY, FOLLOW_SYNC_PATH } from '@/config/follow-sync';
-import { isPubkyIdentifier } from '@/libs/utils/utils';
+import { baseUriBuilder } from 'pubky-app-specs';
+import { FOLLOW_SYNC_PATH } from '@/config/follow-sync';
+import { isCanonicalPubky } from '@/libs/utils/pubky';
 import type { Pubky } from '@/models/models.types';
+import { HomeserverFollowService } from '@/services/homeserver/follow';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalFollowSyncService } from '@/services/local/follow/followSync';
 import { followSyncGuard } from '@/services/local/follow/followSyncGuard';
 
 export class FollowSyncApplication {
+  static async getFollowingCount(viewerId: Pubky): Promise<number | null> {
+    return (await LocalFollowSyncService.readFollowing(viewerId))?.length ?? null;
+  }
+
   static getStatus(viewerId: Pubky) {
     return LocalFollowSyncService.getStatus(viewerId);
   }
@@ -24,31 +29,28 @@ export class FollowSyncApplication {
   }
 
   static async refreshFollowing(viewerId: Pubky, signal: AbortSignal): Promise<boolean> {
-    const version = followSyncGuard.capture();
-    if (signal.aborted || !followSyncGuard.canApply(viewerId, version)) return false;
+    const version = await followSyncGuard.capture(viewerId);
+    if (signal.aborted || version === null) return false;
     const baseDirectory = `${baseUriBuilder(viewerId)}follows/`;
-    const uris = await HomeserverService.listAll({ baseDirectory });
+    const uris = await HomeserverService.listAll({ baseDirectory, signal });
     const following = uris
       .filter((uri) => uri.startsWith(baseDirectory))
       .map((uri) => uri.slice(baseDirectory.length))
-      .filter(isPubkyIdentifier);
+      .filter(isCanonicalPubky);
     return LocalFollowSyncService.apply({ viewerId, following, version, signal });
   }
 
   static async refreshRelationships(viewerId: Pubky, userIds: Pubky[], signal: AbortSignal): Promise<boolean> {
-    const version = followSyncGuard.capture();
-    if (signal.aborted || !followSyncGuard.canApply(viewerId, version)) return false;
-    const changes = new Map<Pubky, boolean>();
-    const uniqueIds = [...new Set(userIds)];
-    // Bound parallel reads; a burst must not open a request for every event at once.
-    for (let index = 0; index < uniqueIds.length; index += FOLLOW_SYNC_CONCURRENCY) {
-      if (signal.aborted) return false;
-      await Promise.all(
-        uniqueIds.slice(index, index + FOLLOW_SYNC_CONCURRENCY).map(async (id) => {
-          changes.set(id, await HomeserverService.exists(followUriBuilder(viewerId, id)));
-        }),
-      );
+    // A different window may have cleared the shared database since the checkpoint was captured.
+    if ((await LocalFollowSyncService.readFollowing(viewerId)) === null) {
+      return this.refreshFollowing(viewerId, signal);
     }
+    const version = await followSyncGuard.capture(viewerId);
+    if (signal.aborted || version === null) return false;
+    const changes = await HomeserverFollowService.readRelationships(viewerId, userIds, signal, () =>
+      followSyncGuard.isCurrent(viewerId, version),
+    );
+    if (!changes) return false;
     return LocalFollowSyncService.apply({ viewerId, changes, version, signal });
   }
 }

@@ -201,6 +201,9 @@ describe('PostStreamApplication', () => {
     persistPosts: vi.spyOn(LocalStreamPostsService, 'persistPosts').mockResolvedValue({ attachmentMetadata: [] }),
     persistFiles: vi.spyOn(FileApplication, 'persistFiles').mockResolvedValue(undefined),
     getUserDetails: vi.spyOn(UserDetailsModel, 'findByIdsPreserveOrder'),
+    getUserRelationships: vi
+      .spyOn(UserRelationshipsModel, 'findByIds')
+      .mockImplementation(async (ids) => ids.map((id) => ({ id, following: false, followed_by: false }))),
   });
 
   const mockAllUsersCached = (count = 1, author = DEFAULT_AUTHOR) => {

@@ -3,10 +3,10 @@ import { FOLLOW_SYNC_PATH } from '@/config/follow-sync';
 import { FollowSyncController } from '@/controllers/follow-sync/follow-sync';
 import type { THomeserverUserEvent } from '@/services/homeserver/homeserver.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { mockSession, PUBKY_52_STAGING_FIXTURE as viewer } from '@/test-utils/pubky';
+import { canonicalPubky, mockSession, PUBKY_52_STAGING_FIXTURE as viewer } from '@/test-utils/pubky';
 import { FollowSyncCoordinator } from './follow-sync';
 
-const target = 'a'.repeat(52);
+const target = canonicalPubky(1);
 const opened: { source: ReadableStreamDefaultController<THomeserverUserEvent>; cancel: ReturnType<typeof vi.fn> }[] =
   [];
 const authenticate = (id = viewer, hasProfile = true) =>
@@ -58,6 +58,34 @@ afterEach(async () => {
 });
 
 describe('FollowSyncCoordinator', () => {
+  it('schedules an event arriving between the drain finishing and its cleanup', async () => {
+    authenticate();
+    await start();
+    const completion = Promise.withResolvers<boolean>();
+    vi.mocked(FollowSyncController.refreshRelationships).mockReturnValueOnce(completion.promise);
+    opened[0].source.enqueue(event('101'));
+    await advance(250);
+    completion.resolve(true);
+    opened[0].source.enqueue(event('102', canonicalPubky(2)));
+    await advance(250);
+    expect(FollowSyncController.refreshRelationships).toHaveBeenCalledTimes(2);
+    await visibility('hidden');
+    await visibility('visible');
+    expect(FollowSyncController.subscribeFollowing).toHaveBeenLastCalledWith(viewer, '102');
+  });
+
+  it('repairs an overdue snapshot after repeated short visits', async () => {
+    authenticate();
+    await start();
+    for (let visit = 0; visit < 3; visit += 1) {
+      await advance(540_000);
+      await visibility('hidden');
+      await advance(60_000);
+      await visibility('visible');
+    }
+    expect(FollowSyncController.refreshFollowing).toHaveBeenCalledTimes(4);
+  });
+
   it('starts after session restoration and opens one connection across route changes', async () => {
     const coordinator = await start();
     expect(FollowSyncController.fetchCursor).not.toHaveBeenCalled();
@@ -118,7 +146,7 @@ describe('FollowSyncCoordinator', () => {
   it('bounds batches even when a large burst arrives without pauses', async () => {
     authenticate();
     await start();
-    for (let i = 0; i < 55; i++) opened[0].source.enqueue(event(String(101 + i), String(i).padStart(52, 'a')));
+    for (let i = 0; i < 55; i++) opened[0].source.enqueue(event(String(101 + i), canonicalPubky(i + 1)));
     await advance(250);
     const batches = vi.mocked(FollowSyncController.refreshRelationships).mock.calls.map((call) => call[1]);
     expect(batches.map((batch) => batch.length)).toEqual([20, 20, 15]);

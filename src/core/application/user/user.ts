@@ -249,20 +249,21 @@ export class UserApplication {
   }: TUserApplicationFollowParams) {
     if (signal?.aborted) return;
 
-    const finish = followSyncGuard.begin(follower);
-    try {
-      if (eventType === HttpMethod.PUT) {
-        await LocalFollowService.create({ follower, followee });
-      } else if (eventType === HttpMethod.DELETE) {
-        await LocalFollowService.delete({ follower, followee });
-      }
+    return followSyncGuard.runMutation(
+      follower,
+      async () => {
+        if (eventType === HttpMethod.PUT) {
+          await LocalFollowService.create({ follower, followee });
+        } else if (eventType === HttpMethod.DELETE) {
+          await LocalFollowService.delete({ follower, followee });
+        }
 
-      if (signal?.aborted) return;
+        if (signal?.aborted) return;
 
-      await HomeserverService.request({ method: eventType, url: followUrl, bodyJson: followJson });
-    } finally {
-      finish();
-    }
+        await HomeserverService.request({ method: eventType, url: followUrl, bodyJson: followJson });
+      },
+      signal,
+    );
   }
 
   /**

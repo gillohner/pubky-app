@@ -15,6 +15,8 @@ export type TReadUserStreamChunkParams = {
   limit: number;
   skip: number;
   allowPartialCache?: boolean;
+  /** Visible identities resolve pagination against concurrent follow/unfollow changes. */
+  anchorIds?: Pubky[];
 };
 
 /**

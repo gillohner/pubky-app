@@ -7,6 +7,7 @@ import { MuteListSyncCoordinator } from '@/coordinators/mute-list-sync/mute-list
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
 import { StreamCoordinator } from '@/coordinators/streams/stream';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
+import { subscribeAccountChanges } from '@/stores/auth/auth.cross-tab';
 
 function getAppCoordinators() {
   return {
@@ -73,7 +74,12 @@ export function CoordinatorsManager() {
 
   useEffect(() => {
     startAppCoordinators();
+    const unsubscribe = subscribeAccountChanges(() => {
+      stopAppCoordinators();
+      window.location.reload();
+    });
     return () => {
+      unsubscribe();
       stopAppCoordinators();
     };
   }, []);

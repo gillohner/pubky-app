@@ -132,7 +132,10 @@ export class HotApplication {
     }
 
     // Check which users are not already in cache
-    const cacheMissUserIds = await LocalStreamUsersService.getNotPersistedUsersInCache(allTaggerIds);
+    const cacheMissUserIds = await LocalStreamUsersService.getNotPersistedUsersInCache(
+      allTaggerIds,
+      viewerId ?? undefined,
+    );
     if (cacheMissUserIds.length === 0) {
       return;
     }
