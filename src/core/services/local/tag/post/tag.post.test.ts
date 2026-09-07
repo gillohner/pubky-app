@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/database/franky/franky';
+import { HttpMethod } from '@/libs/http/http.types';
 import type { Pubky } from '@/models/models.types';
 import { PostCountsModel } from '@/models/post/counts/postCounts';
 import { PostTagsModel } from '@/models/post/tags/postTags';
@@ -7,6 +8,7 @@ import { PostTtlModel } from '@/models/post/ttl/postTtl';
 import { UserCountsModel } from '@/models/user/counts/userCounts';
 import { LocalPostTagService } from '@/services/local/tag/post/tag.post';
 import type { TLocalTagParams } from '@/services/local/tag/tag.types';
+import { ViewerTagMarkerStorage } from '@/services/local/tag/viewerTagMarkerStorage';
 
 // Test data
 const testData = {
@@ -100,6 +102,33 @@ describe('LocalTagService', () => {
     );
     // Clear viewer-mutation markers so prior tests don't bleed across describes.
     window.sessionStorage.clear();
+  });
+
+  it('publishes committed local intent to expanded tagger lists without notifying idempotent writes', async () => {
+    const listener = vi.fn();
+    const unsubscribe = ViewerTagMarkerStorage.subscribe(listener);
+    const params = createTagParams('javascript');
+    try {
+      await LocalPostTagService.create(params);
+      await LocalPostTagService.create(params);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenLastCalledWith({ ...params, taggersCount: 1 });
+      expect((await PostTagsModel.findById(testData.postId))?.mutations?.javascript).toMatchObject({
+        viewerId: testData.taggerPubky,
+        relationship: true,
+      });
+
+      await LocalPostTagService.delete(params);
+      await LocalPostTagService.delete(params);
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(listener).toHaveBeenLastCalledWith({ ...params, taggersCount: 0 });
+      expect((await PostTagsModel.findById(testData.postId))?.mutations?.javascript).toMatchObject({
+        viewerId: testData.taggerPubky,
+        relationship: false,
+      });
+    } finally {
+      unsubscribe();
+    }
   });
 
   describe('create', () => {
@@ -197,6 +226,37 @@ describe('LocalTagService', () => {
       expect(postTtl!.lastUpdatedAt).toBeGreaterThanOrEqual(beforeTimestamp);
       expect(postTtl!.lastUpdatedAt).toBeLessThanOrEqual(afterTimestamp);
     });
+
+    it('should write a PUT marker for expanded tagger lists', async () => {
+      await LocalPostTagService.create(createTagParams('javascript'));
+
+      const marker = ViewerTagMarkerStorage.get({
+        pubky: testData.taggerPubky,
+        taggedId: testData.postId,
+        label: 'javascript',
+      });
+      expect(marker?.op).toBe(HttpMethod.PUT);
+    });
+
+    it('should not write a marker when create is a no-op (idempotent)', async () => {
+      // Pre-condition: sessionStorage is empty (cleared by beforeEach), so there
+      // is no marker for 'javascript'.
+      // Set up IndexedDB so the viewer already has this tag — make the create
+      // call a no-op. (`setupExistingTag` only touches IndexedDB, not sessionStorage.)
+      await setupExistingTag('javascript', [testData.taggerPubky], true);
+
+      // No-op create: addTagger returns null, the transaction reports `mutated=false`,
+      // and the marker-write branch (`if (mutated)`) is skipped entirely.
+      await LocalPostTagService.create(createTagParams('javascript'));
+
+      // Therefore no marker was ever written — null here means "absent", not "deleted".
+      const marker = ViewerTagMarkerStorage.get({
+        pubky: testData.taggerPubky,
+        taggedId: testData.postId,
+        label: 'javascript',
+      });
+      expect(marker).toBeNull();
+    });
   });
 
   describe('remove', () => {
@@ -273,6 +333,17 @@ describe('LocalTagService', () => {
       expect(postTtl).toBeTruthy();
       expect(postTtl!.lastUpdatedAt).toBeGreaterThanOrEqual(beforeTimestamp);
       expect(postTtl!.lastUpdatedAt).toBeLessThanOrEqual(afterTimestamp);
+    });
+
+    it('should write a DELETE marker for expanded tagger lists', async () => {
+      await LocalPostTagService.delete(createRemoveParams('javascript'));
+
+      const marker = ViewerTagMarkerStorage.get({
+        pubky: testData.taggerPubky,
+        taggedId: testData.postId,
+        label: 'javascript',
+      });
+      expect(marker?.op).toBe(HttpMethod.DELETE);
     });
   });
 });

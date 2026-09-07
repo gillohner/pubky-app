@@ -3,11 +3,13 @@ import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { isAppError } from '@/libs/error/error.utils';
+import { HttpMethod } from '@/libs/http/http.types';
 import { PostCountsModel } from '@/models/post/counts/postCounts';
 import { PostTagsModel, type PostTagsModelSchema } from '@/models/post/tags/postTags';
 import { PostTtlModel } from '@/models/post/ttl/postTtl';
 import { UserCountsModel } from '@/models/user/counts/userCounts';
 import type { TLocalTagParams } from '@/services/local/tag/tag.types';
+import { ViewerTagMarkerStorage } from '@/services/local/tag/viewerTagMarkerStorage';
 import type { NexusTag } from '@/services/nexus/nexus.types';
 
 export class LocalPostTagService {
@@ -33,6 +35,7 @@ export class LocalPostTagService {
    * @throws {DatabaseError} When database operations fail
    */
   static async create({ taggedId: postId, label, taggerId }: TLocalTagParams): Promise<boolean> {
+    let taggersCount = 0;
     // True only when the transaction actually changed IndexedDB state.
     let mutated = false;
     try {
@@ -44,6 +47,7 @@ export class LocalPostTagService {
           return false;
         }
         postTagsModel.recordMutation(label, taggerId, true);
+        taggersCount = postTagsModel.findByLabel(label)?.taggers_count ?? 0;
         await Promise.all([
           this.savePostTagsModel(postId, postTagsModel),
           PostCountsModel.updateCounts({
@@ -65,6 +69,10 @@ export class LocalPostTagService {
       });
     }
 
+    if (mutated) {
+      // Expanded tagger lists and rollback guards observe committed local changes.
+      ViewerTagMarkerStorage.set({ pubky: taggerId, taggedId: postId, label, op: HttpMethod.PUT, taggersCount });
+    }
     return mutated;
   }
 
@@ -85,6 +93,7 @@ export class LocalPostTagService {
    * @throws {DatabaseError} When database operations fail
    */
   static async delete({ taggedId: postId, label, taggerId }: TLocalTagParams): Promise<boolean> {
+    let taggersCount = 0;
     let deleted: boolean;
     try {
       deleted = await db.transaction('rw', this.TAG_TABLES, async () => {
@@ -93,6 +102,7 @@ export class LocalPostTagService {
         const status = postTagsModel.removeTagger(label, taggerId);
         if (status === null) return false;
         postTagsModel.recordMutation(label, taggerId, false);
+        taggersCount = postTagsModel.findByLabel(label)?.taggers_count ?? 0;
         await this.savePostTagsModel(postId, postTagsModel);
         await PostCountsModel.updateCounts({
           postCompositeId: postId,
@@ -112,6 +122,7 @@ export class LocalPostTagService {
       });
     }
     if (!deleted) return false;
+    ViewerTagMarkerStorage.set({ pubky: taggerId, taggedId: postId, label, op: HttpMethod.DELETE, taggersCount });
 
     return true;
   }

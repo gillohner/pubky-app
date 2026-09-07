@@ -44,6 +44,8 @@ export type TFetchNexusParams = {
 export type TQueryNexusParams = {
   /** Revalidate even while the transport cache is fresh (TTL/notification refresh). */
   force?: boolean;
+  /** Cache freshness in milliseconds; omit to use the shared default. */
+  staleTime?: number;
   /** Full API endpoint URL */
   url: string;
   /** HTTP method (defaults to GET) */

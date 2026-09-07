@@ -38,7 +38,7 @@ export function ProfileTagged() {
 
   const userName = profile?.name || '';
 
-  if (isLoading) {
+  if (!pubky || isLoading) {
     return <ProfileTaggedSkeleton />;
   }
 
@@ -58,6 +58,7 @@ export function ProfileTagged() {
       </Heading>
       <TaggedSection
         tags={enrichedTags}
+        taggedId={pubky}
         userName={userName}
         handleTagAdd={handleTagAdd}
         handleTagToggle={handleTagToggle}

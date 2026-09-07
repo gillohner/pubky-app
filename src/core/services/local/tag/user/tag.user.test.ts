@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/database/franky/franky';
+import { HttpMethod } from '@/libs/http/http.types';
 import type { Pubky } from '@/models/models.types';
 import { UserCountsModel } from '@/models/user/counts/userCounts';
 import { UserTagsModel } from '@/models/user/tags/userTags';
 import { postStreamDirtyRegistry } from '@/services/local/stream/posts/postStreamDirtyRegistry';
 import type { TLocalTagParams } from '@/services/local/tag/tag.types';
 import { LocalUserTagService } from '@/services/local/tag/user/tag.user';
+import { ViewerTagMarkerStorage } from '@/services/local/tag/viewerTagMarkerStorage';
 
 // Test data
 const testData = {
@@ -61,6 +63,7 @@ const setupUserCounts = async (userId: Pubky, tags: number = 0, uniqueTags: numb
 
 describe('LocalUserTagService', () => {
   beforeEach(async () => {
+    sessionStorage.clear();
     await db.initialize();
     postStreamDirtyRegistry.reset();
     await db.transaction('rw', [UserTagsModel.table, UserCountsModel.table], async () => {
@@ -69,12 +72,44 @@ describe('LocalUserTagService', () => {
     });
   });
 
+  it('publishes committed local intent to expanded tagger lists without notifying idempotent writes', async () => {
+    const listener = vi.fn();
+    const unsubscribe = ViewerTagMarkerStorage.subscribe(listener);
+    const params = createTagParams('developer');
+    try {
+      await LocalUserTagService.create(params);
+      await LocalUserTagService.create(params);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenLastCalledWith({ ...params, taggersCount: 1 });
+      expect((await UserTagsModel.findById(testData.taggedPubky))?.mutations?.developer).toMatchObject({
+        viewerId: testData.taggerPubky,
+        relationship: true,
+      });
+
+      await LocalUserTagService.delete(params);
+      await LocalUserTagService.delete(params);
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(listener).toHaveBeenLastCalledWith({ ...params, taggersCount: 0 });
+      expect((await UserTagsModel.findById(testData.taggedPubky))?.mutations?.developer).toMatchObject({
+        viewerId: testData.taggerPubky,
+        relationship: false,
+      });
+    } finally {
+      unsubscribe();
+    }
+  });
+
   describe('create', () => {
     it('should create a new tag and update counts', async () => {
       await setupUserCounts(testData.taggedPubky, 0, 0);
       await setupUserCounts(testData.taggerPubky, 0, 0, 0);
 
       await LocalUserTagService.create(createTagParams('developer'));
+
+      expect(
+        ViewerTagMarkerStorage.get({ pubky: testData.taggerPubky, taggedId: testData.taggedPubky, label: 'developer' })
+          ?.op,
+      ).toBe(HttpMethod.PUT);
 
       const savedTags = await getSavedUserTags();
       const taggedCounts = await getSavedUserCounts(testData.taggedPubky);
@@ -171,6 +206,9 @@ describe('LocalUserTagService', () => {
       await LocalUserTagService.create(createTagParams('developer'));
 
       expect(postStreamDirtyRegistry.isDirty('timeline:wot_domain:0:all:developer')).toBe(false);
+      expect(
+        ViewerTagMarkerStorage.get({ pubky: testData.taggerPubky, taggedId: testData.taggedPubky, label: 'developer' }),
+      ).toBeNull();
     });
   });
 
@@ -190,6 +228,10 @@ describe('LocalUserTagService', () => {
       });
 
       const savedTags = await getSavedUserTags();
+      expect(
+        ViewerTagMarkerStorage.get({ pubky: testData.taggerPubky, taggedId: testData.taggedPubky, label: 'developer' })
+          ?.op,
+      ).toBe(HttpMethod.DELETE);
       const taggedCounts = await getSavedUserCounts(testData.taggedPubky);
       const taggerCounts = await getSavedUserCounts(testData.taggerPubky);
 

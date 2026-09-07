@@ -9,15 +9,15 @@ import { asOpaque } from '@/test-utils/type-assertions';
 import { buildCdnUrl, buildNexusUrl, buildUrlWithQuery, createFetchOptions, queryNexus } from './nexus.utils';
 
 describe('nexus.utils', () => {
-  it('bypasses a fresh transport cache when a notification forces revalidation', async () => {
+  it.each([undefined, 60_000])('forces revalidation even with staleTime %s', async (staleTime) => {
     const fetch = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify(['old'])))
       .mockResolvedValueOnce(new Response(JSON.stringify(['new'])));
-    const url = `${getNexusUrl()}/forced-tag-refresh-test`;
+    const url = `${getNexusUrl()}/forced-tag-refresh-test-${staleTime}`;
     expect(await queryNexus({ url })).toEqual(['old']);
     expect(await queryNexus({ url })).toEqual(['old']);
-    expect(await queryNexus({ url, force: true })).toEqual(['new']);
+    expect(await queryNexus({ url, force: true, staleTime })).toEqual(['new']);
     expect(fetch).toHaveBeenCalledTimes(2);
     fetch.mockRestore();
   });
@@ -183,6 +183,28 @@ describe('nexus.utils', () => {
 
       await queryNexus({ url, method: HttpMethod.POST, body });
       expect(mockFetch).toHaveBeenCalledWith(url, expect.objectContaining({ method: 'POST', body }));
+    });
+
+    it('keeps the default cache policy for callers that do not override it', async () => {
+      mockFetch.mockResolvedValue(createMockResponse({ text: vi.fn().mockResolvedValue('{"version":1}') }));
+      const params = { url: 'https://example.com/api/cached' };
+
+      await queryNexus(params);
+      await queryNexus(params);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('revalidates stale pages while sharing concurrent requests', async () => {
+      mockFetch.mockResolvedValueOnce(createMockResponse({ text: vi.fn().mockResolvedValue('{"version":1}') }));
+      const params = { url: 'https://example.com/api/revalidate', staleTime: 0 };
+      expect(await queryNexus(params)).toEqual({ version: 1 });
+      mockFetch.mockResolvedValueOnce(createMockResponse({ text: vi.fn().mockResolvedValue('{"version":2}') }));
+
+      const results = await Promise.all([queryNexus(params), queryNexus(params)]);
+
+      expect(results).toEqual([{ version: 2 }, { version: 2 }]);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
     it('should throw server error for empty response', async () => {
