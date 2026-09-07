@@ -12,13 +12,23 @@ beforeEach(() => {
 });
 
 describe('AlertVibes', () => {
-  it('opens Vibes in a new tab and records Try', () => {
+  it('opens Vibes in a new tab and records Try from either link', () => {
     render(<AlertVibes />);
-    const link = screen.getByRole('link', { name: 'Try' });
-    expect(link).toHaveAttribute('href', VIBES_URL);
-    expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
-    fireEvent.click(link);
+
+    const links = [
+      screen.getByRole('link', { name: 'vibes.pubky.app' }),
+      screen.getByRole('link', { name: 'Try now' }),
+    ];
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', VIBES_URL);
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    }
+
+    fireEvent.click(links[0]);
+    expect(state.tryVibes).toHaveBeenCalledOnce();
+    state.tryVibes.mockClear();
+    fireEvent.click(links[1]);
     expect(state.tryVibes).toHaveBeenCalledOnce();
   });
 

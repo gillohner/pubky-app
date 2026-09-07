@@ -53,7 +53,16 @@ exports[`AlertVibes - Snapshots > matches the visible alert 1`] = `
       class="text-sm min-w-0 font-bold text-primary-foreground"
       data-testid="typography"
     >
-      Check out experimental features at vibes.pubky.app!
+      Check out experimental features at
+      <a
+        class="text-inherit no-underline"
+        href="https://vibes.pubky.app"
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+         vibes.pubky.app
+      </a>
+      !
     </p>
   </div>
   <div
@@ -76,7 +85,7 @@ exports[`AlertVibes - Snapshots > matches the visible alert 1`] = `
       rel="noopener noreferrer"
       target="_blank"
     >
-      Try
+      Try now
     </a>
   </div>
 </div>

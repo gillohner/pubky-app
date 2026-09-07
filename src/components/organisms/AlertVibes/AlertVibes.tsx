@@ -21,7 +21,17 @@ export function AlertVibes() {
       <Container className="min-w-0 flex-1 flex-row items-start gap-3">
         <WandSparkles aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary-foreground" />
         <Typography size="sm" className="min-w-0 font-bold text-primary-foreground">
-          Check out experimental features at vibes.pubky.app!
+          Check out experimental features at
+          <a
+            href={VIBES_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-inherit no-underline"
+            onClick={tryVibes}
+          >
+            {' vibes.pubky.app'}
+          </a>
+          !
         </Typography>
       </Container>
       <div className="flex shrink-0 items-center justify-end gap-3">
@@ -35,7 +45,7 @@ export function AlertVibes() {
         </Button>
         <Button variant="dark" size="sm" className="border-card bg-card px-3.5 text-xs font-bold" asChild>
           <a href={VIBES_URL} target="_blank" rel="noopener noreferrer" onClick={tryVibes}>
-            Try
+            Try now
           </a>
         </Button>
       </div>
