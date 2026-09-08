@@ -11,15 +11,15 @@ export interface UseStarterPackSuggestionsResult {
   users: SuggestedUser[];
   /** Suggestions the viewer does not follow yet (Follow All targets) */
   unfollowedUsers: SuggestedUser[];
-  /** Number of suggestions the viewer currently follows */
-  followedCount: number;
   isLoading: boolean;
   error: string | null;
   /** Per-card follow toggle with optimistic list preservation */
   handleFollowClick: (userId: Pubky, isCurrentlyFollowing: boolean) => Promise<void>;
   isUserLoading: (userId: Pubky) => boolean;
-  /** True while a per-card follow is still committing; `followedCount` lags until it clears */
+  /** True while any follow toggle is still committing; relationship-derived state lags until it clears */
   isFollowPending: boolean;
-  /** Keep a user visible after a follow committed outside `handleFollowClick` */
+  /** Keep a user visible before a follow committed outside `handleFollowClick` lands locally */
   preserveFollowedUser: (userId: Pubky) => void;
+  /** Undo `preserveFollowedUser` when that external follow failed */
+  unpreserveFollowedUser: (userId: Pubky) => void;
 }

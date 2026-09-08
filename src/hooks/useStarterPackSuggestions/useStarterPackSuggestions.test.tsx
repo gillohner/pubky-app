@@ -8,10 +8,12 @@ import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { useStarterPackSuggestions } from './useStarterPackSuggestions';
 
 const mockToggleFollow = vi.fn();
+let mockIsFollowLoading = false;
 vi.mock('@/hooks/useFollowUser/useFollowUser', () => ({
   useFollowUser: () => ({
     toggleFollow: mockToggleFollow,
     isUserLoading: () => false,
+    isLoading: mockIsFollowLoading,
   }),
 }));
 
@@ -52,6 +54,7 @@ describe('useStarterPackSuggestions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockToggleFollow.mockResolvedValue(true);
+    mockIsFollowLoading = false;
     useOnboardingStore.setState({ hasHydrated: true, interestTags: [] });
     mockStream([]);
   });
@@ -97,7 +100,6 @@ describe('useStarterPackSuggestions', () => {
 
     expect(result.current.users.map((u) => u.matchingTags)).toEqual([['bitcoin', 'music'], [], []]);
     expect(result.current.unfollowedUsers.map((u) => u.id)).toEqual(['a', 'c']);
-    expect(result.current.followedCount).toBe(1);
   });
 
   it('passes preserved followed ids back into the stream so followed cards stay listed', async () => {
@@ -120,28 +122,26 @@ describe('useStarterPackSuggestions', () => {
     expect(vi.mocked(useUserStream)).toHaveBeenLastCalledWith(
       expect.objectContaining({ preserveFollowedUserIds: ['a', 'b'] }),
     );
+
+    // A failed external follow (Follow all) must release its slot again
+    act(() => {
+      result.current.unpreserveFollowedUser('b');
+    });
+
+    expect(vi.mocked(useUserStream)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ preserveFollowedUserIds: ['a'] }),
+    );
   });
 
-  it('surfaces whether a per-card follow is still committing', async () => {
-    let resolveFollow!: (ok: boolean) => void;
-    mockToggleFollow.mockReturnValue(
-      new Promise<boolean>((res) => {
-        resolveFollow = res;
-      }),
-    );
+  it('surfaces whether any follow is still committing', () => {
     mockStream([makeUser('a')]);
-    const { result } = renderHook(() => useStarterPackSuggestions());
+    const { result, rerender } = renderHook(() => useStarterPackSuggestions());
     expect(result.current.isFollowPending).toBe(false);
 
-    act(() => {
-      void result.current.handleFollowClick('a', false);
-    });
+    mockIsFollowLoading = true;
+    rerender();
+
     expect(result.current.isFollowPending).toBe(true);
-
-    await act(async () => {
-      resolveFollow(true);
-    });
-    expect(result.current.isFollowPending).toBe(false);
   });
 
   it('surfaces loading and error state from the stream', () => {

@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_ROUTES, ONBOARDING_ROUTES } from '@/app/routes';
 import { useFollowAll } from '@/hooks/useFollowAll/useFollowAll';
+import { useFollowingCount } from '@/hooks/useFollowingCount/useFollowingCount';
 import { useStarterPackSuggestions } from '@/hooks/useStarterPackSuggestions/useStarterPackSuggestions';
 import type { SuggestedUser } from '@/hooks/useStarterPackSuggestions/useStarterPackSuggestions.types';
 import { useHomeStore } from '@/stores/home/home.store';
@@ -30,6 +31,10 @@ vi.mock('@/hooks/useFollowAll/useFollowAll', () => ({
   useFollowAll: vi.fn(),
 }));
 
+vi.mock('@/hooks/useFollowingCount/useFollowingCount', () => ({
+  useFollowingCount: vi.fn(),
+}));
+
 vi.mock('@/organisms/AvatarWithFallback/AvatarWithFallback', () => ({
   AvatarWithFallback: ({ name }: { name: string }) => <div data-testid="avatar" aria-label={name} />,
 }));
@@ -53,23 +58,23 @@ function makeUser(id: string, overrides: Partial<SuggestedUser> = {}): Suggested
 const mockHandleFollowClick = vi.fn();
 const mockIsUserLoading = vi.fn((_userId: string) => false);
 const mockPreserveFollowedUser = vi.fn();
+const mockUnpreserveFollowedUser = vi.fn();
 const mockFollowAll = vi.fn();
 
 function mockSuggestions(
   users: SuggestedUser[],
   overrides: Partial<ReturnType<typeof useStarterPackSuggestions>> = {},
 ) {
-  const unfollowedUsers = users.filter((u) => !u.isFollowing);
   vi.mocked(useStarterPackSuggestions).mockReturnValue({
     users,
-    unfollowedUsers,
-    followedCount: users.length - unfollowedUsers.length,
+    unfollowedUsers: users.filter((u) => !u.isFollowing),
     isLoading: false,
     error: null,
     handleFollowClick: mockHandleFollowClick,
     isUserLoading: mockIsUserLoading,
     isFollowPending: false,
     preserveFollowedUser: mockPreserveFollowedUser,
+    unpreserveFollowedUser: mockUnpreserveFollowedUser,
     ...overrides,
   });
 }
@@ -83,6 +88,11 @@ function mockFollowAllState(overrides: Partial<ReturnType<typeof useFollowAll>> 
   });
 }
 
+/** Real follows from the local follow graph; independent from the cards on screen */
+function mockFollowingCount(followingCount: number, isLoading = false) {
+  vi.mocked(useFollowingCount).mockReturnValue({ followingCount, isLoading });
+}
+
 describe('FollowBestMatchesForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -90,6 +100,7 @@ describe('FollowBestMatchesForm', () => {
     mockIsUserLoading.mockReturnValue(false);
     mockSuggestions([]);
     mockFollowAllState();
+    mockFollowingCount(0);
     useOnboardingStore.setState({ hasHydrated: true, interestTags: [], experienceCompletedByPubky: {} });
     useHomeStore.setState({ ...homeInitialState, hasHydrated: true });
   });
@@ -108,13 +119,26 @@ describe('FollowBestMatchesForm', () => {
     expect(screen.getByRole('button', { name: /finish/i })).not.toBeDisabled();
   });
 
-  it('shows the skeleton grid and hides Follow all while loading', () => {
+  it('shows the skeleton grid, hides Follow all and locks navigation while loading', () => {
     mockSuggestions([], { isLoading: true });
 
     render(<FollowBestMatchesForm />);
 
     expect(screen.getByTestId('suggested-people-loading')).toBeInTheDocument();
     expect(screen.queryByTestId('follow-all-btn')).not.toBeInTheDocument();
+    // Finishing before suggestions settle would decide the landing feed prematurely
+    expect(screen.getByRole('button', { name: /finish/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /back/i })).toBeDisabled();
+  });
+
+  it('locks navigation until the real following count has been read', () => {
+    mockSuggestions([makeUser('a')]);
+    mockFollowingCount(0, true);
+
+    render(<FollowBestMatchesForm />);
+
+    expect(screen.getByRole('button', { name: /finish/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /back/i })).toBeDisabled();
   });
 
   it('shows an empty state without Follow all when there are no suggestions', () => {
@@ -140,7 +164,11 @@ describe('FollowBestMatchesForm', () => {
 
     render(<FollowBestMatchesForm />);
 
-    expect(vi.mocked(useFollowAll)).toHaveBeenCalledWith({ onFollowed: mockPreserveFollowedUser });
+    // Preserve before each commit, roll back on failure — mirrors the single-card path
+    expect(vi.mocked(useFollowAll)).toHaveBeenCalledWith({
+      onFollowStarted: mockPreserveFollowedUser,
+      onFollowFailed: mockUnpreserveFollowedUser,
+    });
     const followAllButton = screen.getByTestId('follow-all-btn');
     expect(followAllButton).toHaveTextContent('Follow all (2)');
 
@@ -174,9 +202,10 @@ describe('FollowBestMatchesForm', () => {
     expect(screen.getByRole('button', { name: 'Follow User a' })).toBeDisabled();
   });
 
-  it('locks Back and Finish while a per-card follow is still committing', () => {
-    // Finish reads `followedCount`, which lags the click until the local follow write lands;
-    // navigating during that window would decide the landing feed from a stale count.
+  it('locks Back, Finish and Follow all while a per-card follow is still committing', () => {
+    // Finish reads the following count, which lags the click until the local follow write lands;
+    // navigating during that window would decide the landing feed from a stale count. Follow all
+    // is held too so it cannot race a card whose PUT is still in flight.
     mockSuggestions([makeUser('a'), makeUser('b')], { isFollowPending: true });
     mockIsUserLoading.mockImplementation((id: string) => id === 'a');
 
@@ -184,8 +213,8 @@ describe('FollowBestMatchesForm', () => {
 
     expect(screen.getByRole('button', { name: /finish/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /back/i })).toBeDisabled();
-    // Follow all stays available: it has its own lock and other cards are still actionable
-    expect(screen.getByTestId('follow-all-btn')).not.toBeDisabled();
+    expect(screen.getByTestId('follow-all-btn')).toBeDisabled();
+    // Other cards stay actionable: each card only reflects its own in-flight state
     expect(screen.getByRole('button', { name: 'Follow User b' })).not.toBeDisabled();
   });
 
@@ -212,6 +241,7 @@ describe('FollowBestMatchesForm', () => {
   describe('Finish', () => {
     it('marks completion, lands on My network with at least one follow, and goes home', () => {
       mockSuggestions([makeUser('a', { isFollowing: true }), makeUser('b')]);
+      mockFollowingCount(1);
 
       render(<FollowBestMatchesForm />);
       fireEvent.click(screen.getByRole('button', { name: /finish/i }));
@@ -224,8 +254,22 @@ describe('FollowBestMatchesForm', () => {
       expect(mockReplace).toHaveBeenCalledWith(APP_ROUTES.HOME);
     });
 
+    it('lands on My network from real follows even when no followed card is on screen', () => {
+      // Back → Continue or a refresh drops preservation and `excludeFollowing` hides the people
+      // already followed; the landing feed must still reflect the follows that exist in Dexie.
+      mockSuggestions([makeUser('b')]);
+      mockFollowingCount(2);
+
+      render(<FollowBestMatchesForm />);
+      fireEvent.click(screen.getByRole('button', { name: /finish/i }));
+
+      expect(useHomeStore.getState().reach).toBe(REACH.NETWORK);
+      expect(mockReplace).toHaveBeenCalledWith(APP_ROUTES.HOME);
+    });
+
     it('marks completion and leaves the All feed untouched with zero follows', () => {
       mockSuggestions([makeUser('a'), makeUser('b')]);
+      mockFollowingCount(0);
 
       render(<FollowBestMatchesForm />);
       fireEvent.click(screen.getByRole('button', { name: /finish/i }));

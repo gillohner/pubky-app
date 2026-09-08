@@ -32,7 +32,7 @@ function formatFollowAllSummary(followedCount: number, failedCount: number): str
  * is shown at the end instead of one toast per user. `followAll` never rejects, so the caller can
  * always proceed to Finish.
  */
-export function useFollowAll({ onFollowed }: UseFollowAllOptions = {}): UseFollowAllResult {
+export function useFollowAll({ onFollowStarted, onFollowFailed }: UseFollowAllOptions = {}): UseFollowAllResult {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<FollowAllProgress>(IDLE_PROGRESS);
@@ -65,12 +65,15 @@ export function useFollowAll({ onFollowed }: UseFollowAllOptions = {}): UseFollo
 
     try {
       for (const followee of pending) {
+        // Preserve before the await, same as the single-card path: `commitFollow` writes Dexie
+        // before the homeserver PUT, so preserving afterwards lets the card blink out and back.
+        onFollowStarted?.(followee);
         try {
           await UserController.commitFollow(HttpMethod.PUT, { follower: currentUserPubky, followee });
           result.followed.push(followee);
-          onFollowed?.(followee);
         } catch (err) {
           result.failed.push(followee);
+          onFollowFailed?.(followee);
           Logger.error('[useFollowAll] Failed to follow user', { followee, error: err });
         }
         setProgress((prev) => ({ ...prev, completed: prev.completed + 1 }));

@@ -35,8 +35,9 @@ describe('useFollowAll', () => {
   });
 
   it('follows every unfollowed target sequentially and skips already-followed ones', async () => {
-    const onFollowed = vi.fn();
-    const { result } = renderHook(() => useFollowAll({ onFollowed }));
+    const onFollowStarted = vi.fn();
+    const onFollowFailed = vi.fn();
+    const { result } = renderHook(() => useFollowAll({ onFollowStarted, onFollowFailed }));
 
     let outcome: Awaited<ReturnType<typeof result.current.followAll>> | undefined;
     await act(async () => {
@@ -50,7 +51,8 @@ describe('useFollowAll', () => {
     expect(mockCommitFollow).toHaveBeenCalledTimes(2);
     expect(mockCommitFollow).toHaveBeenNthCalledWith(1, HttpMethod.PUT, { follower: 'viewer', followee: 'a' });
     expect(mockCommitFollow).toHaveBeenNthCalledWith(2, HttpMethod.PUT, { follower: 'viewer', followee: 'c' });
-    expect(onFollowed.mock.calls.map(([id]) => id)).toEqual(['a', 'c']);
+    expect(onFollowStarted.mock.calls.map(([id]) => id)).toEqual(['a', 'c']);
+    expect(onFollowFailed).not.toHaveBeenCalled();
     expect(outcome).toEqual({ followed: ['a', 'c'], failed: [], skipped: ['b'] });
     expect(vi.mocked(toast)).toHaveBeenCalledWith({ variant: 'default', title: 'Following 2 people' });
     expect(result.current.isRunning).toBe(false);
@@ -97,8 +99,9 @@ describe('useFollowAll', () => {
     mockCommitFollow.mockImplementation((_method: unknown, { followee }: { followee: string }) =>
       followee === 'b' ? Promise.reject(new Error('homeserver down')) : Promise.resolve(),
     );
-    const onFollowed = vi.fn();
-    const { result } = renderHook(() => useFollowAll({ onFollowed }));
+    const onFollowStarted = vi.fn();
+    const onFollowFailed = vi.fn();
+    const { result } = renderHook(() => useFollowAll({ onFollowStarted, onFollowFailed }));
 
     let outcome: Awaited<ReturnType<typeof result.current.followAll>> | undefined;
     await act(async () => {
@@ -106,7 +109,9 @@ describe('useFollowAll', () => {
     });
 
     expect(outcome).toEqual({ followed: ['a', 'c'], failed: ['b'], skipped: [] });
-    expect(onFollowed).toHaveBeenCalledTimes(2);
+    // Every attempt is preserved up front; only the failure is rolled back
+    expect(onFollowStarted.mock.calls.map(([id]) => id)).toEqual(['a', 'b', 'c']);
+    expect(onFollowFailed.mock.calls.map(([id]) => id)).toEqual(['b']);
     expect(mockLogger.error).toHaveBeenCalledTimes(1);
     expect(vi.mocked(toast)).toHaveBeenCalledWith({
       variant: 'warning',

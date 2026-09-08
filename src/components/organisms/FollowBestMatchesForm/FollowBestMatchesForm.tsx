@@ -10,6 +10,7 @@ import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useFollowAll } from '@/hooks/useFollowAll/useFollowAll';
+import { useFollowingCount } from '@/hooks/useFollowingCount/useFollowingCount';
 import { useStarterPackSuggestions } from '@/hooks/useStarterPackSuggestions/useStarterPackSuggestions';
 import { ProfileNavigation } from '@/molecules/ProfileNavigation/ProfileNavigation';
 import { SuggestedUserCard } from '@/organisms/SuggestedUserCard/SuggestedUserCard';
@@ -27,21 +28,29 @@ export const FollowBestMatchesForm = () => {
   const {
     users,
     unfollowedUsers,
-    followedCount,
     isLoading,
     error,
     handleFollowClick,
     isUserLoading,
     isFollowPending,
     preserveFollowedUser,
+    unpreserveFollowedUser,
   } = useStarterPackSuggestions();
-  const { followAll, isRunning: isFollowingAll, progress } = useFollowAll({ onFollowed: preserveFollowedUser });
+  // Real follows from the local follow graph (moderation auto-follow excluded), not the cards on
+  // screen: after Back → Continue or a refresh, preservation is empty and `excludeFollowing` hides
+  // people already followed, so the visible grid would under-count and land the user on All.
+  const { followingCount, isLoading: isFollowingCountLoading } = useFollowingCount();
+  const {
+    followAll,
+    isRunning: isFollowingAll,
+    progress,
+  } = useFollowAll({ onFollowStarted: preserveFollowedUser, onFollowFailed: unpreserveFollowedUser });
 
   const showFollowAll = !isLoading && (unfollowedUsers.length > 0 || isFollowingAll);
-  // Finish decides the landing feed from `followedCount`, which is derived from the relationships
-  // live query and only updates once a follow's local write lands. Lock navigation while any
-  // follow (single card or Follow all) is in flight so Finish never reads a stale count.
-  const isNavigationLocked = isFollowingAll || isFollowPending;
+  // Finish decides the landing feed from `followingCount`, which only updates once a follow's
+  // local write lands. Lock navigation while suggestions or the count are still settling and while
+  // any follow (single card or Follow all) is in flight, so Finish never reads a stale count.
+  const isNavigationLocked = isLoading || isFollowingCountLoading || isFollowingAll || isFollowPending;
 
   const handleFollowAll = () => {
     void followAll(unfollowedUsers.map(({ id, isFollowing }) => ({ id, isFollowing })));
@@ -57,7 +66,7 @@ export const FollowBestMatchesForm = () => {
     // (an empty My network feed is a dead end). The explicit set flips `hasUserSetReach`, which
     // intentionally suppresses the >= 3 follows soft default from `useDefaultHomeReach`; with
     // zero follows we leave the store untouched so that default can still kick in later.
-    if (followedCount >= 1) {
+    if (followingCount >= 1) {
       useHomeStore.getState().setReach(REACH.NETWORK);
     }
     router.replace(APP_ROUTES.HOME);
@@ -97,7 +106,7 @@ export const FollowBestMatchesForm = () => {
                 variant="brand"
                 size="sm"
                 onClick={handleFollowAll}
-                disabled={isFollowingAll}
+                disabled={isFollowingAll || isFollowPending}
                 data-cy="follow-all-btn"
                 data-testid="follow-all-btn"
               >
