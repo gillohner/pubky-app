@@ -37,12 +37,12 @@ export function useWhoToFollowFollowPreservation({ resetKey }: UseWhoToFollowFol
     });
   };
 
-  const handleFollowClick = async (userId: Pubky, isCurrentlyFollowing: boolean, displayName: string) => {
+  const handleFollowClick = async (userId: Pubky, isCurrentlyFollowing: boolean) => {
     updatePreservedUserIds(userId, isCurrentlyFollowing);
     setPendingFollowCount((count) => count + 1);
 
     try {
-      const ok = await toggleFollow(userId, isCurrentlyFollowing, displayName);
+      const ok = await toggleFollow(userId, isCurrentlyFollowing);
       if (!ok) {
         rollbackPreservedUserIds(userId, isCurrentlyFollowing);
       }

@@ -7,7 +7,7 @@ export interface SuggestedUserCardProps {
   isLoading?: boolean;
   /** Whether the follow status is still being resolved */
   isStatusLoading?: boolean;
-  onFollowClick: (userId: Pubky, isCurrentlyFollowing: boolean, displayName: string) => void;
+  onFollowClick: (userId: Pubky, isCurrentlyFollowing: boolean) => void;
   className?: string;
   'data-testid'?: string;
 }

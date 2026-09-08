@@ -16,7 +16,7 @@ export interface UseStarterPackSuggestionsResult {
   isLoading: boolean;
   error: string | null;
   /** Per-card follow toggle with optimistic list preservation */
-  handleFollowClick: (userId: Pubky, isCurrentlyFollowing: boolean, displayName: string) => Promise<void>;
+  handleFollowClick: (userId: Pubky, isCurrentlyFollowing: boolean) => Promise<void>;
   isUserLoading: (userId: Pubky) => boolean;
   /** True while a per-card follow is still committing; `followedCount` lags until it clears */
   isFollowPending: boolean;

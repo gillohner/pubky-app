@@ -105,10 +105,10 @@ describe('useStarterPackSuggestions', () => {
     const { result } = renderHook(() => useStarterPackSuggestions());
 
     await act(async () => {
-      await result.current.handleFollowClick('a', false, 'User a');
+      await result.current.handleFollowClick('a', false);
     });
 
-    expect(mockToggleFollow).toHaveBeenCalledWith('a', false, 'User a');
+    expect(mockToggleFollow).toHaveBeenCalledWith('a', false);
     expect(vi.mocked(useUserStream)).toHaveBeenLastCalledWith(
       expect.objectContaining({ preserveFollowedUserIds: ['a'] }),
     );
@@ -134,7 +134,7 @@ describe('useStarterPackSuggestions', () => {
     expect(result.current.isFollowPending).toBe(false);
 
     act(() => {
-      void result.current.handleFollowClick('a', false, 'User a');
+      void result.current.handleFollowClick('a', false);
     });
     expect(result.current.isFollowPending).toBe(true);
 

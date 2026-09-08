@@ -2,7 +2,6 @@
 
 import { Container } from '@/atoms/Container/Container';
 import { Typography } from '@/atoms/Typography/Typography';
-import { resolveFollowDisplayName } from '@/hooks/useFollowUser/useFollowUser.utils';
 import { cn, formatPublicKey, generateRandomColor } from '@/libs/utils/utils';
 import { FollowButton } from '@/molecules/FollowButton/FollowButton';
 import { PostTag } from '@/molecules/PostTag/PostTag';
@@ -26,8 +25,8 @@ export function SuggestedUserCard({
   className,
   'data-testid': dataTestId,
 }: SuggestedUserCardProps) {
-  const displayName = resolveFollowDisplayName(user.id, user.name);
   const formattedPublicKey = formatPublicKey({ key: user.id });
+  const displayName = user.name || formattedPublicKey;
   const isFollowing = user.isFollowing ?? false;
   const stats = { tags: user.counts?.tags ?? 0, posts: user.counts?.posts ?? 0 };
 
@@ -81,7 +80,7 @@ export function SuggestedUserCard({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              onFollowClick(user.id, isFollowing, displayName);
+              onFollowClick(user.id, isFollowing);
             }}
           />
         </Container>

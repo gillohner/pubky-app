@@ -196,7 +196,7 @@ describe('FollowBestMatchesForm', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Follow User a' }));
 
-    expect(mockHandleFollowClick).toHaveBeenCalledWith('a', false, 'User a');
+    expect(mockHandleFollowClick).toHaveBeenCalledWith('a', false);
   });
 
   it('navigates back to the tags step without completing', () => {

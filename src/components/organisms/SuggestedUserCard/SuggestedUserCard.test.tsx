@@ -71,7 +71,7 @@ describe('SuggestedUserCard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Follow John Carvalho' }));
 
-    expect(onFollowClick).toHaveBeenCalledWith(user.id, false, 'John Carvalho');
+    expect(onFollowClick).toHaveBeenCalledWith(user.id, false);
   });
 
   it('shows the unfollow affordance when already following', () => {
@@ -80,7 +80,7 @@ describe('SuggestedUserCard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Unfollow John Carvalho' }));
 
-    expect(onFollowClick).toHaveBeenCalledWith(user.id, true, 'John Carvalho');
+    expect(onFollowClick).toHaveBeenCalledWith(user.id, true);
   });
 
   it('falls back to the formatted pubky as display name and zero stats', () => {
