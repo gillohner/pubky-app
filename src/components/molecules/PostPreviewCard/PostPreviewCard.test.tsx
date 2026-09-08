@@ -297,10 +297,9 @@ describe('PostPreviewCard', () => {
     expect(screen.getByTestId('collection-card')).toHaveAttribute('data-interactive-actions', 'false');
   });
 
-  it('is the single TTL subscriber for a collection original (observes the embed wrapper)', () => {
-    // Post TTL subscriptions are not ref-counted, so the embed must have exactly
-    // one subscriber. This wrapper owns it; the nested `CollectionCard` skips its
-    // own subscription for `presentation="embed"` (covered in CollectionCard tests).
+  it('is the TTL subscriber for a collection original (observes the embed wrapper)', () => {
+    // This wrapper owns the embed's subscription; the nested `CollectionCard`
+    // skips its own for `presentation="embed"` (covered in CollectionCard tests).
     mockUsePostDetails.mockReturnValue(collectionPost);
 
     const { container } = render(<PostPreviewCard postId={COLLECTION_COMPOSITE_ID} />);

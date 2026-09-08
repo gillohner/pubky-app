@@ -8,6 +8,7 @@ import {
 import { TtlController } from '@/controllers/ttl/ttl';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
+import { isAuthenticatedState } from '@/stores/auth/auth.selectors';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type {
   EntityOps,
@@ -32,12 +33,14 @@ import type {
  * Staleness formula: now - lastUpdatedAt > TTL_MS
  *
  * Architecture:
- * - Posts: subscribedPosts Set + postBatchQueue Set
+ * - Posts: subscribedPosts Set + postBatchQueue Set (ref-counted for multiple subscribers)
  * - Users: subscribedUsers Set + userBatchQueue Set (ref-counted for multiple subscribers)
  *
- * Note: Post and user subscriptions are independent.
- * User subscriptions are managed explicitly via subscribeUser/unsubscribeUser,
- * with reference counting to handle multiple subscribers to the same user.
+ * Note: Post and user subscriptions are independent. Both are reference
+ * counted so nested surfaces that track the same entity (a repost preview
+ * inside a feed, a share dialog over a hero, a profile header beside a user
+ * list) cannot unsubscribe each other: the entity stays tracked until the
+ * last subscriber leaves.
  *
  * More info in the ADR: https://github.com/pubky/pubky-app/blob/dev/docs/adr/0012-ttl-coordinator.md
  */
@@ -61,6 +64,7 @@ export class TtlCoordinator {
     isPageVisible: true,
     subscribedPosts: new Set(),
     subscribedUsers: new Set(),
+    postRefCount: new Map(),
     userRefCount: new Map(),
     postBatchQueue: new Set(),
     userBatchQueue: new Set(),
@@ -146,13 +150,16 @@ export class TtlCoordinator {
    * Subscribe to a post's TTL tracking
    */
   public subscribePost({ compositePostId }: TtlSubscribePostParams): void {
-    // Idempotent: don't double-subscribe
-    if (this.hasPostSubscription(compositePostId)) {
-      Logger.debug('TtlCoordinator: Post already subscribed (skip)', { compositePostId });
+    // Ref-counted: a second subscriber to the same post only bumps the count,
+    // so the staleness check below runs once per tracked post.
+    if (!this.addPostSubscription(compositePostId)) {
+      Logger.debug('TtlCoordinator: Post already subscribed (ref +1)', {
+        compositePostId,
+        refCount: this.state.postRefCount.get(compositePostId),
+      });
       return;
     }
 
-    this.addPostSubscription(compositePostId);
     Logger.debug('TtlCoordinator: Post subscribed', {
       compositePostId,
       totalSubscribedPosts: this.state.subscribedPosts.size,
@@ -168,12 +175,19 @@ export class TtlCoordinator {
    */
   public unsubscribePost({ compositePostId }: TtlUnsubscribePostParams): void {
     // Safe if called multiple times or for unknown IDs
-    if (!this.hasPostSubscription(compositePostId)) {
+    if (!this.state.postRefCount.has(compositePostId)) {
       Logger.debug('TtlCoordinator: Post not subscribed (skip unsubscribe)', { compositePostId });
       return;
     }
 
-    this.removePostSubscription(compositePostId);
+    if (!this.removePostSubscription(compositePostId)) {
+      Logger.debug('TtlCoordinator: Post still subscribed (ref -1)', {
+        compositePostId,
+        refCount: this.state.postRefCount.get(compositePostId),
+      });
+      return;
+    }
+
     Logger.debug('TtlCoordinator: Post unsubscribed', {
       compositePostId,
       totalSubscribedPosts: this.state.subscribedPosts.size,
@@ -237,23 +251,27 @@ export class TtlCoordinator {
    * Setup event listeners for auth state and page visibility
    */
   private setupListeners(): void {
-    // Listen to auth store changes. Compare snapshot fields, not selectors:
-    // `selectIsAuthenticated()` reads the live store through `get()`, so calling
-    // it on `prevState` returns the *current* value and a change is never
-    // detected. That left the loop dead after any reload on a public route
-    // (single collection, post, profile), where `start()` runs before the
-    // persisted session is restored and nothing ever re-evaluated `shouldTick`.
+    // Listen to auth store changes. Compare the snapshots with the pure
+    // `isAuthenticatedState` helper: the store selectors read the live store
+    // through `get()`, so `prevState.selectIsAuthenticated()` never differs from
+    // `state.selectIsAuthenticated()`. That left the loop dead after any reload
+    // on a public route (single collection, post, profile), where `start()` runs
+    // before the persisted session is restored and nothing re-evaluated
+    // `shouldTick`. `hasProfile` is part of `shouldTick()`, so profile
+    // resolution counts as a change too.
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      const isAuthenticated = state.session !== null;
-      const wasAuthenticated = prevState.session !== null;
+      const isAuthenticated = isAuthenticatedState(state);
+      const wasAuthenticated = isAuthenticatedState(prevState);
       const profileChanged = state.hasProfile !== prevState.hasProfile;
 
       if (isAuthenticated === wasAuthenticated && !profileChanged) return;
 
       Logger.debug('TtlCoordinator: Auth state changed', { isAuthenticated, hasProfile: state.hasProfile });
 
-      if (!isAuthenticated) {
-        // User logged out - stop and reset
+      if (wasAuthenticated && !isAuthenticated) {
+        // User logged out - stop and reset. Only a real signed-in → signed-out
+        // transition clears subscriptions; mounted viewport hooks keep their
+        // own subscribed flag and would not re-register after a spurious reset.
         this.stopTicking();
         this.reset();
       } else {
@@ -413,6 +431,7 @@ export class TtlCoordinator {
   private reset(): void {
     this.state.subscribedPosts.clear();
     this.state.subscribedUsers.clear();
+    this.state.postRefCount.clear();
     this.state.userRefCount.clear();
     this.state.postBatchQueue.clear();
     this.state.userBatchQueue.clear();
@@ -423,25 +442,38 @@ export class TtlCoordinator {
   // ============================================================================
 
   /**
-   * Add a post to the subscription set
+   * Add a post subscription with reference counting
+   * Increments ref count; adds to subscribed set on first reference
+   * @returns true when this was the first reference (post newly tracked)
    */
-  private addPostSubscription(compositePostId: string): void {
-    this.state.subscribedPosts.add(compositePostId);
+  private addPostSubscription(compositePostId: string): boolean {
+    const currentCount = this.state.postRefCount.get(compositePostId) ?? 0;
+    this.state.postRefCount.set(compositePostId, currentCount + 1);
+
+    if (currentCount === 0) {
+      this.state.subscribedPosts.add(compositePostId);
+      return true;
+    }
+    return false;
   }
 
   /**
-   * Remove a post from subscription and any pending refresh queue
+   * Remove a post subscription with reference counting
+   * Decrements ref count; removes from subscribed set and any pending refresh
+   * queue when the count reaches 0
+   * @returns true when the last reference was released (post no longer tracked)
    */
-  private removePostSubscription(compositePostId: string): void {
-    this.state.subscribedPosts.delete(compositePostId);
-    this.state.postBatchQueue.delete(compositePostId);
-  }
+  private removePostSubscription(compositePostId: string): boolean {
+    const currentCount = this.state.postRefCount.get(compositePostId) ?? 0;
 
-  /**
-   * Check if a post is currently subscribed
-   */
-  private hasPostSubscription(compositePostId: string): boolean {
-    return this.state.subscribedPosts.has(compositePostId);
+    if (currentCount <= 1) {
+      this.state.postRefCount.delete(compositePostId);
+      this.state.subscribedPosts.delete(compositePostId);
+      this.state.postBatchQueue.delete(compositePostId);
+      return true;
+    }
+    this.state.postRefCount.set(compositePostId, currentCount - 1);
+    return false;
   }
 
   /**

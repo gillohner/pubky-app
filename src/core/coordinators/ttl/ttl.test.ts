@@ -468,6 +468,73 @@ describe('TtlCoordinator', () => {
       }).not.toThrow();
     });
 
+    it('keeps a post tracked until the last of several subscribers unsubscribes', async () => {
+      setupAuthenticatedUser();
+
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+
+      const postId = createCompositePostId('author1', 'post1');
+
+      // Two surfaces track the same post (a hero and the share dialog's preview).
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.subscribePost({ compositePostId: postId });
+      // The dialog closes: one subscriber leaves, the hero is still on screen.
+      coordinator.unsubscribePost({ compositePostId: postId });
+
+      coordinator.start();
+      findStalePostsSpy.mockClear();
+      await waitForTick();
+      expect(findStalePostsSpy).toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
+
+      // The last subscriber leaves.
+      coordinator.unsubscribePost({ compositePostId: postId });
+      findStalePostsSpy.mockClear();
+      await advanceAndFlush(2_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+    });
+
+    it('runs the subscribe-time staleness check once per tracked post', async () => {
+      setupAuthenticatedUser();
+
+      const coordinator = TtlCoordinator.getInstance();
+      const postId = createCompositePostId('author1', 'post1');
+
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.subscribePost({ compositePostId: postId });
+      await flushPromises();
+
+      expect(findStalePostsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('restarts the ref count after reset so a stale unsubscribe is a no-op', async () => {
+      setupAuthenticatedUser();
+
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const postId = createCompositePostId('author1', 'post1');
+
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.setRoute('/home');
+      coordinator.setRoute('/search'); // route change → reset()
+
+      // A hook that outlived the reset unsubscribes: nothing to release, no negative count.
+      expect(() => coordinator.unsubscribePost({ compositePostId: postId })).not.toThrow();
+
+      // A fresh subscriber tracks the post again with a count of exactly one.
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.start();
+      findStalePostsSpy.mockClear();
+      await waitForTick();
+      expect(findStalePostsSpy).toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
+
+      coordinator.unsubscribePost({ compositePostId: postId });
+      findStalePostsSpy.mockClear();
+      await advanceAndFlush(2_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+    });
+
     it('stale post is queued for refresh on subscribe', async () => {
       setupAuthenticatedUser();
 
@@ -1096,6 +1163,28 @@ describe('TtlCoordinator', () => {
 
       useAuthStore.getState().setHasProfile(true);
 
+      await waitForTick();
+      expect(findStalePostsSpy).toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
+    });
+
+    it('keeps subscriptions on a profile-only change while signed out', async () => {
+      // Public-route reload: persisted hasProfile hydrates before the session is restored.
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+
+      const postId = createCompositePostId('author1', 'post1');
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.start();
+
+      useAuthStore.getState().setHasProfile(true);
+      // Session restore lands next: the post subscribed while signed out must still be tracked.
+      useAuthStore.getState().init({
+        session: mockSession(),
+        currentUserPubky: 'test-user' as Pubky,
+        hasProfile: true,
+      });
+
+      findStalePostsSpy.mockClear();
       await waitForTick();
       expect(findStalePostsSpy).toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
     });

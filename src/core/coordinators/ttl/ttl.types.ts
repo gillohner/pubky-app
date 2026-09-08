@@ -95,8 +95,14 @@ export interface TtlCoordinatorState {
   subscribedUsers: Set<Pubky>;
 
   /**
-   * Reference count for users (multiple posts can have same author)
-   * Key: user pubky, Value: number of posts referencing this user
+   * Reference count for posts (nested surfaces can track the same post)
+   * Key: composite post ID, Value: number of live subscribers
+   */
+  postRefCount: Map<string, number>;
+
+  /**
+   * Reference count for users (multiple surfaces can track the same user)
+   * Key: user pubky, Value: number of live subscribers
    */
   userRefCount: Map<Pubky, number>;
 

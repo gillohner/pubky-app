@@ -70,11 +70,11 @@ interface CollectionCardProps {
  * is a cached Dexie row that `usePostDetails` never re-fetches on a cache hit,
  * so a `landing` card subscribes its composite id to the viewport TTL
  * coordinator — the same path `PostMain` uses — and the live query picks up
- * the refreshed row. `embed` cards do NOT subscribe: they are always nested
- * inside a surface that already subscribes the same id (`PostPreviewCard`, or
- * `PostMain` via `PostContentBase`), and post TTL subscriptions are not
- * ref-counted, so a second subscriber on the same id would unsubscribe the
- * first one when it left the viewport.
+ * the refreshed row. `embed` cards skip their own subscription: they are
+ * always nested inside a surface that already subscribes the same id
+ * (`PostPreviewCard`, or `PostMain` via `PostContentBase`), so a second one
+ * would only add a redundant viewport observer. See docs/data-patterns.md —
+ * "Viewport TTL subscriptions".
  */
 export function CollectionCard({
   authorPubky,
@@ -87,8 +87,8 @@ export function CollectionCard({
   const isMobile = useIsMobile();
   const isWideLayout = useEffectiveTagsLayout() === 'side';
   const { postDetails, isLoading } = usePostDetails(compositeId);
-  // One TTL subscriber per visible collection: standalone cards own it; embeds
-  // defer to the enclosing post surface (see the component doc above).
+  // Standalone cards own the TTL subscription; embeds defer to the enclosing
+  // post surface (see the component doc above).
   const { ref: ttlRef } = useTtlSubscription({
     type: 'post',
     id: compositeId,

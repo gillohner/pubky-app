@@ -47,14 +47,12 @@ import type { CollectionHeroContentProps, CollectionHeroProps } from './Collecti
  *   - owner   → Content / Share / Edit / Delete.
  *   - other   → real Follow / Unfollow (via `useBookmark`) + Share placeholder.
  *
- * Freshness: the hero is the single-collection page's one TTL subscriber for
- * the envelope. `usePostDetails` (in the `Collection` template) never
- * re-fetches a cached row, so without this the title / description / cover /
- * item count would stay frozen at whatever was cached until sign-out. The
- * viewport subscription refreshes the row through the TTL coordinator (same
- * path as `PostMain`) and the template's live query re-renders every consumer.
- * Nothing else on the page may subscribe the same id — post TTL subscriptions
- * are not ref-counted.
+ * Freshness: the hero subscribes the envelope to the viewport TTL coordinator.
+ * `usePostDetails` (in the `Collection` template) never re-fetches a cached
+ * row, so without this the title / description / cover / item count would stay
+ * frozen at whatever was cached until sign-out. The subscription refreshes the
+ * row (same path as `PostMain`) and the template's live query re-renders every
+ * consumer. See docs/data-patterns.md — "Viewport TTL subscriptions".
  */
 export function CollectionHero({
   authorPubky,

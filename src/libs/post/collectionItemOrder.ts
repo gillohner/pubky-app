@@ -21,15 +21,11 @@ import { buildCompositeIdFromPubkyUri } from '@/models/models.utils';
 export function sortPostIdsByCollectionOrder(postIds: string[], envelopeItems: string[] | undefined): string[] {
   if (!envelopeItems?.length || postIds.length < 2) return postIds;
 
-  const orderByPostId = new Map<string, number>();
-  envelopeItems.forEach((uri, index) => {
-    const compositeId = buildCompositeIdFromPubkyUri({ uri, domain: CompositeIdDomain.POSTS });
-    if (compositeId !== null && !orderByPostId.has(compositeId)) {
-      orderByPostId.set(compositeId, index);
-    }
-  });
-
-  if (orderByPostId.size === 0) return postIds;
+  // Only the relative order of the indices matters, so the deduped id list's
+  // positions are as good as the original envelope indices.
+  const orderedPostIds = collectionItemsToPostIds(envelopeItems) ?? [];
+  if (orderedPostIds.length === 0) return postIds;
+  const orderByPostId = new Map<string, number>(orderedPostIds.map((postId, index) => [postId, index]));
 
   const inEnvelope: string[] = [];
   const rest: string[] = [];

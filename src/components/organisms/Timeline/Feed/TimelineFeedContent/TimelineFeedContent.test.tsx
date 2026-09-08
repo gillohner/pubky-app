@@ -206,6 +206,8 @@ const mockRefresh = vi.fn();
 const mockPrependPosts = vi.fn();
 const mockPrependOptimisticPosts = vi.fn();
 const mockRemovePosts = vi.fn();
+const mockRemoveCommit = vi.fn();
+const mockRemovePostsOptimistically = vi.fn(() => ({ commit: mockRemoveCommit, rollback: vi.fn() }));
 
 const defaultMutedUsersResult = {
   mutedUserIds: [],
@@ -225,7 +227,7 @@ const defaultPaginationResult = {
   prependPosts: mockPrependPosts,
   prependOptimisticPosts: mockPrependOptimisticPosts,
   removePosts: mockRemovePosts,
-  removePostsOptimistically: vi.fn(() => ({ commit: vi.fn(), rollback: vi.fn() })),
+  removePostsOptimistically: mockRemovePostsOptimistically,
 };
 const mockUseStreamPagination = vi.mocked(useStreamPagination);
 const mockUseMutedUsers = vi.mocked(useMutedUsers);
@@ -667,27 +669,14 @@ describe('TimelineFeedContent', () => {
   });
 
   describe('Collection membership sync', () => {
-    const renderCollectionFeed = (membershipPostIds: string[] | undefined) =>
-      render(
-        <TimelineFeedWithStream
-          streamId={COLLECTION_STREAM_ID}
-          variant={TIMELINE_FEED_VARIANT.COLLECTION}
-          tagsLayout="inline"
-          membershipPostIds={membershipPostIds}
-        />,
-      );
-    const rerenderCollectionFeed = (
-      rerender: ReturnType<typeof render>['rerender'],
-      membershipPostIds: string[] | undefined,
-    ) =>
-      rerender(
-        <TimelineFeedWithStream
-          streamId={COLLECTION_STREAM_ID}
-          variant={TIMELINE_FEED_VARIANT.COLLECTION}
-          tagsLayout="inline"
-          membershipPostIds={membershipPostIds}
-        />,
-      );
+    const collectionFeed = (membershipPostIds: string[] | undefined) => (
+      <TimelineFeedWithStream
+        streamId={COLLECTION_STREAM_ID}
+        variant={TIMELINE_FEED_VARIANT.COLLECTION}
+        tagsLayout="inline"
+        membershipPostIds={membershipPostIds}
+      />
+    );
 
     beforeEach(() => {
       // Loaded feed: post1, post2, post3 (defaultPaginationResult); no more pages
@@ -695,66 +684,91 @@ describe('TimelineFeedContent', () => {
       mockUseStreamPagination.mockReturnValue({ ...defaultPaginationResult, hasMore: false });
     });
 
-    it('treats the first envelope as the baseline and does not refetch', () => {
-      const { rerender } = renderCollectionFeed(undefined);
-      rerenderCollectionFeed(rerender, ['post1', 'post2', 'post3']);
+    it('treats the first envelope as the baseline and applies nothing', () => {
+      const { rerender } = render(collectionFeed(undefined));
+      rerender(collectionFeed(['post1', 'post2', 'post3']));
 
+      expect(mockPrependOptimisticPosts).not.toHaveBeenCalled();
+      expect(mockRemovePostsOptimistically).not.toHaveBeenCalled();
+    });
+
+    it('prepends an added id the feed has not loaded, without refetching', () => {
+      const { rerender } = render(collectionFeed(['post1', 'post2', 'post3']));
+      rerender(collectionFeed(['post4', 'post1', 'post2', 'post3']));
+
+      expect(mockPrependOptimisticPosts).toHaveBeenCalledTimes(1);
+      expect(mockPrependOptimisticPosts).toHaveBeenCalledWith(['post4']);
       expect(mockRefresh).not.toHaveBeenCalled();
     });
 
-    it('refetches when the envelope gains an id the feed has not loaded', () => {
-      const { rerender } = renderCollectionFeed(['post1', 'post2', 'post3']);
-      rerenderCollectionFeed(rerender, ['post4', 'post1', 'post2', 'post3']);
+    it('commits a removal for a dropped id the feed still shows, without refetching', () => {
+      const { rerender } = render(collectionFeed(['post1', 'post2', 'post3']));
+      rerender(collectionFeed(['post1', 'post3']));
 
-      expect(mockRefresh).toHaveBeenCalledTimes(1);
-    });
-
-    it('refetches when the envelope drops an id the feed still shows', () => {
-      const { rerender } = renderCollectionFeed(['post1', 'post2', 'post3']);
-      rerenderCollectionFeed(rerender, ['post1', 'post3']);
-
-      expect(mockRefresh).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not refetch when the added id is already loaded (optimistic insert landed first)', () => {
-      const { rerender } = renderCollectionFeed(['post1', 'post2']);
-      rerenderCollectionFeed(rerender, ['post3', 'post1', 'post2']);
-
+      expect(mockRemovePostsOptimistically).toHaveBeenCalledTimes(1);
+      expect(mockRemovePostsOptimistically).toHaveBeenCalledWith(['post2']);
+      expect(mockRemoveCommit).toHaveBeenCalledTimes(1);
       expect(mockRefresh).not.toHaveBeenCalled();
     });
 
-    it('does not refetch on a reorder-only change', () => {
-      const { rerender } = renderCollectionFeed(['post1', 'post2', 'post3']);
-      rerenderCollectionFeed(rerender, ['post3', 'post1', 'post2']);
+    it('applies additions and removals from one envelope change together', () => {
+      const { rerender } = render(collectionFeed(['post1', 'post2', 'post3']));
+      rerender(collectionFeed(['post4', 'post1', 'post3']));
 
-      expect(mockRefresh).not.toHaveBeenCalled();
+      expect(mockRemovePostsOptimistically).toHaveBeenCalledWith(['post2']);
+      expect(mockPrependOptimisticPosts).toHaveBeenCalledWith(['post4']);
     });
 
-    it('does not refetch while the initial load is still in flight', () => {
+    it('skips an added id the feed already shows (owner optimistic insert landed first)', () => {
+      const { rerender } = render(collectionFeed(['post1', 'post2']));
+      rerender(collectionFeed(['post3', 'post1', 'post2']));
+
+      expect(mockPrependOptimisticPosts).not.toHaveBeenCalled();
+    });
+
+    it('skips a dropped id the feed never loaded', () => {
+      mockUseStreamPagination.mockReturnValue({ ...defaultPaginationResult, postIds: ['post1'], hasMore: false });
+      const { rerender } = render(collectionFeed(['post1', 'post2']));
+      rerender(collectionFeed(['post1']));
+
+      expect(mockRemovePostsOptimistically).not.toHaveBeenCalled();
+    });
+
+    it('does nothing on a reorder-only change', () => {
+      const { rerender } = render(collectionFeed(['post1', 'post2', 'post3']));
+      rerender(collectionFeed(['post3', 'post1', 'post2']));
+
+      expect(mockPrependOptimisticPosts).not.toHaveBeenCalled();
+      expect(mockRemovePostsOptimistically).not.toHaveBeenCalled();
+    });
+
+    it('applies an addition even while the initial load is still in flight', () => {
       mockUseStreamPagination.mockReturnValue({
         ...defaultPaginationResult,
         postIds: [],
         loading: true,
         hasMore: false,
       });
-      const { rerender } = renderCollectionFeed(['post1']);
-      rerenderCollectionFeed(rerender, ['post4', 'post1']);
+      const { rerender } = render(collectionFeed(['post1']));
+      rerender(collectionFeed(['post4', 'post1']));
 
-      expect(mockRefresh).not.toHaveBeenCalled();
+      expect(mockPrependOptimisticPosts).toHaveBeenCalledWith(['post4']);
     });
 
-    it('refetches once per membership change, not on every re-render', () => {
-      const { rerender } = renderCollectionFeed(['post1', 'post2', 'post3']);
-      rerenderCollectionFeed(rerender, ['post4', 'post1', 'post2', 'post3']);
-      rerenderCollectionFeed(rerender, ['post4', 'post1', 'post2', 'post3']);
+    it('applies each membership change once, not on every re-render', () => {
+      const { rerender } = render(collectionFeed(['post1', 'post2', 'post3']));
+      rerender(collectionFeed(['post4', 'post1', 'post2', 'post3']));
+      rerender(collectionFeed(['post4', 'post1', 'post2', 'post3']));
 
-      expect(mockRefresh).toHaveBeenCalledTimes(1);
+      expect(mockPrependOptimisticPosts).toHaveBeenCalledTimes(1);
     });
 
-    it('never refetches without a membership (owner path)', () => {
-      const { rerender } = renderCollectionFeed(undefined);
-      rerenderCollectionFeed(rerender, undefined);
+    it('never touches the feed without a membership (non-collection variants)', () => {
+      const { rerender } = render(collectionFeed(undefined));
+      rerender(collectionFeed(undefined));
 
+      expect(mockPrependOptimisticPosts).not.toHaveBeenCalled();
+      expect(mockRemovePostsOptimistically).not.toHaveBeenCalled();
       expect(mockRefresh).not.toHaveBeenCalled();
     });
   });

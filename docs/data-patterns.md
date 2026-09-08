@@ -135,18 +135,18 @@ ttlBatchIntervalMs: 5_000, // 5 seconds between batches
 
 `useLocalFirstQuery` (and therefore `usePostDetails` / `useUserProfile`) never re-fetches a row that is already in IndexedDB. The only thing that refreshes a cached row while it is on screen is a viewport subscription to the `TtlCoordinator` (ADR-0012) via `useTtlSubscription`; the coordinator overwrites the row and bumps its TTL, and the live query re-renders every consumer.
 
-Post subscriptions are idempotent but **not ref-counted** (`subscribePost` skips duplicates, `unsubscribePost` removes the only slot), so each visible entity must have exactly one subscriber. The outermost surface owns it; nested embeds never subscribe:
+Post and user subscriptions are both reference counted, so nested surfaces that track the same entity cannot unsubscribe each other. Each surface still subscribes once per entity it renders; an embed whose enclosing surface already subscribes the same id skips its own subscription, since a second one would only add a redundant `IntersectionObserver`:
 
 | Surface                             | Subscribes           | Notes                                                                              |
 | ----------------------------------- | -------------------- | ---------------------------------------------------------------------------------- |
 | `PostMain`                          | its post id          | Feed / thread / single-post cards                                                  |
-| `PostPreviewCard`                   | the original post id | Repost + link embeds; the only subscriber for a nested collection embed            |
+| `PostPreviewCard`                   | the original post id | Repost + link embeds, share/repost dialogs                                         |
 | `CollectionCard` (`landing`)        | the collection id    | Profile Collections tab, `/collections` sections, search                           |
 | `CollectionCard` (`embed`)          | —                    | Always inside `PostPreviewCard` or `PostMain` → `PostContentBase`, which subscribe |
-| `CollectionHero`                    | the collection id    | The single-collection page's one subscriber for its envelope                       |
-| `ProfilePageHeader`, `UserListItem` | the user pubky       | User subscriptions are ref-counted, so multiple user subscribers are fine          |
+| `CollectionHero`                    | the collection id    | The single-collection page's subscriber for its envelope                           |
+| `ProfilePageHeader`, `UserListItem` | the user pubky       | Profile header and user lists                                                      |
 
-The collection envelope (`name`, `description`, `cover_image`, `items`, `layout`) is one cached post row, so a single refresh updates the title, cover, and item count everywhere at once.
+The collection envelope (`name`, `description`, `cover_image`, `items`, `layout`) is one cached post row, so a single refresh updates the title, cover, and item count everywhere at once. The single-collection item grid mirrors the envelope's `items` in place (`TimelineFeedContent`'s `membershipPostIds`): added ids are prepended as optimistic posts and removed ids are committed out, so the grid tracks the same array the count badge renders without refetching the (asynchronously re-indexed) Nexus items stream.
 
 ## Pipes Normalization (ADR-0006)
 

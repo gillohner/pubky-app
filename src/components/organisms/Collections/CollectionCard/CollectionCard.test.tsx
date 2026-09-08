@@ -477,8 +477,8 @@ describe('CollectionCard', () => {
     });
 
     it('does not subscribe embed cards — the enclosing PostPreviewCard / PostMain owns the subscription', () => {
-      // Post TTL subscriptions are not ref-counted: a second subscriber on the
-      // same id would unsubscribe the first one when it left the viewport.
+      // The enclosing surface already subscribes this id; a second observer
+      // for the same post would be redundant.
       render(<CollectionCard authorPubky={AUTHOR_PUBKY} postId={POST_ID} presentation="embed" />);
 
       expect(mockUseTtlSubscription).toHaveBeenCalledWith({ type: 'post', id: COMPOSITE_ID, enabled: false });

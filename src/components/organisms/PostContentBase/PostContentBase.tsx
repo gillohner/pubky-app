@@ -57,7 +57,7 @@ export function PostContentBase({ postId, className, textClassName, mediaVariant
 
   if (isCollection) {
     const { pubky, id } = parseCompositeId(postId);
-    // Embed cards do not subscribe to TTL themselves — the enclosing surface
+    // Embed cards skip their own TTL subscription — the enclosing surface
     // (`PostMain` / `PostPreviewCard`) already subscribes this composite id.
     return <CollectionCard authorPubky={pubky} postId={id} presentation="embed" className={className} />;
   }

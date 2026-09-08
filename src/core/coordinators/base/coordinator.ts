@@ -4,6 +4,7 @@ import {
   getNotificationPollOnStart,
   getNotificationRespectPageVisibility,
 } from '@/libs/runtime-config/runtime-config';
+import { isAuthenticatedState } from '@/stores/auth/auth.selectors';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import {
   type CoordinatorInitOptions,
@@ -161,13 +162,20 @@ export abstract class Coordinator<Config extends PollingServiceConfig, State ext
    * Subclasses can override to add additional listeners
    */
   protected setupListeners() {
-    // Listen to auth store changes
+    // Listen to auth store changes. Compare the snapshots with the pure
+    // `isAuthenticatedState` helper: the store selectors read the live store
+    // through `get()`, so `prevState.selectIsAuthenticated()` never differs from
+    // `state.selectIsAuthenticated()` and a session restore that lands after
+    // `start()` (a reload on a public route) would never re-evaluate polling.
+    // `hasProfile` is part of `shouldPoll()`, so profile resolution counts too.
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      const isAuthenticated = state.selectIsAuthenticated();
-      const wasAuthenticated = prevState.selectIsAuthenticated();
-      if (isAuthenticated !== wasAuthenticated) {
+      const isAuthenticated = isAuthenticatedState(state);
+      const wasAuthenticated = isAuthenticatedState(prevState);
+      const profileChanged = state.hasProfile !== prevState.hasProfile;
+      if (isAuthenticated !== wasAuthenticated || profileChanged) {
         Logger.debug('Auth state changed', {
           isAuthenticated,
+          hasProfile: state.hasProfile,
         });
         this.evaluateAndStartPolling();
       }
