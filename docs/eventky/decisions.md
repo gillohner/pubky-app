@@ -4,7 +4,7 @@
 
 The user authorized creating `gillohner/pubky-app` and implementing the full native Eventky plan with repeated integration and verification. The fork was created on 2026-09-08 at https://github.com/gillohner/pubky-app.
 
-- Implementation checkout: `/tmp/pubky-app-eventky`, branch `feat/eventky-native`.
+- Implementation/test checkout: `/tmp/pubky-app-eventky`, branch `feat/eventky-native`; permanent delivery checkout: `/home/gil/Repositories/pubky/pubky-app-eventky`.
 - Fork point: current upstream default branch `dev`, commit `70dc066a047403850b0d4df181c2fba409043cb9`.
 - Nexus compatibility baseline: PR #14, `77ae61a524d3c19c71f674e45874de1c08a91527`.
 - The original local Pubky App and Nexus checkouts are preserved.

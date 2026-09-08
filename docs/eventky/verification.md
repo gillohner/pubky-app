@@ -32,7 +32,9 @@ A combined run exhausted the temporary workspace quota. Generated webpack caches
 
 The browser harness emits a shutdown-timeout notice after successful Chromium checks and exits 0. Firefox/WebKit are not established by these results; WebKit's host libraries are unavailable here. Docker image builds, live HTTPS login/write flows, external calendar-client compatibility and production throughput/capacity remain deployment checks. No implementation-phase VPS mutation or public demo-account publication occurred.
 
-The backend implementation is [PR #15](https://github.com/gillohner/pubky-nexus/pull/15), commit `865728bfbedfd459b1274c564b3b98d4acfceae5` on `feat/eventky-generic-projection`, stacked on unchanged PR #14 at `77ae61a5`. Its initial CI formatter failure was corrected with a formatting-only commit; the full workspace formatter check passes. Commits follow the current Git configuration, which has no signing key configured.
+The backend implementation is [PR #15](https://github.com/gillohner/pubky-nexus/pull/15), commit `4e4b9aeebd1f10715c543e28984e77983aa8971b` on `feat/eventky-generic-projection`, stacked on unchanged PR #14 at `77ae61a5`. Its initial CI formatter and test-only initializer warnings were corrected. The full workspace formatter and exact CI lint scope (`cargo clippy --all-targets -- -D warnings`) pass locally. The client is [draft PR #1](https://github.com/gillohner/pubky-app/pull/1), with implementation commit `37913c32` and a documentation-only delivery update. GitHub check status is available on both PRs; local passes above do not imply remote checks have completed. Commits follow the current Git configuration and are unsigned.
+
+Permanent checkouts are `/home/gil/Repositories/pubky/pubky-app-eventky` and `/home/gil/Repositories/pubky/pubky-nexus-eventky`. Tests ran in the isolated temporary implementation checkouts before publication.
 
 ## Repeatable commands
 

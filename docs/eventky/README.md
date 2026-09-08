@@ -1,5 +1,7 @@
 # Eventky in Pubky App
 
+Review: [client PR #1](https://github.com/gillohner/pubky-app/pull/1) and [optional Nexus extension PR #15](https://github.com/gillohner/pubky-nexus/pull/15).
+
 Events and calendars are ordinary `PubkyAppPost` records at `/pub/pubky.app/posts/<id>`, using the exact custom kinds `event` and `calendar`. The versioned JSON profile is serialized into the post's string `content`. Comments, tags, bookmarks, reposts, moderation, attachments and deletion use the existing Pubky post machinery.
 
 The event button appears beside Article in post creation. The native editor supports timed/all-day events, UTC/named/floating time, end or duration, recurrence presets and rules, individual occurrence changes, physical/online locations, Markdown, attachments, categories, organizer information and calendar membership. Calendars are posts with their own descriptions, colors, timezone, contributors and exclusions. Their owner's policy decides which claimed events appear in a calendar.
