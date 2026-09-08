@@ -29,6 +29,10 @@ export interface MobileFooterProps {
  *
  * Hidden for unauthenticated users on public routes (single post, profile)
  * following pubky-app pattern.
+ *
+ * Hidden while the soft keyboard is visible (design decision in #2286):
+ * the keyboard owns the bottom of the screen and the nav would otherwise
+ * cover the text field.
  */
 export function MobileFooter({ className }: MobileFooterProps) {
   const pathname = usePathname();
@@ -38,7 +42,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
   const { userDetails, currentUserPubky } = useCurrentUserProfile();
   const unreadNotifications = useNotificationStore((state) => state.selectUnread());
   const localAvatarUrl = useLocalFilesStore((state) => state.profile);
-  const { isKeyboardVisible, keyboardOffset } = useKeyboardOffset();
+  const { isKeyboardVisible } = useKeyboardOffset();
   const { showCollectionsNew, markCollectionsNavSeen } = useCollectionsNavDiscovery();
   const collectionsNewLabel = 'New';
 
@@ -49,6 +53,14 @@ export function MobileFooter({ className }: MobileFooterProps) {
       ? FileController.getAvatarUrl(currentUserPubky, userDetails.indexed_at)
       : undefined);
   const avatarName = userDetails?.name || 'U';
+
+  // Hide the whole nav while the keyboard is open instead of translating it
+  // out of the way: the keyboard owns the bottom of the screen and the nav
+  // would otherwise sit on top of the composer text (see issue #2286).
+  if (isKeyboardVisible) {
+    return null;
+  }
+
   const authenticatedNavItems = [
     {
       href: APP_ROUTES.HOME,
@@ -91,16 +103,9 @@ export function MobileFooter({ className }: MobileFooterProps) {
     <Container
       overrideDefaults
       className={cn(
-        'fixed bottom-0 z-40 w-full overflow-x-auto bg-gradient-to-t from-background via-background/95 to-transparent px-3 py-4 transition-transform duration-75 lg:hidden',
+        'fixed bottom-0 z-40 w-full overflow-x-auto bg-gradient-to-t from-background via-background/95 to-transparent px-3 py-4 lg:hidden',
         className,
       )}
-      style={
-        isKeyboardVisible && keyboardOffset > 0
-          ? {
-              transform: `translateY(-${keyboardOffset}px)`,
-            }
-          : undefined
-      }
     >
       <Container
         overrideDefaults

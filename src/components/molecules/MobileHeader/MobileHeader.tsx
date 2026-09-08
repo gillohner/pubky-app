@@ -4,7 +4,9 @@ import type React from 'react';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { CONTENT_GUTTER_CLASS } from '@/config/layoutClasses';
+import { useKeyboardOffset } from '@/hooks/useKeyboardOffset/useKeyboardOffset';
 import { usePublicRoute } from '@/hooks/usePublicRoute/usePublicRoute';
+import { useScrollDirection } from '@/hooks/useScrollDirection/useScrollDirection';
 import { cn } from '@/libs/utils/utils';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { Logo } from '../Logo/Logo';
@@ -36,9 +38,19 @@ export function MobileHeader({
   const isAuthenticated = useAuthStore((state) => Boolean(state.currentUserPubky));
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
   const { isPublicExploreRoute } = usePublicRoute();
+  const { isKeyboardVisible } = useKeyboardOffset();
+  const scrollDirection = useScrollDirection();
+  // Hide while the user scrolls down to give the content the full screen, or
+  // while the soft keyboard is open. Return with an upward scroll.
+  const isHidden = isKeyboardVisible || scrollDirection === 'down';
   // Layout filters drawer: signed-in users and guests on explore/public routes (/home, /post/..., etc.)
   const showLeftIcon = showLeftButton && (isAuthenticated || isPublicExploreRoute);
   const rightButtonLabel = isAuthenticated ? 'Open right panel' : 'Join Pubky';
+
+  if (isHidden) {
+    return null;
+  }
+
   return (
     <Container
       overrideDefaults

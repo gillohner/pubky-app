@@ -38,12 +38,24 @@ vi.mock('@/hooks/usePublicRoute/usePublicRoute', () => ({
   })),
 }));
 
+const mockUseKeyboardOffset = vi.hoisted(() => vi.fn(() => ({ isKeyboardVisible: false, keyboardOffset: 0 })));
+vi.mock('@/hooks/useKeyboardOffset/useKeyboardOffset', () => ({
+  useKeyboardOffset: mockUseKeyboardOffset,
+}));
+
+const mockUseScrollDirection = vi.hoisted(() => vi.fn<() => 'up' | 'down' | null>(() => null));
+vi.mock('@/hooks/useScrollDirection/useScrollDirection', () => ({
+  useScrollDirection: mockUseScrollDirection,
+}));
+
 describe('MobileHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCurrentUserPubky = 'pk:test-user-pubky';
     mockIsCoreExploreRoute = false;
     mockIsPublicExploreRoute = false;
+    mockUseKeyboardOffset.mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
+    mockUseScrollDirection.mockReturnValue(null);
   });
 
   it('renders with default props', () => {
@@ -223,6 +235,38 @@ describe('MobileHeader', () => {
 
     expect(mockSetShowSignInDialog).toHaveBeenCalledWith(true);
   });
+
+  it('renders nothing while the soft keyboard is visible', () => {
+    mockUseKeyboardOffset.mockReturnValue({ isKeyboardVisible: true, keyboardOffset: 300 });
+
+    const { container } = render(<MobileHeader />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('renders nothing while the user scrolls down', () => {
+    mockUseScrollDirection.mockReturnValue('down');
+
+    const { container } = render(<MobileHeader />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('renders again when the user scrolls back up', () => {
+    mockUseScrollDirection.mockReturnValue('up');
+
+    const { container } = render(<MobileHeader />);
+
+    expect(container.querySelector('div')).toBeInTheDocument();
+  });
+
+  it('renders when scroll direction is null (not yet scrolled)', () => {
+    mockUseScrollDirection.mockReturnValue(null);
+
+    const { container } = render(<MobileHeader />);
+
+    expect(container.querySelector('div')).toBeInTheDocument();
+  });
 });
 
 describe('MobileHeader - Snapshots', () => {
@@ -231,6 +275,8 @@ describe('MobileHeader - Snapshots', () => {
     mockCurrentUserPubky = 'pk:test-user-pubky';
     mockIsCoreExploreRoute = false;
     mockIsPublicExploreRoute = false;
+    mockUseKeyboardOffset.mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
+    mockUseScrollDirection.mockReturnValue(null);
   });
 
   it('matches snapshot with default props', () => {

@@ -446,17 +446,15 @@ describe('MobileFooter', () => {
     expect(setItemSpy).toHaveBeenCalledWith(FORCE_FEED_SCROLL_TOP_KEY, '1');
   });
 
-  it('applies transform when keyboard is visible', async () => {
+  it('renders nothing while the keyboard is visible', async () => {
     vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: true, keyboardOffset: 300 });
 
     const { container } = render(<MobileFooter />);
-    const footerContainer = container.querySelector('.fixed');
 
-    expect(footerContainer).toBeInTheDocument();
-    expect(footerContainer?.getAttribute('style')).toContain('translateY(-300px)');
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it('does not apply transform when keyboard is not visible', async () => {
+  it('renders normally when the keyboard is not visible', async () => {
     vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
 
     const { container } = render(<MobileFooter />);
@@ -466,18 +464,14 @@ describe('MobileFooter', () => {
     expect(footerContainer?.getAttribute('style')).toBeFalsy();
   });
 
-  it('always applies transition classes for smooth keyboard animation', async () => {
-    // transition-transform and duration-75 are always present regardless of keyboard state
+  it('always renders the footer container without keyboard transform classes', async () => {
+    // The footer unmounts entirely while the keyboard is open (#2286), so no
+    // transition classes are needed for the keyboard state anymore
     vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
-    const { container, rerender } = render(<MobileFooter />);
-    let footerContainer = container.querySelector('.fixed');
-    expect(footerContainer).toHaveClass('transition-transform', 'duration-75');
-
-    // Still present when keyboard is visible
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: true, keyboardOffset: 300 });
-    rerender(<MobileFooter />);
-    footerContainer = container.querySelector('.fixed');
-    expect(footerContainer).toHaveClass('transition-transform', 'duration-75');
+    const { container } = render(<MobileFooter />);
+    const footerContainer = container.querySelector('.fixed');
+    expect(footerContainer).toBeInTheDocument();
+    expect(footerContainer).not.toHaveClass('transition-transform');
   });
 
   it('renders public explore navigation with gated account actions when unauthenticated on a core explore route', () => {

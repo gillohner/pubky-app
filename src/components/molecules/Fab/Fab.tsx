@@ -6,6 +6,7 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
 import { useAuthStatus } from '@/hooks/useAuthStatus/useAuthStatus';
 import { useFabAction } from '@/hooks/useFabAction/useFabAction';
+import { useKeyboardOffset } from '@/hooks/useKeyboardOffset/useKeyboardOffset';
 import { usePublicRoute } from '@/hooks/usePublicRoute/usePublicRoute';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { cn } from '@/libs/utils/utils';
@@ -34,6 +35,8 @@ import { useCollectionReorderStore } from '@/stores/collectionReorder/collection
  * - Hidden while a collection is in reorder mode (reorder mode is for
  *   reordering, not adding posts; the flag bridges from the page via the
  *   `collectionReorder` store since the FAB lives outside the page tree)
+ * - Hidden while the soft keyboard is visible on mobile: the button sits at
+ *   the bottom of the screen and covers the text being typed
  *
  * Positioning:
  * - On small screens (sm), the button sits directly on top of the menu bar by design.
@@ -47,12 +50,13 @@ export function Fab() {
   const { isPublicExploreRoute } = usePublicRoute();
   const { requireAuth } = useRequireAuth();
   const action = useFabAction();
+  const { isKeyboardVisible } = useKeyboardOffset();
   const isReorderActive = useCollectionReorderStore((state) => state.activeCollectionId !== null);
 
   const isOnboardingRoute = pathname?.startsWith('/onboarding') ?? false;
   // Show FAB for authenticated users OR unauthenticated users on public explore routes
   const shouldShow = isFullyAuthenticated || isPublicExploreRoute;
-  if (isLoading || !shouldShow || isReorderActive || isOnboardingRoute) {
+  if (isLoading || !shouldShow || isReorderActive || isOnboardingRoute || isKeyboardVisible) {
     return null;
   }
   const buttonClasses = cn(

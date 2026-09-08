@@ -16,6 +16,7 @@ const mockIsPublicExploreRoute = vi.fn(() => false);
 const mockRequireAuth = vi.fn((action: () => void) => action());
 const mockUseFabAction = vi.fn<() => FabAction>(() => ({ kind: 'createPost', ariaLabel: 'New post' }));
 const mockUsePathname = vi.fn(() => '/home');
+const mockUseKeyboardOffset = vi.fn(() => ({ isKeyboardVisible: false, keyboardOffset: 0 }));
 
 vi.mock('next/navigation', () => ({
   usePathname: () => mockUsePathname(),
@@ -43,6 +44,10 @@ vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
 
 vi.mock('@/hooks/useFabAction/useFabAction', () => ({
   useFabAction: () => mockUseFabAction(),
+}));
+
+vi.mock('@/hooks/useKeyboardOffset/useKeyboardOffset', () => ({
+  useKeyboardOffset: () => mockUseKeyboardOffset(),
 }));
 
 vi.mock('@/organisms/DialogNewPost/DialogNewPost', () => ({
@@ -115,6 +120,7 @@ describe('Fab', () => {
     mockRequireAuth.mockImplementation((action: () => void) => action());
     mockUseFabAction.mockReturnValue({ kind: 'createPost', ariaLabel: 'New post' });
     mockUsePathname.mockReturnValue('/home');
+    mockUseKeyboardOffset.mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
     useCollectionReorderStore.setState({ activeCollectionId: null });
   });
 
@@ -248,6 +254,18 @@ describe('Fab', () => {
       expect(mockRequireAuth).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('while the soft keyboard is visible', () => {
+    it('renders nothing so the button does not cover the text being typed', () => {
+      mockUseKeyboardOffset.mockReturnValue({ isKeyboardVisible: true, keyboardOffset: 300 });
+
+      const { container } = render(<Fab />);
+
+      expect(container).toBeEmptyDOMElement();
+      expect(screen.queryByTestId('new-post-cta')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('dialog-new-post')).not.toBeInTheDocument();
+    });
+  });
 });
 
 describe('Fab - Snapshots', () => {
@@ -263,6 +281,7 @@ describe('Fab - Snapshots', () => {
     mockIsPublicExploreRoute.mockReturnValue(false);
     mockRequireAuth.mockImplementation((action: () => void) => action());
     mockUseFabAction.mockReturnValue({ kind: 'createPost', ariaLabel: 'New post' });
+    mockUseKeyboardOffset.mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
   });
 
   it('matches snapshot for the default new post action', () => {
