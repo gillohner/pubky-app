@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest';
+import { eventkyCalendarFixture, eventkyEventFixture } from '@/test/fixtures/eventky';
 import { deriveTextPreview } from './postPreview';
+import { canEditPostContent, deriveCopyText } from './postPreview';
 
 describe('deriveTextPreview', () => {
+  it('uses human-readable custom titles and timezones in previews and copied text', () => {
+    const post = { kind: 'event', content: JSON.stringify(eventkyEventFixture) };
+    expect(deriveTextPreview(post)).toContain('Pubky community meetup · Oct 25, 2026, 6:30 PM (Europe/Zurich)');
+    expect(deriveCopyText(post)).toContain('Discuss decentralized calendars.');
+    expect(deriveCopyText(post)).not.toContain('schema_version');
+    expect(deriveTextPreview({ kind: 'calendar', content: JSON.stringify(eventkyCalendarFixture) })).toBe(
+      'Pubky gatherings',
+    );
+    expect(canEditPostContent(post)).toBe(true);
+  });
+  it.each([
+    ['event', '{broken'],
+    ['event', JSON.stringify({ ...eventkyEventFixture, schema_version: 2 })],
+    ['Event', JSON.stringify(eventkyEventFixture)],
+    ['vendor:event', '{"secret":"opaque"}'],
+  ])('fails closed for %s unsupported content', (kind, content) => {
+    expect(deriveTextPreview({ kind, content })).toBe('Unsupported post format');
+    expect(deriveCopyText({ kind, content })).toBe('Unsupported post format');
+    expect(canEditPostContent({ kind, content })).toBe(false);
+  });
   it('returns the deleted notice for a deleted post regardless of kind', () => {
     expect(deriveTextPreview({ content: '[DELETED]', kind: 'short' })).toBe(
       'This post has been deleted by its author.',

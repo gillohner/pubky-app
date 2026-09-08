@@ -11,6 +11,7 @@ import { type ModerationModelSchema, ModerationType } from '@/models/moderation/
 import { PostCountsModel } from '@/models/post/counts/postCounts';
 import { PostDetailsModel } from '@/models/post/details/postDetails';
 import { DELETED } from '@/models/post/details/postDetails.constants';
+import { normalizeLegacyPostDetailsEmbed } from '@/models/post/details/postDetails.helpers';
 import type { PostDetailsModelSchema } from '@/models/post/details/postDetails.schema';
 import { PostRelationshipsModel } from '@/models/post/relationships/postRelationships';
 import { PostTagsModel } from '@/models/post/tags/postTags';
@@ -301,7 +302,7 @@ export class LocalStreamPostsService {
 
       // Remove author from details as it's in the composite ID
       // eslint-disable-next-line
-      const { author, ...detailsWithoutAuthor } = post.details;
+      const { author, ...detailsWithoutAuthor } = normalizeLegacyPostDetailsEmbed(post.details);
       postDetails.push({ ...detailsWithoutAuthor, id: postId });
 
       // Record TTL for freshness tracking

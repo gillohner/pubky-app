@@ -14,6 +14,7 @@ import { PostTagsModel } from '@/models/post/tags/postTags';
 import { PostTtlModel } from '@/models/post/ttl/postTtl';
 import {
   buildAuthorCollectionsStreamId,
+  buildKindFilteredPostStreamId,
   buildSortedAuthorStreamId,
   type PostStreamId,
   PostStreamTypes,
@@ -141,6 +142,94 @@ describe('LocalPostService', () => {
         await PostTtlModel.table.clear();
       },
     );
+  });
+
+  describe('universal post envelopes', () => {
+    it.each(['event', 'calendar', 'Event', 'vendor:event%📅', 'all'])(
+      'preserves exact kind %s and raw external embed independently of reposts',
+      async (kind) => {
+        await setupUserCounts(testData.authorPubky);
+        const content = ' {"summary":"Native event"} ';
+        await LocalPostService.create({
+          compositePostId: testData.fullPostId1,
+          post: { kind, content, embed: 'geo:47.37,8.54', lock: 'timestamp' },
+        });
+
+        const details = await LocalPostService.readDetails({ postId: testData.fullPostId1 });
+        expect(details).toMatchObject({ kind, content, embed: 'geo:47.37,8.54', parent: null, lock: 'timestamp' });
+        expect((await getSavedRelationships(testData.fullPostId1))?.reposted).toBeNull();
+        expect((await PostStreamModel.table.get(buildKindFilteredPostStreamId(kind)))?.stream).toContain(
+          testData.fullPostId1,
+        );
+      },
+    );
+
+    it('does not double count concurrent retries of the same allocated post identity', async () => {
+      await setupUserCounts(testData.authorPubky);
+      const originalId = `${testData.authorPubky}:original`;
+      const originalUri = `pubky://${testData.authorPubky}/pub/pubky.app/posts/original`;
+      await setupExistingPost(originalId, 'Original event', undefined, 'event');
+      const intent = {
+        compositePostId: testData.fullPostId1,
+        post: { kind: 'short', content: 'See this event', parent: originalUri, embed: originalUri },
+      };
+      await Promise.all([LocalPostService.create(intent), LocalPostService.create(intent)]);
+      expect((await UserCountsModel.table.get(testData.authorPubky))?.posts).toBe(1);
+      expect((await getSavedCounts(originalId))?.reposts).toBe(1);
+      expect((await getSavedCounts(originalId))?.replies).toBe(1);
+      const firstIndexedAt = (await getSavedPost(testData.fullPostId1))?.indexed_at;
+      await LocalPostService.create(intent);
+      expect((await getSavedPost(testData.fullPostId1))?.indexed_at).toBe(firstIndexedAt);
+      expect((await getSavedCounts(originalId))?.reposts).toBe(1);
+    });
+
+    it('treats a Pubky post string embed as the existing native repost relation', async () => {
+      await setupUserCounts(testData.authorPubky);
+      const originalId = `${testData.authorPubky}:original`;
+      const originalUri = `pubky://${testData.authorPubky}/pub/pubky.app/posts/original`;
+      await setupExistingPost(originalId, 'Original event', undefined, 'event');
+      await LocalPostService.create({
+        compositePostId: testData.fullPostId1,
+        post: { kind: 'short', content: 'See this event', embed: originalUri },
+      });
+      expect((await getSavedRelationships(testData.fullPostId1))?.reposted).toBe(originalUri);
+      expect((await getSavedCounts(originalId))?.reposts).toBe(1);
+      expect((await getSavedPost(testData.fullPostId1))?.embed).toBe(originalUri);
+    });
+
+    it('retains optional envelope fields during content edits and explicitly clears null values', async () => {
+      await setupUserCounts(testData.authorPubky);
+      await LocalPostService.create({
+        compositePostId: testData.fullPostId1,
+        post: { kind: 'Event', content: 'original', embed: 'https://example.com', lock: 'timestamp' },
+      });
+      await LocalPostService.edit({ compositePostId: testData.fullPostId1, content: 'updated' });
+      expect(await getSavedPost(testData.fullPostId1)).toMatchObject({
+        kind: 'Event',
+        embed: 'https://example.com',
+        lock: 'timestamp',
+      });
+      await LocalPostService.edit({
+        compositePostId: testData.fullPostId1,
+        content: 'cleared',
+        embed: null,
+        lock: null,
+      });
+      expect(await getSavedPost(testData.fullPostId1)).toMatchObject({ embed: null, lock: null });
+    });
+
+    it('removes an escaped custom-kind cache entry without clearing unfiltered streams', async () => {
+      await setupUserCounts(testData.authorPubky);
+      const kind = 'all';
+      await LocalPostService.create({ compositePostId: testData.fullPostId1, post: { kind, content: 'content' } });
+      await LocalPostService.removeFromKindStreams({ compositePostId: testData.fullPostId1, kind });
+      expect((await PostStreamModel.table.get(buildKindFilteredPostStreamId(kind)))?.stream ?? []).not.toContain(
+        testData.fullPostId1,
+      );
+      expect((await PostStreamModel.table.get(PostStreamTypes.TIMELINE_ALL_ALL))?.stream).toContain(
+        testData.fullPostId1,
+      );
+    });
   });
 
   describe('create', () => {

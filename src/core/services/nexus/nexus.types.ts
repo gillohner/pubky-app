@@ -230,6 +230,10 @@ export type NexusPostDetails = {
   kind: string;
   uri: string;
   attachments: string[] | null;
+  /** Raw envelope values. Missing means a legacy response/cache needs source refresh before editing. */
+  parent?: string | null;
+  embed?: string | null;
+  lock?: string | null;
 };
 
 /** Aggregate counts for post engagement */

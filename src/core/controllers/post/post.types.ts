@@ -1,3 +1,4 @@
+import type { TCreatePostInput, TEditPostInput, TPostUploadState } from '@/application/post/post.types';
 import type { CollectionLayout } from '@/config/collections';
 import type { TTagEventParams } from '@/controllers/tag/tag.types';
 import type { Pubky } from '@/models/models.types';
@@ -7,6 +8,10 @@ export interface TCreatePostParams {
   authorId: Pubky;
   content: string;
   isArticle?: boolean;
+  /** Exact custom kind; content is already serialized by its registered editor. */
+  customKind?: string;
+  /** Allocate once with createPostId and retain across retries. */
+  postId?: string;
   tags?: string[];
   attachments?: File[];
   /**
@@ -20,6 +25,11 @@ export interface TCreatePostParams {
   parentPostId?: string;
   originalPostId?: string;
 }
+
+export type TCreatePostResult = { compositePostId: string; tagsFailed: boolean };
+/** Keep this preparation with the draft so retries reuse its post, blob and file identities. */
+export type TPreparedPostCreate = TCreatePostInput & { uploadState: TPostUploadState };
+export type TPreparedPostEdit = TEditPostInput & { uploadState: TPostUploadState };
 
 export interface TCreateCollectionParams {
   authorId: Pubky;
@@ -112,6 +122,8 @@ export interface TEditPostAttachments {
 export interface TEditPostParams {
   compositePostId: string;
   content: string;
+  /** Best-effort conflict guard against the freshly read source; the homeserver does not provide CAS. */
+  expectedContent?: string;
   /**
    * Attachment changes for the edit. `undefined` leaves attachments untouched
    * (content-only edit); `{ kept: [], added: [] }` removes them all. Current

@@ -34,6 +34,8 @@ export function PostInputExpandableSection({
   onEmojiSelect,
   onImageClick,
   onArticleClick,
+  onEventClick,
+  onCalendarClick,
 }: PostInputExpandableSectionProps) {
   const hasContent = content.trim().length > 0;
   const isUiDisabled = isSubmitting || isDisabled;
@@ -55,6 +57,8 @@ export function PostInputExpandableSection({
           onEmojiClick={() => setShowEmojiPicker(true)}
           onImageClick={onImageClick}
           onArticleClick={onArticleClick}
+          onEventClick={onEventClick}
+          onCalendarClick={onCalendarClick}
           isPostDisabled={isPostDisabled}
           isSubmitting={isSubmitting}
           postButtonLabel={postButtonLabel}

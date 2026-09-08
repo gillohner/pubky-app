@@ -214,3 +214,8 @@ export const getGithubUrl = (): string => getRuntimeConfig().githubUrl;
 export const getEmail = (): string => getRuntimeConfig().email;
 export const getAppStoreUrl = (): string => getRuntimeConfig().appStoreUrl;
 export const getPlayStoreUrl = (): string => getRuntimeConfig().playStoreUrl;
+
+/** Authoring opt-in for universal-kind Nexus deployments. */
+export const getEventkyEnabled = (): boolean => getRuntimeConfig().eventkyEnabled;
+
+export const getEventkyCalendarEnabled = (): boolean => getRuntimeConfig().eventkyCalendarEnabled;

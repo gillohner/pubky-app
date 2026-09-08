@@ -2,11 +2,12 @@ import { postUriBuilder, PubkyAppPostKind } from 'pubky-app-specs';
 import { FileApplication } from '@/application/file/file';
 import type { EnrichedPostDetails } from '@/application/moderation/moderation.types';
 import { PostApplication } from '@/application/post/post';
-import type { TGetDetailsByIdsParams, TGetOrFetchPostParams } from '@/application/post/post.types';
+import type { TGetDetailsByIdsParams, TGetOrFetchPostParams, TPostUploadState } from '@/application/post/post.types';
 import { TagKind, type TCreateTagInput } from '@/application/tag/tag.types';
 import type {
   TCreateCollectionParams,
   TCreatePostParams,
+  TCreatePostResult,
   TDeletePostParams,
   TEditCollectionParams,
   TEditPostParams,
@@ -14,6 +15,8 @@ import type {
   TFetchPostTaggersParams,
   TFileAttachmentsParams,
   TNormalizeTagsParams,
+  TPreparedPostCreate,
+  TPreparedPostEdit,
   TReorderCollectionItemsParams,
   TUpdateCollectionItemParams,
 } from '@/controllers/post/post.types';
@@ -39,8 +42,9 @@ import {
   inferPostKindForEdit,
   resolveTagTargetCompositeIdForPostCreate,
 } from '@/pipes/post/post.kind';
-import { PostNormalizer } from '@/pipes/post/post.normalizer';
+import { PostNormalizer, type TToEditParams } from '@/pipes/post/post.normalizer';
 import { PostValidators } from '@/pipes/post/post.validators';
+import { builtinPostKind } from '@/pipes/post/post.wire';
 import { TagNormalizer } from '@/pipes/tag/tag.normalizer';
 import type { NexusTag, NexusTaggers } from '@/services/nexus/nexus.types';
 import type { TCompositeId } from '@/services/nexus/post/post.types';
@@ -48,6 +52,11 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 
 export class PostController {
   private constructor() {} // Prevent instantiation
+
+  /** Fresh authoritative envelope for publication recovery; never reads the Nexus cache. */
+  static fetchSource(params: TCompositeId) {
+    return PostApplication.getEditSource(params);
+  }
 
   /**
    * Read post details from local database
@@ -164,38 +173,55 @@ export class PostController {
     return await PostApplication.fetchTaggers(params);
   }
 
-  /**
-   * Create a post (including replies and reposts)
-   * @param params - Parameters object
-   * @param params.authorId - ID of the user creating the post
-   * @param params.content - Post content (can be empty for simple reposts)
-   * @param params.isArticle - Whether the post is a long-form article
-   * @param params.tags - Tags to add (optional). For a simple repost, tags target the embedded original post.
-   * @param params.attachments - Attachments to add to the post (optional)
-   * @param params.parentPostId - ID of the post being replied to (optional for root posts)
-   * @param params.originalPostId - ID of the post being reposted (optional for reposts)
-   * @returns The composite post ID of the created post
-   */
-  static async commitCreate({
+  /** Allocate a native post ID once and keep it with a draft until publication is confirmed. */
+  static createPostId(authorId: TCreatePostParams['authorId']): string {
+    return PostNormalizer.createId(authorId);
+  }
+
+  static async commitCreate(params: TCreatePostParams): Promise<string> {
+    return (await this.commitCreateWithStatus(params)).compositePostId;
+  }
+
+  static async commitCreateWithStatus(params: TCreatePostParams): Promise<TCreatePostResult> {
+    return this.commitPreparedCreate(await this.prepareCreate(params));
+  }
+
+  static async commitPreparedCreate(prepared: TPreparedPostCreate): Promise<TCreatePostResult> {
+    const outcome = await PostApplication.commitCreate(prepared);
+    return { compositePostId: prepared.compositePostId, tagsFailed: outcome?.tagsFailed ?? false };
+  }
+
+  /** Resolve references and normalize files, without publishing any source records. */
+  static async prepareCreate({
     authorId,
     content,
     isArticle,
+    customKind,
+    postId: allocatedPostId,
     tags,
     attachments,
     attachmentUris,
     parentPostId,
     originalPostId,
-  }: TCreatePostParams): Promise<string> {
+  }: TCreatePostParams): Promise<TPreparedPostCreate> {
     let parentUri: string | undefined = undefined;
     let repostedUri: string | undefined = undefined;
     let tagList: TCreateTagInput[] = [];
 
     // Validate and set parent URI if this is a reply
     if (parentPostId) {
-      parentUri = await PostValidators.validatePostId({ postId: parentPostId, message: 'Parent post' });
+      parentUri = PostValidators.validatePostId({
+        postId: parentPostId,
+        message: 'Parent post',
+        post: await PostApplication.getDetails({ compositeId: parentPostId }),
+      });
     }
     if (originalPostId) {
-      repostedUri = await PostValidators.validatePostId({ postId: originalPostId, message: 'Original post' });
+      repostedUri = PostValidators.validatePostId({
+        postId: originalPostId,
+        message: 'Original post',
+        post: await PostApplication.getDetails({ compositeId: originalPostId }),
+      });
     }
 
     // Ownership invariant: pre-uploaded attachment URIs must be homeserver
@@ -213,15 +239,16 @@ export class PostController {
       );
     }
 
-    const postKind = inferPostKindForCreate({ content, attachments, isArticle });
+    const postKind = customKind ?? inferPostKindForCreate({ content, attachments, isArticle });
 
     // TODO: In the future, we could decouple that action and do it asyncronously in the moment that we add a file to the post
     const fileAttachments = attachments ? await this.normalizeFileAttachments({ attachments, pubky: authorId }) : [];
 
     const { post, meta } = await PostNormalizer.to(
       {
-        content: content.trim(),
+        content: customKind === undefined ? content.trim() : content,
         kind: postKind,
+        postId: allocatedPostId,
         parentUri,
         embed: repostedUri,
         attachments: fileAttachments,
@@ -253,15 +280,14 @@ export class PostController {
 
     const compositePostId = buildCompositeId({ pubky: authorId, id: postId });
 
-    await PostApplication.commitCreate({
+    return {
       compositePostId,
       post,
       postUrl: meta.url,
       fileAttachments,
       tags: tagList,
-    });
-
-    return compositePostId;
+      uploadState: { completed: false },
+    };
   }
 
   static async commitCreateCollection({
@@ -396,6 +422,7 @@ export class PostController {
       coverImageUrl = coverImage;
     }
 
+    const writeState: TPostUploadState = { completed: false };
     try {
       const nextContent = CollectionPostContent.toJson({
         name,
@@ -405,7 +432,7 @@ export class PostController {
         layout: layout ?? currentContent.layout,
       });
 
-      const { post, meta } = await PostNormalizer.toEdit({
+      const { post, meta } = await this.normalizeEdit({
         compositePostId: compositeCollectionId,
         content: nextContent,
         currentUserPubky,
@@ -415,11 +442,12 @@ export class PostController {
         compositePostId: compositeCollectionId,
         post,
         postUrl: meta.url,
+        uploadState: writeState,
       });
     } catch (error) {
       // Roll back the newly uploaded cover so a failed edit does not orphan it.
       // If rollback itself fails, log and still rethrow the original edit error.
-      if (uploadedCoverUri) {
+      if (uploadedCoverUri && !writeState.postUncertain) {
         await FileApplication.commitDelete([uploadedCoverUri]).catch((cleanupError) => {
           Logger.warn('[PostController.commitEditCollection] Failed to rollback newly uploaded cover', {
             compositeCollectionId,
@@ -479,7 +507,7 @@ export class PostController {
 
     if (nextContent.items === currentContent.items) return;
 
-    const { post, meta } = await PostNormalizer.toEdit({
+    const { post, meta } = await this.normalizeEdit({
       compositePostId: collectionId,
       content: JSON.stringify(nextContent),
       currentUserPubky,
@@ -519,7 +547,7 @@ export class PostController {
 
     if (nextContent.items === currentContent.items) return;
 
-    const { post, meta } = await PostNormalizer.toEdit({
+    const { post, meta } = await this.normalizeEdit({
       compositePostId: collectionId,
       content: JSON.stringify(nextContent),
       currentUserPubky,
@@ -562,14 +590,38 @@ export class PostController {
    * successful edit, and the post kind is recomputed to match the resulting
    * attachment set (articles and collections keep their kind).
    */
-  static async commitEdit({ compositePostId, content, attachments }: TEditPostParams) {
+  static async commitEdit(params: TEditPostParams): Promise<void> {
+    await this.commitPreparedEdit(await this.prepareEdit(params));
+  }
+
+  static async commitPreparedEdit(prepared: TPreparedPostEdit): Promise<void> {
+    await PostApplication.commitEdit(prepared);
+  }
+
+  static async prepareEdit({
+    compositePostId,
+    content,
+    attachments,
+    expectedContent,
+  }: TEditPostParams): Promise<TPreparedPostEdit> {
     const currentUserPubky = useAuthStore.getState().selectCurrentUserPubky();
 
     if (!attachments) {
-      const { post, meta } = await PostNormalizer.toEdit({ compositePostId, content, currentUserPubky });
+      const { post, meta, expectedSource } = await this.normalizeEdit({
+        compositePostId,
+        content,
+        currentUserPubky,
+        expectedContent,
+      });
 
-      await PostApplication.commitEdit({ compositePostId, post, postUrl: meta.url });
-      return;
+      return {
+        compositePostId,
+        post,
+        postUrl: meta.url,
+        expectedContent,
+        expectedSource,
+        uploadState: { completed: false },
+      };
     }
 
     // Reject non-authors up front, before the CPU-heavy file sanitization below
@@ -642,21 +694,24 @@ export class PostController {
 
       const kind = await this.inferKindForEdit({ content, currentKind: current.kind, kept, added: [] });
 
-      const { post, meta } = await PostNormalizer.toEdit({
+      const { post, meta, expectedSource } = await this.normalizeEdit({
         compositePostId,
         content,
         currentUserPubky,
+        expectedContent,
         attachments: nextOrder.length > 0 ? nextOrder : null,
         kind,
       });
 
-      await PostApplication.commitEdit({
+      return {
         compositePostId,
         post,
         postUrl: meta.url,
+        expectedContent,
+        expectedSource,
+        uploadState: { completed: false },
         removedUris: orderRemovedUris.length > 0 ? orderRemovedUris : undefined,
-      });
-      return;
+      };
     }
 
     // Removals are diffed against the seeded snapshot (`original`), never the
@@ -669,21 +724,39 @@ export class PostController {
 
     const kind = await this.inferKindForEdit({ content, currentKind: current.kind, kept, added });
 
-    const { post, meta } = await PostNormalizer.toEdit({
+    const { post, meta, expectedSource } = await this.normalizeEdit({
       compositePostId,
       content,
       currentUserPubky,
+      expectedContent,
       attachments: nextUris.length > 0 ? nextUris : null,
       kind,
     });
 
-    await PostApplication.commitEdit({
+    return {
       compositePostId,
       post,
       postUrl: meta.url,
+      expectedContent,
+      expectedSource,
+      uploadState: { completed: false },
       fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
       removedUris: removedUris.length > 0 ? removedUris : undefined,
-    });
+    };
+  }
+
+  private static async normalizeEdit(params: Omit<TToEditParams, 'source'>) {
+    const { pubky: authorId } = parseCompositeId(params.compositePostId);
+    if (authorId !== params.currentUserPubky) {
+      throw Err.client(ClientErrorCode.NOT_FOUND, 'Current user is not the author of this post', {
+        service: ErrorService.Local,
+        operation: 'commitEdit',
+        context: { compositePostId: params.compositePostId },
+      });
+    }
+    const source = await PostApplication.getEditSource({ compositeId: params.compositePostId });
+    const normalized = await PostNormalizer.toEdit({ ...params, source });
+    return { ...normalized, expectedSource: source ? structuredClone(source) : undefined };
   }
 
   /**
@@ -702,7 +775,8 @@ export class PostController {
     currentKind: string;
     kept: string[];
     added: File[];
-  }): Promise<PubkyAppPostKind> {
+  }): Promise<PubkyAppPostKind | string> {
+    if (builtinPostKind(currentKind) === undefined) return currentKind;
     if (currentKind === 'long' || currentKind === 'collection') {
       return PostNormalizer.mapKindToEnum(currentKind);
     }

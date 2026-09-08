@@ -121,7 +121,7 @@ const createMockPostDetails = (
     content: string;
     attachments: string[] | null;
     is_blurred: boolean;
-    kind: 'short' | 'long' | 'collection';
+    kind: string;
   }> = {},
 ): EnrichedPostDetails => ({
   id: 'test-author:test-post',
@@ -143,6 +143,27 @@ describe('PostContentBase', () => {
       isLoading: false,
     });
     mockUseLocalFilesStore.mockReturnValue(undefined);
+  });
+
+  it.each([false, true])('handles custom formats after deleted/blurred guards (blur=%s)', (isBlurred) => {
+    mockUsePostDetails.mockReturnValue({
+      postDetails: createMockPostDetails({
+        kind: 'event',
+        content: isBlurred ? '{broken' : '[DELETED]',
+        is_blurred: isBlurred,
+      }),
+      isLoading: false,
+    });
+    render(<PostContentBase postId="author:post" />);
+    expect(screen.queryByTestId('eventky-post-content')).not.toBeInTheDocument();
+    expect(mockPostText).not.toHaveBeenCalled();
+    expect(mockPostAttachments).not.toHaveBeenCalled();
+    if (isBlurred) expect(screen.getByTestId('post-content-blurred')).toBeInTheDocument();
+    else
+      expect(screen.getByTestId('post-unavailable')).toHaveAttribute(
+        'data-message',
+        'This post has been deleted by its author.',
+      );
   });
 
   it('renders content when postDetails are available', () => {

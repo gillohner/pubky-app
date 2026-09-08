@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EnrichedPostDetails } from '@/application/moderation/moderation.types';
 import { toast } from '@/molecules/Toaster/toast';
+import { eventkyEventFixture } from '@/test/fixtures/eventky';
 import { usePostMenuActions } from './usePostMenuActions';
 import { POST_MENU_ACTION_IDS } from './usePostMenuActions.constants';
 
@@ -170,6 +171,34 @@ describe('usePostMenuActions', () => {
   });
 
   describe('Menu items for other user posts', () => {
+    it('copies semantic event text and disables edit for future schemas', async () => {
+      mockUseCurrentUserProfile.mockReturnValue({ currentUserPubky: mockAuthorId });
+      mockUsePostDetails.mockReturnValue({
+        postDetails: { ...defaultMocks.postDetails, kind: 'event', content: JSON.stringify(eventkyEventFixture) },
+        isLoading: false,
+      });
+      const options = { onReportClick: vi.fn(), onEditClick: vi.fn(), onDeleteClick: vi.fn() };
+      const { result, rerender } = renderHook(() => usePostMenuActions(mockPostId, options));
+      expect(result.current.menuItems.find((item) => item.id === POST_MENU_ACTION_IDS.EDIT)?.disabled).toBe(false);
+      await act(async () => {
+        await result.current.menuItems.find((item) => item.id === POST_MENU_ACTION_IDS.COPY_TEXT)?.onClick();
+      });
+      expect(defaultMocks.copyToClipboard).toHaveBeenCalledWith(expect.stringContaining('Pubky community meetup'));
+      expect(defaultMocks.copyToClipboard).not.toHaveBeenCalledWith(expect.stringContaining('schema_version'));
+      mockUsePostDetails.mockReturnValue({
+        postDetails: {
+          ...defaultMocks.postDetails,
+          kind: 'event',
+          content: JSON.stringify({ ...eventkyEventFixture, schema_version: 2 }),
+        },
+        isLoading: false,
+      });
+      rerender();
+      expect(result.current.menuItems.find((item) => item.id === POST_MENU_ACTION_IDS.EDIT)?.disabled).toBe(true);
+      expect(result.current.menuItems.find((item) => item.id === POST_MENU_ACTION_IDS.COPY_TEXT)).toBeUndefined();
+      expect(result.current.menuItems.find((item) => item.id === POST_MENU_ACTION_IDS.DELETE)).toBeDefined();
+    });
+
     it('returns follow action when not following', () => {
       const { result } = renderHook(() =>
         usePostMenuActions(mockPostId, { onReportClick: vi.fn(), onEditClick: vi.fn(), onDeleteClick: vi.fn() }),

@@ -2,12 +2,14 @@
 import { Container } from '@/atoms/Container/Container';
 import { usePostDetails } from '@/hooks/usePostDetails/usePostDetails';
 import { isArticleContent } from '@/libs/post/articleContent';
+import { isBuiltinPostKind } from '@/libs/post/postPreview';
 import { cn, isPostDeleted } from '@/libs/utils/utils';
 import { parseCompositeId } from '@/models/models.utils';
 import { PostLinkEmbeds } from '@/molecules/PostLinkEmbeds/PostLinkEmbeds';
 import { PostText } from '@/molecules/PostText/PostText';
 import { PostUnavailable } from '@/molecules/PostUnavailable/PostUnavailable';
 import { CollectionCard } from '@/organisms/Collections/CollectionCard/CollectionCard';
+import { EventkyPostContent } from '@/organisms/EventkyPostContent/EventkyPostContent';
 import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
 import { PostArticle } from '../PostArticle/PostArticle';
 import { PostAttachments } from '../PostAttachments/PostAttachments';
@@ -44,6 +46,19 @@ export function PostContentBase({ postId, className, textClassName, mediaVariant
   if (isDeleted) return <PostUnavailable message={'This post has been deleted by its author.'} />;
 
   if (isBlurred) return <PostContentBlurred postId={postId} className={className} />;
+
+  if (!isBuiltinPostKind(postDetails.kind))
+    return (
+      <EventkyPostContent
+        postId={postId}
+        kind={postDetails.kind}
+        content={postDetails.content}
+        attachments={postDetails.attachments}
+        localAttachments={localAttachments}
+        className={className}
+        mediaVariant={mediaVariant}
+      />
+    );
 
   if (isArticle)
     return (

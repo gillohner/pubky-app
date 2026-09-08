@@ -4,6 +4,7 @@ import { buildCompositeId } from '@/models/models.utils';
 import { PostDetailsModel } from '@/models/post/details/postDetails';
 import type { PostDetailsModelSchema } from '@/models/post/details/postDetails.schema';
 import type { NexusPostDetails } from '@/services/nexus/nexus.types';
+import { asInvalid } from '@/test-utils/type-assertions';
 
 describe('PostDetailsModel', () => {
   beforeEach(async () => {
@@ -47,6 +48,31 @@ describe('PostDetailsModel', () => {
       expect(postDetails.kind).toBe(mockPostDetailsData.kind);
       expect(postDetails.uri).toBe(mockPostDetailsData.uri);
       expect(postDetails.attachments).toEqual(mockPostDetailsData.attachments);
+    });
+
+    it('retains raw envelope metadata and canonicalizes legacy cached embeds on read', async () => {
+      const details = createPostDetailsData(testPostId1, {
+        ...MOCK_NEXUS_POST_DETAILS,
+        kind: 'Event',
+        parent: null,
+        embed: 'https://example.com',
+        lock: 'timestamp',
+      });
+      await PostDetailsModel.bulkSave([
+        {
+          ...details,
+          embed: asInvalid<string>({ uri: 'https://example.com', kind: 'link' }),
+        },
+      ]);
+      const result = await PostDetailsModel.findById(details.id);
+      expect(result).toMatchObject({ kind: 'Event', parent: null, embed: 'https://example.com', lock: 'timestamp' });
+    });
+
+    it('leaves missing envelope metadata unknown for legacy cache records', () => {
+      const result = new PostDetailsModel(createPostDetailsData(testPostId1, MOCK_NEXUS_POST_DETAILS));
+      expect(result.embed).toBeUndefined();
+      expect(result.parent).toBeUndefined();
+      expect(result.lock).toBeUndefined();
     });
 
     it('should handle null attachments', () => {

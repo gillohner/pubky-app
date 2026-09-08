@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePostDetails } from '@/hooks/usePostDetails/usePostDetails';
 import { Logger } from '@/libs/logger/logger';
 import { parseCollectionContent } from '@/libs/post/collectionContent';
-import { deriveTextPreview } from '@/libs/post/postPreview';
+import { deriveTextPreview, isPlainTextPostKind } from '@/libs/post/postPreview';
 import { isPostDeleted } from '@/libs/utils/utils';
 import { toast } from '@/molecules/Toaster/toast';
 import { resolvePubkyToNames } from '@/organisms/NotificationItem/NotificationItem.helpers';
@@ -52,7 +52,7 @@ export function useNotificationPostContent({
   // content) detectable and never rendered.
   const [mentionResolution, setMentionResolution] = useState<{ source: string; content: string | null } | null>(null);
 
-  const needsMentionResolution = rawContent !== null && !isDeleted && kind !== 'long' && kind !== 'collection';
+  const needsMentionResolution = rawContent !== null && !isDeleted && isPlainTextPostKind(kind ?? '');
 
   useEffect(() => {
     if (!needsMentionResolution || rawContent === null) return;
