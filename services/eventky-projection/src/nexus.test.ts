@@ -34,6 +34,31 @@ describe('private Nexus projection adapter', () => {
     }
   });
 
+  it('retries the throttled inventory request without repeatedly consuming the head allowance', async () => {
+    const pause = vi.fn<(milliseconds: number) => Promise<void>>().mockResolvedValue();
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(reply(head))
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers: { 'Retry-After': '3' } }))
+      .mockResolvedValueOnce(reply({ ...head, items: [], next_cursor: null }));
+    const adapter = new NexusProjectionSource('https://nexus.example', token, request, pause);
+    await expect(adapter.inventory()).resolves.toMatchObject({ posts: [], next_cursor: null });
+    expect(pause).toHaveBeenCalledWith(3000);
+    expect(String(request.mock.calls[0][0])).toContain('/head');
+    expect(request.mock.calls[1][0]).toBe(request.mock.calls[2][0]);
+  });
+
+  it('bounds persistent rate limiting and backs off on malformed retry headers', async () => {
+    const pause = vi.fn<(milliseconds: number) => Promise<void>>().mockResolvedValue();
+    const request = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => new Response(null, { status: 429, headers: { 'Retry-After': 'invalid' } }));
+    const adapter = new NexusProjectionSource('https://nexus.example', token, request, pause);
+    await expect(adapter.inventory()).rejects.toThrow('bounded retries');
+    expect(request).toHaveBeenCalledTimes(6);
+    expect(pause.mock.calls.map(([delay]) => delay)).toEqual([1000, 2000, 4000, 8000, 16000]);
+  });
+
   it('restarts inventory on an expired or restored source cursor', async () => {
     const request = vi
       .fn<typeof fetch>()

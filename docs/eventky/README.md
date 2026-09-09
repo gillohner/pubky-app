@@ -1,36 +1,34 @@
 # Eventky in Pubky App
 
-Review: [client PR #1](https://github.com/gillohner/pubky-app/pull/1) and [optional Nexus extension PR #15](https://github.com/gillohner/pubky-nexus/pull/15).
+Events and calendars are ordinary `PubkyAppPost` records at `/pub/pubky.app/posts/<id>`, using the exact kinds `event` and `calendar`. Their versioned JSON is serialized into the post's string `content`. Comments, tags, bookmarks, reposts, moderation, attachments and deletion use Pubky's existing post machinery.
 
-Events and calendars are ordinary `PubkyAppPost` records at `/pub/pubky.app/posts/<id>`, using the exact custom kinds `event` and `calendar`. The versioned JSON profile is serialized into the post's string `content`. Comments, tags, bookmarks, reposts, moderation, attachments and deletion use the existing Pubky post machinery.
+The revised staging application is published at [https://159.69.22.174](https://159.69.22.174). It uses the staging homeserver and an isolated staging Nexus/projection. Acceptance is still in progress: native calendar/event publication has passed, while backend indexing recovery and the remaining real-browser social/edit/curation journeys are open. See [verification](verification.md) for the precise evidence.
 
-The event button appears beside Article in post creation. The native editor supports timed/all-day events, UTC/named/floating time, end or duration, recurrence presets and rules, individual occurrence changes, physical/online locations, Markdown, attachments, categories, organizer information and calendar membership. Calendars are posts with their own descriptions, colors, timezone, contributors and exclusions. Their owner's policy decides which claimed events appear in a calendar.
+## Native experience
 
-The calendar page offers agenda/month/week/day views and overlays, with explicit incomplete/stale states. It hydrates ordinary posts and verifies the exact source hash before applying an occurrence's display context. Local subscriptions and app-open reminders are scoped to the account and Nexus backend. Published alarm suggestions never activate a reminder automatically.
+Event and Calendar creation sit beside Article. The editor uses Pubky's Markdown, attachment and tag controls, ShadCN date popovers and styled time inputs. Events support all-day and timed schedules, an end or duration, recurrence presets/rules, individual occurrence moves/cancellations, physical/online locations, organizer details and named calendar membership. Authors can select a different event timezone; existing source time semantics survive editing.
 
-iCalendar import previews public/private source mismatches and retained metadata before publication. A durable local ledger reserves post IDs before writes, confirms uncertain responses against the authoritative homeserver, and protects subsequent manual edits. Imports retain series UID and original exception identities. A public read-only subscription feed provides complete current-calendar masters and exceptions with HTTP validators; it fails closed when coverage or resource limits prevent a complete result.
+Reading surfaces always use the device timezone. There is no display-timezone selector or saved timezone preference. Weeks start on Monday. The calendar page provides agenda, month, week and day views, named calendar selection and explicit incomplete/stale states. Occurrences hydrate ordinary posts and verify their source hash before display.
 
-## Enable locally
+Calendars have names, descriptions, colors and contributor/exclusion policies. Native people and event pickers replace public-key and URI text entry. Calendar selection belongs to the current navigation state, with no local preference-management workflow. The native UI has no calendar import/export, subscription-link, alarm or reminder actions. Existing RFC interchange/protocol modules remain available internally; their presence does not make them part of this app experience.
+
+Attendance uses ordinary `attendance` reply posts and Going, Maybe and Can't go controls. Series and occurrence-specific responses preserve native author identity and discussion behavior. Read [attendance semantics and limits](attendance.md) and [device-timezone display](native-display.md).
+
+## Run locally
 
 ```sh
 npm ci
-PUBKY_RUNTIME_EVENTKY_ENABLED=true npm run dev:webpack
+PUBKY_RUNTIME_EVENTKY_ENABLED=true PUBKY_RUNTIME_EVENTKY_CALENDAR_ENABLED=true npm run dev:webpack
 ```
 
-Point the app's normal runtime network settings at a Nexus with universal post kinds (PR #14 or its compatible extension). The calendar query UI additionally needs `PUBKY_RUNTIME_EVENTKY_CALENDAR_ENABLED=true`, a server-only `EVENTKY_PROJECTION_URL`, and the optional sidecar. See [deployment and recovery](deployment.md) for complete configuration and resource requirements. These flags are off by default.
+Supply the app's required runtime network settings and server-only `EVENTKY_PROJECTION_URL` for the intended environment. Staging tests must use the staging homeserver and isolated staging Nexus, not production accounts or a production homeserver dataset. The projection receives no homeserver signing keys. See [deployment and recovery](deployment.md).
 
 ## Development records
 
-- [Implementation plan](plan.md) and [subagent work packages](agent-briefs.md): full feature scope, dependencies, acceptance gates and further work.
-- [Current decisions](decisions.md) and [task state](task-state.md): authoritative interface updates and coordination handoff. These supersede historical baseline observations in the plan.
-- [Content profile and supported RFC semantics](../../packages/eventky-contract/README.md): exact schemas, limits, recurrence, timezone and interoperability behavior.
-- [Subscription policy](../../services/eventky-projection/SUBSCRIPTIONS.md): completeness, membership and HTTP caching rules.
-- [Verification evidence](verification.md): what was actually tested and any open release gates.
+- [Current decisions](decisions.md) and [task state](task-state.md) describe the revised requirements and worker handoffs.
+- [Verification](verification.md) separates current checks, pending acceptance and historical baseline results.
+- [Contract profile](../../packages/eventky-contract/README.md) documents supported RFC semantics, limits and unsupported cases.
+- [Initial plan](plan.md) and [agent briefs](agent-briefs.md) are historical planning records; the current scope supersedes their import/reminder/preference work packages.
+- Review branches remain [client PR #1](https://github.com/gillohner/pubky-app/pull/1) and [Nexus PR #15](https://github.com/gillohner/pubky-nexus/pull/15). Uncommitted revised-scope work and deployed images must be verified separately from those PR baselines.
 
-The calendar projection is derived data and receives no authoring commands or homeserver signing keys. Its optional Nexus extension supplies generic source revisions and explicit social text for mention handling; production Nexus has no Eventky event/calendar parser. The original Eventky namespace is only an import/migration input.
-
-## Coordination pattern
-
-The lead owns shared interfaces and integration. Workers receive a bounded file set, a baseline commit, the relevant contract and acceptance checks. They report evidence and interface changes into the shared task record, then send a handoff before another worker edits that boundary. Fresh reviews verify suspected bugs with fixtures before changes are accepted. The lead reruns checks across boundaries and distinguishes a worker's completion from end-to-end delivery.
-
-This makes context explicit through committed artifacts rather than depending on agents automatically sharing their entire conversations. The same workflow can be resumed by another coding agent using this directory, the repository's AGENTS.md, and the recorded feature branches.
+The lead owns shared interfaces, integration and final evidence. Workers own bounded file sets and report exact tests and remaining gaps. A completed worker task does not establish completion of the complete staging journey.

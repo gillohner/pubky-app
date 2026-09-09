@@ -1,3 +1,4 @@
+import { attendanceLabels, parseAttendance } from '@eventky/attendance';
 import { getEventkyPlainText, parseEventkyContent } from '@eventky/contract';
 import { formatEventSchedule } from '@/libs/eventky/display';
 import { isPostDeleted } from '@/libs/utils/utils';
@@ -21,6 +22,10 @@ import { parseCollectionContent } from './collectionContent';
 export function deriveTextPreview({ content, kind }: { content: string; kind: string }): string {
   if (isPostDeleted(content)) {
     return 'This post has been deleted by its author.';
+  }
+  if (kind === 'attendance') {
+    const response = parseAttendance(content);
+    return response ? attendanceLabels[response.partstat] : UNSUPPORTED_POST_FORMAT;
   }
   if (kind === 'long') {
     return parseArticleContent(content)?.title || content;
@@ -55,6 +60,7 @@ export function canEditPostContent({ kind, content }: { kind: string; content: s
 }
 
 export function deriveCopyText(post: { kind: string; content: string }): string {
+  if (post.kind === 'attendance') return deriveTextPreview(post);
   if (isBuiltinPostKind(post.kind) || isPostDeleted(post.content)) return deriveTextPreview(post);
   return parseEventkyContent(post.kind, post.content).status === 'supported'
     ? getEventkyPlainText(post.kind, post.content)

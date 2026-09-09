@@ -48,6 +48,25 @@ vi.mock('@/hooks/useEventkyCalendar/useEventkyCalendar', async () => {
   };
   return { useEventkyCalendar: () => result };
 });
+vi.mock('@/hooks/useEventkyCalendar/useEventkyCalendars', () => ({
+  useEventkyCalendars: () => ({
+    calendars: [{ uri: projectionPostUri, name: 'Pubky builders' }],
+    isLoading: false,
+    hasMore: false,
+  }),
+}));
+vi.mock('@/hooks/useEventkyAttendance/useEventkyAttendance', () => ({
+  useEventkyAttendance: () => ({
+    status: 'ACCEPTED',
+    signedIn: true,
+    busy: false,
+    loading: false,
+    failed: false,
+    complete: true,
+    counts: { ACCEPTED: 8, TENTATIVE: 2, DECLINED: 1 },
+    respond: vi.fn(),
+  }),
+}));
 vi.mock('@/hooks/usePostDetails/usePostDetails', async () => {
   const { eventkyEventFixture } = await import('@/test/fixtures/eventky');
   const { projectionPostId, projectionPostUri } = await import('@/test/fixtures/eventkyProjection');
@@ -111,8 +130,6 @@ describe('native Eventky calendar display', () => {
       await page.getByRole('button', { name: /Pubky community meetup/ }).click();
       await expect.element(page.getByRole('region', { name: 'Selected event' })).toBeInTheDocument();
       await expect.element(page.getByRole('heading', { name: 'Pubky community meetup' })).toBeVisible();
-      await page.getByRole('button', { name: 'Download calendar file' }).click();
-      expect(mocks.download).toHaveBeenCalledWith(eventkyEventFixture, projectionPostUri, undefined);
       await page.getByRole('button', { name: 'Refresh', exact: true }).click();
       expect(mocks.refresh).toHaveBeenCalledTimes(1);
       const main = document.querySelector('main')!;
@@ -151,14 +168,9 @@ describe('native Eventky calendar display', () => {
       );
       await expect.element(page.getByRole('heading', { name: eventkyEventFixture.summary })).toBeVisible();
       await matchVrtFrameScreenshot(`eventky-native-content-${name}`);
-      await page.getByRole('button', { name: 'Show this calendar' }).click();
       await expect
-        .element(page.getByRole('button', { name: 'Calendar shown' }))
-        .toHaveAttribute('aria-pressed', 'true');
-      await page.getByRole('button', { name: 'Subscribe in calendar app' }).click();
-      expect(mocks.copy).toHaveBeenCalledWith(
-        `${window.location.origin}/api/eventky/calendar.ics?calendar=${encodeURIComponent(projectionPostUri.replace(/1$/, '2'))}`,
-      );
+        .element(page.getByRole('link', { name: 'Upcoming events' }))
+        .toHaveAttribute('href', `/calendar?calendar=${encodeURIComponent(projectionPostUri.replace(/1$/, '2'))}`);
       const main = document.querySelector('main')!;
       expect(main.scrollWidth).toBeLessThanOrEqual(main.clientWidth);
     });

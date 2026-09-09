@@ -1,25 +1,50 @@
 import type { CalendarTime, EventContent } from '@eventky/contract';
-import { parseCalendarDuration } from '@eventky/temporal';
+import { calendarTimeToEpoch, parseCalendarDuration } from '@eventky/temporal';
+import { type CalendarTimezoneContext, createTimezoneContext } from '@eventky/timezone';
+import { Temporal } from '@js-temporal/polyfill';
 
-/** Format the declared wall clock without applying the browser's timezone. */
-export function formatCalendarTime(time: CalendarTime): string {
-  const date = new Date(
-    time.type === 'date' ? `${time.value}T00:00:00Z` : time.type === 'utc' ? time.value : `${time.value}Z`,
+type DisplayOptions = { timeZone?: string; context?: CalendarTimezoneContext };
+const dateOptions: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' };
+
+/** Dates and floating values are civil values, not instants. UTC here is only a formatting anchor. */
+function formatCivilTime(time: CalendarTime): string {
+  const local = Temporal.PlainDateTime.from(
+    time.type === 'date' ? `${time.value}T00:00:00` : time.value.replace(/Z$/, ''),
   );
-  const formatted = new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+  return new Intl.DateTimeFormat('en-US', {
+    ...dateOptions,
     timeZone: 'UTC',
     ...(time.type === 'date' ? {} : { hour: 'numeric', minute: '2-digit' }),
-  }).format(date);
+  }).format(local.toZonedDateTime('UTC').epochMilliseconds);
+}
+
+/** Native reading surfaces resolve instants through the calendar engine and display in the device zone. */
+export function formatCalendarTime(time: CalendarTime, options: DisplayOptions = {}): string {
+  if (time.type === 'date') return `${formatCivilTime(time)} · All day`;
+  if (time.type === 'floating') return formatCivilTime(time);
+  const timeZone = options.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const epoch = calendarTimeToEpoch(time, timeZone, 'import', options.context);
+  if (!epoch.ok) return 'Time unavailable';
+  return new Intl.DateTimeFormat('en-US', {
+    ...dateOptions,
+    timeZone,
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(epoch.value);
+}
+
+/** Authoring needs the declared wall time and zone so recurrence edits preserve source semantics. */
+export function formatAuthoringCalendarTime(time: CalendarTime): string {
+  const formatted = formatCivilTime(time);
   if (time.type === 'date') return `${formatted} · All day`;
   const zone = time.type === 'zoned' ? time.tzid : time.type === 'utc' ? 'UTC' : 'Local time (floating)';
   return `${formatted} (${zone})`;
 }
 
-export function formatEventSchedule(event: EventContent): string {
-  const start = formatCalendarTime(event.dtstart);
+export function formatEventSchedule(event: EventContent, timeZone?: string): string {
+  const options = { timeZone, context: createTimezoneContext(event.timezone_definitions) };
+  const start = formatCalendarTime(event.dtstart, options);
   if (!event.dtend) {
     if (!event.duration) return start;
     const duration = parseCalendarDuration(event.duration);
@@ -31,16 +56,14 @@ export function formatEventSchedule(event: EventContent): string {
       .join(', ');
     return `${start} · ${label}`;
   }
-  // RFC 5545's all-day DTEND is exclusive. Show the last occupied day to people.
+  // RFC 5545's all-day DTEND is exclusive. Show the last occupied civil day without shifting dates.
   if (event.dtstart.type === 'date' && event.dtend.type === 'date') {
-    const end = new Date(`${event.dtend.value}T00:00:00Z`);
-    end.setUTCDate(end.getUTCDate() - 1);
-    const inclusiveEnd = end.toISOString().slice(0, 10);
+    const inclusiveEnd = Temporal.PlainDate.from(event.dtend.value).subtract({ days: 1 }).toString();
     return inclusiveEnd === event.dtstart.value
       ? start
-      : `${start} – ${formatCalendarTime({ type: 'date', value: inclusiveEnd })}`;
+      : `${start} – ${formatCalendarTime({ type: 'date', value: inclusiveEnd }, options)}`;
   }
-  return `${start} – ${formatCalendarTime(event.dtend)}`;
+  return `${start} – ${formatCalendarTime(event.dtend, options)}`;
 }
 
 export function formatEventRecurrence(event: EventContent): string | null {

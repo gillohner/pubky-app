@@ -6,7 +6,15 @@ import { canEditPostContent, deriveCopyText } from './postPreview';
 describe('deriveTextPreview', () => {
   it('uses human-readable custom titles and timezones in previews and copied text', () => {
     const post = { kind: 'event', content: JSON.stringify(eventkyEventFixture) };
-    expect(deriveTextPreview(post)).toContain('Pubky community meetup · Oct 25, 2026, 6:30 PM (Europe/Zurich)');
+    const localStart = new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    }).format(Date.UTC(2026, 9, 25, 17, 30));
+    expect(deriveTextPreview(post)).toContain(`Pubky community meetup · ${localStart}`);
     expect(deriveCopyText(post)).toContain('Discuss decentralized calendars.');
     expect(deriveCopyText(post)).not.toContain('schema_version');
     expect(deriveTextPreview({ kind: 'calendar', content: JSON.stringify(eventkyCalendarFixture) })).toBe(

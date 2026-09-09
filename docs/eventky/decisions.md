@@ -23,11 +23,11 @@ The user authorized creating `gillohner/pubky-app` and implementing the full nat
 - Local details retain parent/embed/lock as optional fields; no database schema bump solely for string kinds or unindexed optional fields.
 - Calendar engine dependencies: `ical.js` 2.2.1, `@js-temporal/polyfill` 0.5.1 and `timezones-ical-library` 2.3.1, pinned with passing time/interchange fixtures. Exact supported profiles are in the contract package README.
 
-## Import and private preferences
+## Native workflow boundary
 
-Imports use a separate IndexedDB database keyed by account, exact Nexus URL, local source name, kind and UID. A reservation retains the native post ID, exact content, prior expected content and attempted-write state before any homeserver PUT. Retry confirms an already-applied payload without rewriting it; changed sources are conflicts. A missing post after an uncertain creation requires explicit acknowledgement before it can be recreated. Imported snapshots replace optional fields rather than patching omitted fields from an older import. Source grouping stays fixed after its first reservation; native post editing can subsequently change membership.
+The revised application has no calendar import/export, subscription-link, alarm/reminder or local calendar-preference UI. Calendar selection is current navigation state; display always uses the device timezone and weeks start on Monday. Event authoring can choose another timezone, with source wall-time labels preserved for recurrence edits. Calendar membership, contributors and exclusions use named native resource pickers rather than public-key or URI text entry.
 
-Calendar selections, overlay colors, viewing preferences and reminder opt-ins are local and scoped to account/backend. They are separate from public bookmarks and published alarm suggestions. Notification permission is requested only through a user action. Delivery runs while the app is open, refreshes opted-in sources, suppresses stale/cancelled/muted data and deduplicates deliveries across tabs.
+The earlier implementation included a durable import ledger and account/backend-scoped reminder/preferences stores. Those designs are historical and no longer define the native experience. Retained protocol/interchange modules and readable existing wire metadata must not reactivate removed workflows. Their historical tests do not prove the revised UI requirements.
 
 ## Projection boundary
 
@@ -35,8 +35,16 @@ Calendar selections, overlay colors, viewing preferences and reminder opt-ins ar
 
 Public `/api/eventky/occurrences` and `/api/eventky/calendar.ics` proxy only to the configured server-side origin; browser credentials and replication tokens are never forwarded. Calendar feeds retain UID/master/exception identity, recheck current membership and deletion state, and issue validators only for a complete response. See the sidecar policy for exact limits and worker deadlines.
 
-## Ownership
+## Ownership and deployment
 
-Root owns package/lockfile/configuration, documentation, integration, composers/imports and tests crossing packages. The calendar worker owns the contract/recurrence/interchange package and isolated projection execution. The backend worker owns generic Nexus source changes/mentions and real homeserver acceptance. The native client worker owns verified calendar rendering, local preferences/reminders and their browser checks. Coordinate changes to shared boundaries before editing; task-state.md records handoff status.
+Calendar_ux owns calendar navigation/filter discovery, composer_ux owns authoring controls, attendance owns response contracts and native content actions, and the lead owns shared integration, backend review, staging infrastructure and final evidence. Coordinate shared-boundary changes before editing; [task-state.md](task-state.md) records handoffs and unresolved acceptance work.
 
-No deployment has been changed by this implementation wave. Domain configuration remains a release parameter; core development continues against local fixtures and the pinned Nexus contract.
+The application is published at `https://159.69.22.174`, using `homeserver.staging.pubky.app` and an isolated staging Nexus/projection. Production-homeserver test publication is prohibited. The projection backend identity is `http://staging-nexus:8080`. Both projection services are healthy with the `staging-backoff-20260909` image; frontend `staging-20260909c` has built and deployment is underway. See [deployment.md](deployment.md) for current operational boundaries. Healthy services and a successful image build do not complete the browser acceptance gates.
+
+## Current scope revision (2026-09-09)
+
+The latest user requirements supersede the earlier import/preferences scope. The native UI must have calendar selection and calendar views, event/calendar creation and editing, and attendance. Display always uses the device timezone with Monday as the week start; event authoring may choose another timezone. Date/time fields use native Shadcn patterns. Remove import/export and subscription-link entry points, reminder activation and local preference controls, and replace URI text entry with named native resource pickers. Existing wire data must remain readable without activating removed features.
+
+Acceptance now requires real staging-homeserver end-to-end journeys (never production fixture publication), desktop/mobile screenshots and visual review. Earlier tests are historical evidence, not proof of this revision. The deployed VPS Nexus/projection are available for inspection; staging test data must stay separate from its production homeserver dataset.
+
+Current ownership: calendar_ux owns calendar navigation/filter discovery; composer_ux owns authoring controls; attendance owns response contracts and native content actions; root owns shared integration, backend review, staging harness and final evidence. No completion claim until the revised requirements are verified.

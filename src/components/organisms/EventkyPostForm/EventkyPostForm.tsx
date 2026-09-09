@@ -1,6 +1,5 @@
 'use client';
 
-import { useId } from 'react';
 import { CalendarDays, ImagePlus, Loader2, Send } from 'lucide-react';
 import { Controller } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
@@ -8,60 +7,26 @@ import { Checkbox } from '@/atoms/Checkbox/Checkbox';
 import { Container } from '@/atoms/Container/Container';
 import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
 import type { useEventkyPostForm } from '@/hooks/useEventkyPostForm/useEventkyPostForm';
 import type { EventkyPostFormData, EventkyPostKind } from '@/hooks/useEventkyPostForm/useEventkyPostForm.types';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
-import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
 import { MarkdownEditor } from '@/molecules/MarkdownEditor/MarkdownEditor';
 import { PostInputAttachments } from '@/molecules/PostInputAttachments/PostInputAttachments';
 import { PostInputTags } from '@/organisms/PostInputTags/PostInputTags';
+import { EventkyCalendarPicker } from './EventkyCalendarPicker';
+import { EventkyContributorPicker } from './EventkyContributorPicker';
+import { EventkyDateField } from './EventkyDateField';
+import { EventkyDurationField } from './EventkyDurationField';
+import { EventkyExclusionPicker } from './EventkyExclusionPicker';
 import { EventkyRecurrenceEditor } from './EventkyRecurrenceEditor';
+import { EventkyTimezoneField } from './EventkyTimezoneField';
 
 type FormState = ReturnType<typeof useEventkyPostForm>;
 type TextField = {
   [K in keyof EventkyPostFormData]: EventkyPostFormData[K] extends string ? K : never;
 }[keyof EventkyPostFormData];
-
-function DateField({
-  state,
-  name,
-  label,
-  type,
-}: {
-  state: FormState;
-  name: TextField;
-  label: string;
-  type: 'date' | 'time';
-}) {
-  const id = useId();
-  return (
-    <Container className="gap-2">
-      <Label htmlFor={id}>{label}</Label>
-      <Controller
-        control={state.form.control}
-        name={name}
-        render={({ field, fieldState }) => (
-          <>
-            <Input
-              {...field}
-              id={id}
-              type={type}
-              className="scheme-dark"
-              step={type === 'time' ? 1 : undefined}
-              aria-invalid={!!fieldState.error}
-            />
-            {fieldState.error && (
-              <Typography size="sm" role="alert">
-                {fieldState.error.message}
-              </Typography>
-            )}
-          </>
-        )}
-      />
-    </Container>
-  );
-}
 
 /** Uses the same editor, attachment picker, tag controls and design tokens as the post composer. */
 export function EventkyPostForm({
@@ -86,7 +51,6 @@ export function EventkyPostForm({
   } = state.files;
   const allDay = form.watch('allDay');
   const useDuration = form.watch('useDuration');
-  const timeMode = form.watch('timeMode');
   const busy = form.formState.isSubmitting;
   const input = (name: TextField, label: string, placeholder?: string) => (
     <ControlledInputField
@@ -138,39 +102,25 @@ export function EventkyPostForm({
           <>
             {check('allDay', 'All-day event')}
             <Container overrideDefaults className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <DateField state={state} name="startDate" label="Start date" type="date" />
-              {!allDay && <DateField state={state} name="startTime" label="Start time" type="time" />}
+              <EventkyDateField state={state} name="startDate" label="Start date" type="date" />
+              {!allDay && <EventkyDateField state={state} name="startTime" label="Start time" type="time" />}
               {(!useDuration || allDay) && (
-                <DateField
+                <EventkyDateField
                   state={state}
                   name="endDate"
                   label={allDay ? 'Last day (inclusive)' : 'End date'}
                   type="date"
                 />
               )}
-              {!allDay && !useDuration && <DateField state={state} name="endTime" label="End time" type="time" />}
+              {!allDay && !useDuration && (
+                <EventkyDateField state={state} name="endTime" label="End time" type="time" />
+              )}
             </Container>
             {!allDay && (
               <>
-                <Label htmlFor="eventky-time-mode">Time interpretation</Label>
-                <Controller
-                  control={form.control}
-                  name="timeMode"
-                  render={({ field }) => (
-                    <select
-                      {...field}
-                      id="eventky-time-mode"
-                      className="rounded-md border border-input bg-background p-2"
-                    >
-                      <option value="zoned">Named timezone</option>
-                      <option value="utc">UTC</option>
-                      <option value="floating">Local time wherever viewed</option>
-                    </select>
-                  )}
-                />
-                {timeMode === 'zoned' && input('timezone', 'Timezone', 'Europe/Zurich')}
+                <EventkyTimezoneField state={state} />
                 {check('useDuration', 'Set a duration instead of an end time')}
-                {useDuration && input('duration', 'Duration', 'PT1H30M')}
+                {useDuration && <EventkyDurationField state={state} />}
               </>
             )}
             <Container overrideDefaults className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -179,6 +129,7 @@ export function EventkyPostForm({
               {input('onlineUrl', 'Online meeting link', 'https://…')}
               {input('website', 'Event website', 'https://…')}
             </Container>
+            <EventkyCalendarPicker state={state} />
             <details className="rounded-md border border-input p-4">
               <summary className="cursor-pointer font-medium">Recurrence and advanced details</summary>
               <Container className="mt-4 gap-4">
@@ -188,70 +139,43 @@ export function EventkyPostForm({
                   control={form.control}
                   name="status"
                   render={({ field }) => (
-                    <select {...field} id="eventky-status" className="rounded-md border border-input bg-background p-2">
-                      <option value="CONFIRMED">Confirmed</option>
-                      <option value="TENTATIVE">Tentative</option>
-                      <option value="CANCELLED">Cancelled</option>
-                    </select>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger
+                        id="eventky-status"
+                        className="w-full rounded-md border border-input px-3 font-normal"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="CONFIRMED">Confirmed</SelectItem>
+                        <SelectItem value="TENTATIVE">Tentative</SelectItem>
+                        <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select>
                   )}
                 />
                 {input('organizerName', 'Organizer name')}
                 {input('organizerUrl', 'Organizer contact link', 'mailto:…')}
                 {input('categories', 'Calendar categories', 'Community, Workshop')}
                 {check('transparent', 'Show this time as free')}
-                <ControlledTextareaField
-                  name="calendarUris"
-                  control={form.control}
-                  label="Calendars"
-                  placeholder="One pubky://…/pub/pubky.app/posts/… calendar link per line"
-                  rows={3}
-                />
-                <Typography size="sm" className="text-muted-foreground">
-                  An event appears in a calendar when its author is the owner or an approved contributor. Calendar
-                  categories are separate from the social tags below.
-                </Typography>
               </Container>
             </details>
           </>
         ) : (
           <>
-            {input('timezone', 'Default timezone', 'Europe/Zurich')}
-            {input('color', 'Calendar color', '#6757E8')}
-            {input('website', 'Calendar website', 'https://…')}
-            <ControlledTextareaField
-              name="contributors"
-              control={form.control}
-              label="Contributors"
-              placeholder="One public key per line"
-              rows={3}
-            />
-            <Typography size="sm" className="text-muted-foreground">
-              Contributors can include their own events in this calendar. They cannot edit your posts.
-            </Typography>
-            <ControlledTextareaField
-              name="excludedEventUris"
-              control={form.control}
-              label="Excluded events"
-              placeholder="One event post link per line"
-              rows={3}
-            />
-            <Typography size="sm" className="text-muted-foreground">
-              Exclude an event from this calendar without changing its post or discussion.
-            </Typography>
-            <Label htmlFor="eventky-week-start">Week starts on</Label>
             <Controller
               control={form.control}
-              name="weekStart"
+              name="color"
               render={({ field }) => (
-                <select {...field} id="eventky-week-start" className="rounded-md border border-input bg-background p-2">
-                  {(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const).map((day, index) => (
-                    <option key={day} value={day}>
-                      {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][index]}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="eventky-calendar-color">Calendar color</Label>
+                  <Input {...field} id="eventky-calendar-color" type="color" className="h-10 w-16 cursor-pointer p-1" />
+                </div>
               )}
             />
+            {input('website', 'Calendar website', 'https://…')}
+            <EventkyContributorPicker state={state} />
+            {isEditing && <EventkyExclusionPicker state={state} />}
             {input('defaultDuration', 'Default event duration', 'PT1H')}
           </>
         )}

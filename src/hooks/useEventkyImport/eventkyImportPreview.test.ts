@@ -135,7 +135,10 @@ describe('bounded browser import transport', () => {
     }
     const worker = transport();
     const pending = new EventkyImportPreviewRunner({ createWorker: () => worker.value }).run('calendar', options);
-    worker.value.onerror?.call(worker.value, new ErrorEvent('error', { message: 'private data' }));
+    worker.value.onerror?.call(
+      Object.assign(new EventTarget(), { onerror: null }),
+      new ErrorEvent('error', { message: 'private data' }),
+    );
     expect((await pending).errors).toEqual(['The import preview could not start. Try again or reload the app.']);
   });
 });

@@ -3,13 +3,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { parseEventkyContent } from '@eventky/contract';
-import { CalendarDays, Clock, Download, Globe, MapPin, Repeat, UserRound } from 'lucide-react';
+import { CalendarDays, Clock, Globe, MapPin, Repeat, UserRound } from 'lucide-react';
 import { getCalendarRoute, POST_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Typography } from '@/atoms/Typography/Typography';
-import { useEventkyDownload } from '@/hooks/useEventkyDownload/useEventkyDownload';
+import { useDeviceTimezone } from '@/hooks/useDeviceTimezone/useDeviceTimezone';
 import { useLinkConfirmation } from '@/hooks/useLinkConfirmation/useLinkConfirmation';
 import { formatEventRecurrence, formatEventSchedule } from '@/libs/eventky/display';
 import { UNSUPPORTED_POST_FORMAT } from '@/libs/post/postPreview';
@@ -20,7 +20,7 @@ import { parseCompositeId } from '@/models/models.utils';
 import { PostText } from '@/molecules/PostText/PostText';
 import { PostUnavailable } from '@/molecules/PostUnavailable/PostUnavailable';
 import { DialogCheckLink } from '@/organisms/DialogCheckLink/DialogCheckLink';
-import { EventkyLocalActions } from '@/organisms/EventkyLocalActions/EventkyLocalActions';
+import { EventkyAttendance } from '@/organisms/EventkyAttendance/EventkyAttendance';
 import { PostAttachments } from '@/organisms/PostAttachments/PostAttachments';
 import type { PostAttachmentsProps } from '@/organisms/PostAttachments/PostAttachments.types';
 import { useEventkyOccurrence } from './EventkyOccurrenceContext';
@@ -43,7 +43,7 @@ export function EventkyPostContent({
   className,
 }: EventkyPostContentProps) {
   const { dialogOpen, setDialogOpen, clickedLink, handleLinkClick } = useLinkConfirmation();
-  const { downloadEvent } = useEventkyDownload();
+  const deviceTimezone = useDeviceTimezone();
   const onPostPage = usePathname().startsWith(POST_ROUTES.POST);
   const source = parseEventkyContent(kind, content);
   const occurrence = useEventkyOccurrence();
@@ -103,7 +103,7 @@ export function EventkyPostContent({
           </Container>
           <Typography size="sm" className="flex items-start gap-2 text-muted-foreground">
             <Clock aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-            <span>{formatEventSchedule(parsed.value)}</span>
+            <span>{formatEventSchedule(parsed.value, deviceTimezone)}</span>
           </Typography>
           {formatEventRecurrence(parsed.value) && (
             <Typography size="sm" className="flex items-center gap-2 text-muted-foreground">
@@ -147,27 +147,11 @@ export function EventkyPostContent({
             />
           )}
           {parsed.value.url && <Typography size="sm">{externalLink(parsed.value.url, 'Event website')}</Typography>}
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-fit"
-            onClick={(event) => {
-              event.stopPropagation();
-              downloadEvent(
-                source.status === 'supported' && source.kind === 'event' ? source.value : parsed.value,
-                postUri,
-                attachments ?? undefined,
-              );
-            }}
-          >
-            <Download aria-hidden="true" />
-            Download calendar file
-          </Button>
         </>
       ) : (
         <>
           <Typography size="sm" className="text-muted-foreground">
-            Calendar · {parsed.value.timezone}
+            Calendar
           </Typography>
           {parsed.value.description && <PostText content={parsed.value.description} onLinkClick={handleLinkClick} />}
           {getEventkyCalendarEnabled() && (
@@ -180,12 +164,20 @@ export function EventkyPostContent({
           {parsed.value.url && <Typography size="sm">{externalLink(parsed.value.url, 'Calendar website')}</Typography>}
         </>
       )}
-      {getEventkyCalendarEnabled() && (
-        <EventkyLocalActions
-          kind={parsed.kind}
-          postUri={postUri}
-          occurrenceKey={occurrence?.projection.post_id === postId ? occurrence.projection.occurrence_key : undefined}
-          cancelled={parsed.kind === 'event' && parsed.value.status === 'CANCELLED'}
+      {parsed.kind === 'event' && (
+        <EventkyAttendance
+          key={`${postId}:${occurrence?.projection.occurrence_key ?? 'series'}`}
+          postId={postId}
+          eventUid={parsed.value.uid}
+          recurrenceId={
+            occurrence?.projection.post_id === postId &&
+            source.status === 'supported' &&
+            source.kind === 'event' &&
+            (source.value.rrule || source.value.rdate?.length)
+              ? occurrence.projection.recurrence_id
+              : undefined
+          }
+          cancelled={parsed.value.status === 'CANCELLED'}
         />
       )}
       <PostAttachments attachments={attachments} localAttachments={localAttachments} mediaVariant={mediaVariant} />

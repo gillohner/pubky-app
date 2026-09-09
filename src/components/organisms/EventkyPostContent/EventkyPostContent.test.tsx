@@ -10,6 +10,7 @@ const { mockPathname, mockEventkyEnabled, mockAttachments } = vi.hoisted(() => (
   mockEventkyEnabled: vi.fn(() => true),
   mockAttachments: vi.fn(() => null),
 }));
+vi.mock('@/hooks/useDeviceTimezone/useDeviceTimezone', () => ({ useDeviceTimezone: () => 'America/New_York' }));
 vi.mock('next/navigation', () => ({ usePathname: mockPathname, useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
@@ -17,6 +18,10 @@ vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
 }));
 // Attachment persistence and media IO have their own tests; assert delegation of the native envelope here.
 vi.mock('@/organisms/PostAttachments/PostAttachments', () => ({ PostAttachments: mockAttachments }));
+
+vi.mock('@/organisms/EventkyAttendance/EventkyAttendance', () => ({
+  EventkyAttendance: () => <div>Attendance actions</div>,
+}));
 
 const postId = `${'y'.repeat(52)}:0000000000001`;
 const renderContent = (kind: string, value: unknown) =>
@@ -49,7 +54,8 @@ describe('EventkyPostContent', () => {
     });
     expect(screen.getByRole('heading', { name: 'Pubky community meetup' })).toBeInTheDocument();
     expect(screen.getByText('Cancelled')).toBeInTheDocument();
-    expect(screen.getByText(/6:30 PM \(Europe\/Zurich\)/)).toBeInTheDocument();
+    expect(screen.getByText(/1:30 PM EDT/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Download calendar file' })).not.toBeInTheDocument();
     expect(screen.getByText('Repeats weekly')).toBeInTheDocument();
     expect(screen.getByText('Zurich meetup space')).toBeInTheDocument();
     expect(screen.queryByText(/schema_version/)).not.toBeInTheDocument();

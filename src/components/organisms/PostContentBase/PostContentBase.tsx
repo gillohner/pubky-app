@@ -1,4 +1,5 @@
 'use client';
+import { attendanceLabels, parseAttendance } from '@eventky/attendance';
 import { Container } from '@/atoms/Container/Container';
 import { usePostDetails } from '@/hooks/usePostDetails/usePostDetails';
 import { isArticleContent } from '@/libs/post/articleContent';
@@ -46,6 +47,18 @@ export function PostContentBase({ postId, className, textClassName, mediaVariant
   if (isDeleted) return <PostUnavailable message={'This post has been deleted by its author.'} />;
 
   if (isBlurred) return <PostContentBlurred postId={postId} className={className} />;
+
+  if (postDetails.kind === 'attendance') {
+    const response = parseAttendance(postDetails.content);
+    return response ? (
+      <PostText
+        content={`${attendanceLabels[response.partstat]}${response.recurrence_id ? ' · This occurrence' : ''}`}
+        className={textClassName}
+      />
+    ) : (
+      <PostUnavailable message="Unsupported post format" />
+    );
+  }
 
   if (!isBuiltinPostKind(postDetails.kind))
     return (

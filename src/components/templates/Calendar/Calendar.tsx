@@ -1,36 +1,30 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { postUriSchema } from '@eventky/contract';
-import { zodResolver } from '@hookform/resolvers/zod';
 import { Temporal } from '@js-temporal/polyfill';
 import { ArrowLeft, ArrowRight, CalendarDays, RefreshCw, X } from 'lucide-react';
-import { Controller, useForm } from 'react-hook-form';
 import { getCalendarRoute } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Card } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
-import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
-import { type CalendarFilters, calendarFiltersSchema } from '@/hooks/useEventkyCalendar/useCalendarFilters.types';
 import { useEventkyCalendar } from '@/hooks/useEventkyCalendar/useEventkyCalendar';
 import type { CalendarOccurrence } from '@/hooks/useEventkyCalendar/useEventkyCalendar.types';
-import { useEventkyPreferences } from '@/hooks/useEventkyPreferences/useEventkyPreferences';
-import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
+import { useEventkyCalendars } from '@/hooks/useEventkyCalendar/useEventkyCalendars';
 import {
   calendarToday,
   getCalendarWindow,
   moveCalendarAnchor,
   occurrenceOverlapsDay,
 } from '@/libs/eventky/calendarView';
-import { getEventkyCalendarEnabled, getEventkyEnabled } from '@/libs/runtime-config/runtime-config';
+import { getEventkyCalendarEnabled } from '@/libs/runtime-config/runtime-config';
 import { cn } from '@/libs/utils/utils';
+import { EventkyDatePicker } from '@/molecules/EventkyDatePicker/EventkyDatePicker';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
-import { DialogEventkyImport } from '@/organisms/DialogEventkyImport/DialogEventkyImport';
 import { EventkyOccurrenceProvider } from '@/organisms/EventkyPostContent/EventkyOccurrenceContext';
 import { PostMain } from '@/organisms/PostMain/PostMain';
 import { type CalendarView } from '@/stores/eventkyCalendar/eventkyCalendar.store';
@@ -43,30 +37,185 @@ function OccurrencePost({ occurrence }: { occurrence: CalendarOccurrence }) {
   );
 }
 
+/** Timed views share a civil-time axis; exact local start/end labels remain authoritative across DST changes. */
+function CalendarSchedule({
+  days,
+  items,
+  timezone,
+  view,
+  selectedKey,
+  onSelect,
+  onDay,
+}: {
+  days: ReturnType<typeof getCalendarWindow>['days'];
+  items: CalendarOccurrence[];
+  timezone: string;
+  view: 'week' | 'day';
+  selectedKey: string | null;
+  onSelect: (key: string) => void;
+  onDay: (date: string) => void;
+}) {
+  const scroll = useRef<HTMLDivElement>(null);
+  const minute = (epoch: number) => {
+    const local = Temporal.Instant.fromEpochMilliseconds(epoch).toZonedDateTimeISO(timezone);
+    return local.hour * 60 + local.minute;
+  };
+  const timed = items.filter((item) => item.projection.start.type !== 'date');
+  const firstMinute = timed.length ? Math.min(...timed.map((item) => minute(item.projection.start_epoch_ms))) : 480;
+  useEffect(() => {
+    if (scroll.current) scroll.current.scrollTop = Math.max(0, Math.floor(firstMinute / 60) - 1) * 48;
+  }, [firstMinute, view]);
+  const time = (epoch: number) =>
+    new Intl.DateTimeFormat(undefined, { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(epoch);
+  const keyFor = (item: CalendarOccurrence) => `${item.projection.post_id}:${item.projection.occurrence_key}`;
+  const eventButton = (item: CalendarOccurrence) => (
+    <Button
+      variant="secondary"
+      overrideDefaults
+      className={cn(
+        'flex h-full w-full flex-col items-start justify-start overflow-hidden rounded-md border border-input bg-muted p-2 text-left text-xs focus-visible:ring-2 focus-visible:ring-brand',
+        selectedKey === keyFor(item) && 'ring-2 ring-brand',
+        item.projection.status === 'CANCELLED' && 'line-through',
+      )}
+      aria-pressed={selectedKey === keyFor(item)}
+      onClick={() => onSelect(keyFor(item))}
+    >
+      <span className="block font-medium">{item.event.summary}</span>
+      <span className="block text-muted-foreground">
+        {item.projection.start.type === 'date'
+          ? 'All day'
+          : `${time(item.projection.start_epoch_ms)} – ${time(item.projection.end_epoch_ms)}`}
+      </span>
+      {item.projection.status === 'CANCELLED' && <span>Cancelled</span>}
+    </Button>
+  );
+  return (
+    <div
+      ref={scroll}
+      className="max-h-[420px] overflow-auto rounded-lg border border-input md:max-h-[640px]"
+      tabIndex={0}
+      aria-label="Event schedule"
+    >
+      <table
+        className={cn('w-full table-fixed border-collapse', view === 'week' && 'min-w-3xl')}
+        aria-label={`${view === 'week' ? 'Week' : 'Day'} calendar`}
+      >
+        <thead className="sticky top-0 z-10 bg-background">
+          <tr>
+            <td className="w-14 border-b border-input" />
+            {days.map((day) => (
+              <th key={day.date} scope="col" className="border-b border-input py-2 text-xs">
+                <Button variant="ghost" size="sm" aria-label={`Show ${day.label}`} onClick={() => onDay(day.date)}>
+                  <span>
+                    {day.weekday}
+                    <span className="block font-normal text-muted-foreground">{day.label}</span>
+                  </span>
+                </Button>
+              </th>
+            ))}
+          </tr>
+          {items.some((item) => item.projection.start.type === 'date') && (
+            <tr>
+              <th scope="row" className="p-1 text-xs font-normal text-muted-foreground">
+                All day
+              </th>
+              {days.map((day) => (
+                <td key={day.date} className="border border-input p-1 align-top">
+                  <div className="space-y-1">
+                    {items
+                      .filter(
+                        (item) => item.projection.start.type === 'date' && occurrenceOverlapsDay(item.projection, day),
+                      )
+                      .map((item) => (
+                        <div key={keyFor(item)}>{eventButton(item)}</div>
+                      ))}
+                  </div>
+                </td>
+              ))}
+            </tr>
+          )}
+        </thead>
+        <tbody>
+          <tr>
+            <td className="relative h-[1152px] align-top">
+              {Array.from({ length: 24 }, (_, hour) => (
+                <span
+                  key={hour}
+                  className="absolute right-2 text-[10px] text-muted-foreground"
+                  style={{ top: hour * 48 }}
+                >
+                  {String(hour).padStart(2, '0')}:00
+                </span>
+              ))}
+            </td>
+            {days.map((day) => {
+              const dayItems = timed
+                .filter((item) => occurrenceOverlapsDay(item.projection, day))
+                .sort((a, b) => a.projection.start_epoch_ms - b.projection.start_epoch_ms);
+              // Overlapping events retain separate columns and independent native-post targets.
+              const columns: number[] = [];
+              const positioned = dayItems.map((item) => {
+                const start = item.projection.start_epoch_ms <= day.start ? 0 : minute(item.projection.start_epoch_ms);
+                const end = item.projection.end_epoch_ms >= day.end ? 1440 : minute(item.projection.end_epoch_ms);
+                const duration =
+                  end > start
+                    ? end - start
+                    : Math.max(30, (item.projection.end_epoch_ms - item.projection.start_epoch_ms) / 60000);
+                // Compare drawn intervals too: repeated DST hours and short touch targets must not cover one another.
+                let column = columns.findIndex((end) => end <= start);
+                if (column < 0) column = columns.length;
+                columns[column] = start + Math.max(40, duration);
+                return { item, column, start, duration };
+              });
+              return (
+                <td
+                  key={day.date}
+                  className="relative h-[1152px] border-l border-input align-top"
+                  style={{
+                    backgroundImage:
+                      'repeating-linear-gradient(to bottom, transparent 0, transparent 47px, var(--input) 47px, var(--input) 48px)',
+                  }}
+                >
+                  {positioned.map(({ item, column, start, duration }) => (
+                    <div
+                      key={keyFor(item)}
+                      className="absolute px-0.5 py-px"
+                      style={{
+                        top: start * 0.8,
+                        height: Math.max(32, Math.min(duration, 1440 - start) * 0.8),
+                        left: `${(column * 100) / columns.length}%`,
+                        width: `${100 / columns.length}%`,
+                      }}
+                    >
+                      {eventButton(item)}
+                    </div>
+                  ))}
+                </td>
+              );
+            })}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function CalendarBody() {
-  const preferences = useEventkyPreferences();
-  const { requireAuth, isAuthenticated } = useRequireAuth();
-  const [importOpen, setImportOpen] = useState(false);
-  const { view, timezone, weekStart, setView, setTimezone, setWeekStart } = preferences;
-  const [anchor, setAnchor] = useState(() => calendarToday('UTC'));
+  const [view, setView] = useState<CalendarView>('agenda');
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const weekStart = 1;
+  const discovery = useEventkyCalendars();
+  const [anchor, setAnchor] = useState(() => calendarToday(timezone));
   const [visibleCount, setVisibleCount] = useState(25);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const router = useRouter();
   const search = useSearchParams();
-  const explicitSelection = search.has('calendar') || search.has('all');
-  const calendars = [...new Set(explicitSelection ? search.getAll('calendar') : preferences.subscriptions)];
+  const calendars = [...new Set(search.getAll('calendar'))];
   const validFilter = calendars.length <= 8 && calendars.every((uri) => postUriSchema.safeParse(uri).success);
   const window = getCalendarWindow(anchor, view, timezone, weekStart);
   const calendar = useEventkyCalendar(
     validFilter ? { from: window.from, to: window.to, timezone, calendars, include_cancelled: true } : null,
   );
-  const form = useForm<CalendarFilters>({
-    resolver: zodResolver(calendarFiltersSchema),
-    defaultValues: { timezone, calendarUri: '' },
-  });
-  useEffect(() => {
-    form.setValue('timezone', timezone);
-  }, [form, timezone]);
   const keyFor = (item: CalendarOccurrence) => `${item.projection.post_id}:${item.projection.occurrence_key}`;
   const selected = calendar.items.find((item) => keyFor(item) === selectedKey);
   const setDate = (date: string) => {
@@ -83,19 +232,6 @@ function CalendarBody() {
     setVisibleCount(25);
     setSelectedKey(null);
   };
-  const submitFilters = form.handleSubmit(({ timezone: nextZone, calendarUri }) => {
-    setTimezone(nextZone);
-    setVisibleCount(25);
-    setSelectedKey(null);
-    if (calendarUri && !calendars.includes(calendarUri)) {
-      if (calendars.length >= 8) {
-        form.setError('calendarUri', { message: 'Choose up to eight calendars.' });
-        return;
-      }
-      router.replace(getCalendarRoute([...calendars, calendarUri]));
-      form.setValue('calendarUri', '');
-    }
-  });
   const compactTime = (item: CalendarOccurrence) =>
     item.projection.start.type === 'date'
       ? 'All day'
@@ -105,19 +241,11 @@ function CalendarBody() {
 
   return (
     <Container className="gap-6">
-      {importOpen && isAuthenticated && getEventkyEnabled() && (
-        <DialogEventkyImport open onOpenChange={setImportOpen} />
-      )}
       <Container overrideDefaults className="flex flex-wrap items-center justify-between gap-3">
         <Typography as="h1" size="lg" className="flex items-center gap-2">
           <CalendarDays aria-hidden="true" />
           Calendar
         </Typography>
-        {getEventkyEnabled() && (
-          <Button variant="outline" onClick={() => requireAuth(() => setImportOpen(true))}>
-            Import calendar
-          </Button>
-        )}
         <Button variant="outline" onClick={calendar.refresh} disabled={calendar.isRefreshing}>
           <RefreshCw aria-hidden="true" className={cn('size-4', calendar.isRefreshing && 'animate-spin')} />
           Refresh
@@ -146,7 +274,7 @@ function CalendarBody() {
         </Button>
         <Container className="mx-0 w-fit gap-2">
           <Label htmlFor="calendar-date">Date</Label>
-          <Input id="calendar-date" type="date" value={anchor} onChange={(event) => setDate(event.target.value)} />
+          <EventkyDatePicker id="calendar-date" value={anchor} onChange={setDate} />
         </Container>
         <Button
           variant="outline"
@@ -159,159 +287,71 @@ function CalendarBody() {
         <Button variant="outline" onClick={() => setDate(calendarToday(timezone))}>
           Today
         </Button>
-        <Container className="mx-0 w-fit gap-2">
-          <Label htmlFor="calendar-week-start">Week starts on</Label>
-          <Select value={String(weekStart)} onValueChange={(value) => setWeekStart(value === '7' ? 7 : 1)}>
-            <SelectTrigger id="calendar-week-start">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">Monday</SelectItem>
-              <SelectItem value="7">Sunday</SelectItem>
-            </SelectContent>
-          </Select>
-        </Container>
       </Container>
-      <form onSubmit={submitFilters} className="flex flex-wrap items-end gap-3">
-        <Container className="min-w-48 flex-1 gap-2">
-          <Label htmlFor="calendar-timezone">Display timezone</Label>
-          <Controller
-            control={form.control}
-            name="timezone"
-            render={({ field }) => (
-              <Input
-                {...field}
-                id="calendar-timezone"
-                aria-invalid={!!form.formState.errors.timezone}
-                aria-describedby="calendar-timezone-error"
-              />
-            )}
-          />
-          <span id="calendar-timezone-error" className="text-sm text-destructive">
-            {form.formState.errors.timezone?.message}
-          </span>
-        </Container>
-        <Container className="min-w-60 flex-1 gap-2">
-          <Label htmlFor="calendar-uri">Add a calendar post URI</Label>
-          <Controller
-            control={form.control}
-            name="calendarUri"
-            render={({ field }) => (
-              <Input
-                {...field}
-                id="calendar-uri"
-                placeholder="pubky://…/pub/pubky.app/posts/…"
-                aria-invalid={!!form.formState.errors.calendarUri}
-                aria-describedby="calendar-uri-error"
-              />
-            )}
-          />
-          <span id="calendar-uri-error" className="text-sm text-destructive">
-            {form.formState.errors.calendarUri?.message}
-          </span>
-        </Container>
-        <Button type="submit" variant="outline">
-          Apply
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => {
-            const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            form.setValue('timezone', zone);
-            setTimezone(zone);
-          }}
-        >
-          Use device timezone
-        </Button>
-      </form>
-      <Container overrideDefaults className="flex flex-wrap gap-2">
-        <Button
-          variant="ghost"
-          aria-pressed={search.has('all') || calendars.length === 0}
-          onClick={() => router.replace(`${getCalendarRoute()}?all=1`)}
-        >
-          All events
-        </Button>
-        <Button
-          variant="ghost"
-          disabled={!preferences.subscriptions.length}
-          aria-pressed={!explicitSelection && preferences.subscriptions.length > 0}
-          onClick={() => router.replace(getCalendarRoute())}
-        >
-          Shown calendars ({preferences.subscriptions.length})
-        </Button>
-      </Container>
-      <details className="rounded-lg border border-input p-3">
-        <summary className="cursor-pointer text-sm font-medium">Local calendar preferences</summary>
-        <Container className="gap-3 pt-3">
-          <Typography size="sm" className="text-muted-foreground">
-            Saved on this browser for this account and server. Published alarms do not turn on reminders.
-          </Typography>
-          {preferences.reminders.map((reminder, index) => (
-            <Container
-              overrideDefaults
-              key={`${reminder.postUri}:${reminder.occurrenceKey ?? ''}`}
-              className="flex items-center gap-2"
-            >
-              <Typography size="sm" className="min-w-0 truncate">
-                {reminder.postUri}
-              </Typography>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label={`Remove reminder ${index + 1}`}
-                onClick={() => preferences.removeReminder(reminder)}
-              >
-                Remove reminder
-              </Button>
-            </Container>
-          ))}
-          {preferences.reminders.length > 0 && (
-            <Typography size="xs" className="text-muted-foreground">
-              Reminders are delivered only while Pubky is open.
-            </Typography>
-          )}
-          <Button variant="outline" size="sm" className="w-fit" onClick={preferences.clearPreferences}>
-            Clear local calendar preferences
+      <Container className="gap-3" aria-label="Calendar selection">
+        <Typography size="sm" className="font-medium">
+          Calendars
+        </Typography>
+        <Container overrideDefaults className="flex flex-wrap gap-2">
+          <Button
+            variant={calendars.length === 0 ? 'default' : 'outline'}
+            aria-pressed={calendars.length === 0}
+            onClick={() => router.replace(getCalendarRoute())}
+          >
+            All events
           </Button>
-        </Container>
-      </details>
-      {calendars.length > 0 && (
-        <Container className="gap-2">
-          <Typography size="sm">Selected calendars ({calendars.length})</Typography>
-          {calendars.map((uri, index) => (
-            <Container overrideDefaults key={uri} className="flex items-center gap-2">
-              <Typography size="sm" className="min-w-0 truncate">
-                {uri}
-              </Typography>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label={`Show calendar ${index + 1}`}
-                aria-pressed={preferences.subscriptions.includes(uri)}
-                onClick={() => preferences.toggleCalendar(uri)}
-              >
-                {preferences.subscriptions.includes(uri) ? 'Shown' : 'Show'}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Remove calendar ${index + 1}`}
-                onClick={() => {
-                  const remaining = calendars.filter((item) => item !== uri);
-                  router.replace(remaining.length ? getCalendarRoute(remaining) : `${getCalendarRoute()}?all=1`);
-                }}
-              >
-                <X />
-              </Button>
-            </Container>
+          {discovery.calendars.map((option) => (
+            <Button
+              key={option.uri}
+              variant={calendars.includes(option.uri) ? 'default' : 'outline'}
+              aria-pressed={calendars.includes(option.uri)}
+              disabled={!calendars.includes(option.uri) && calendars.length >= 8}
+              onClick={() =>
+                router.replace(
+                  getCalendarRoute(
+                    calendars.includes(option.uri)
+                      ? calendars.filter((uri) => uri !== option.uri)
+                      : [...calendars, option.uri],
+                  ),
+                )
+              }
+            >
+              {option.name}
+            </Button>
           ))}
+          {calendars
+            .filter((uri) => !discovery.calendars.some((option) => option.uri === uri))
+            .map((uri, index) => (
+              <Button
+                key={uri}
+                variant="outline"
+                aria-label={`Remove calendar ${index + 1}`}
+                onClick={() => router.replace(getCalendarRoute(calendars.filter((value) => value !== uri)))}
+              >
+                Selected calendar {index + 1}
+                <X className="size-4" />
+              </Button>
+            ))}
+          {(discovery.hasMore || discovery.error) && (
+            <Button variant="ghost" disabled={discovery.isLoading} onClick={discovery.loadMore}>
+              {discovery.error ? 'Try again' : 'More calendars'}
+            </Button>
+          )}
         </Container>
-      )}
+        {discovery.isLoading && (
+          <Typography size="sm" className="text-muted-foreground">
+            Loading calendars…
+          </Typography>
+        )}
+        {discovery.error && (
+          <Typography size="sm" role="status">
+            {discovery.error}
+          </Typography>
+        )}
+      </Container>
       {!validFilter && (
         <Typography role="alert" className="text-destructive">
-          Choose up to eight valid calendar post URIs.
+          Choose up to eight available calendars.
         </Typography>
       )}
       {calendar.error && (
@@ -368,30 +408,42 @@ function CalendarBody() {
               </Container>
             ) : (
               <>
-                <Container overrideDefaults className="overflow-x-auto rounded-lg border border-input">
-                  <table
-                    className={cn('w-full table-fixed border-collapse', view !== 'day' && 'min-w-3xl')}
-                    aria-label={`${view[0].toUpperCase() + view.slice(1)} calendar`}
-                  >
-                    <thead>
-                      <tr>
-                        {window.days.slice(0, view === 'day' ? 1 : 7).map((day) => (
-                          <th
-                            scope="col"
-                            key={day.date}
-                            className="border-b border-input p-2 text-sm text-muted-foreground"
-                          >
-                            {day.weekday}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Array.from({ length: Math.ceil(window.days.length / (view === 'day' ? 1 : 7)) }, (_, row) => (
-                        <tr key={row}>
-                          {window.days
-                            .slice(row * (view === 'day' ? 1 : 7), (row + 1) * (view === 'day' ? 1 : 7))
-                            .map((day) => (
+                {view === 'week' || view === 'day' ? (
+                  <CalendarSchedule
+                    days={window.days}
+                    items={calendar.items}
+                    timezone={timezone}
+                    view={view}
+                    selectedKey={selectedKey}
+                    onSelect={setSelectedKey}
+                    onDay={(date) => {
+                      setDate(date);
+                      changeView('day');
+                    }}
+                  />
+                ) : (
+                  <Container overrideDefaults className="overflow-x-auto rounded-lg border border-input">
+                    <table
+                      className={cn('w-full table-fixed border-collapse', 'min-w-3xl')}
+                      aria-label={`${view[0].toUpperCase() + view.slice(1)} calendar`}
+                    >
+                      <thead>
+                        <tr>
+                          {window.days.slice(0, 7).map((day) => (
+                            <th
+                              scope="col"
+                              key={day.date}
+                              className="border-b border-input p-2 text-sm text-muted-foreground"
+                            >
+                              {day.weekday}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Array.from({ length: Math.ceil(window.days.length / 7) }, (_, row) => (
+                          <tr key={row}>
+                            {window.days.slice(row * 7, (row + 1) * 7).map((day) => (
                               <td key={day.date} className="h-32 border border-input p-2 align-top">
                                 <Button
                                   variant="ghost"
@@ -431,11 +483,12 @@ function CalendarBody() {
                                 </Container>
                               </td>
                             ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </Container>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </Container>
+                )}
                 {selected && (
                   <section aria-label="Selected event">
                     <OccurrencePost occurrence={selected} />

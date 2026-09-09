@@ -1,17 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getCalendarRoute } from '@/app/routes';
 import { useEventkyCalendar } from '@/hooks/useEventkyCalendar/useEventkyCalendar';
 import type { CalendarOccurrence } from '@/hooks/useEventkyCalendar/useEventkyCalendar.types';
-import { getNexusUrl } from '@/libs/runtime-config/runtime-config';
 import { useEventkyOccurrence } from '@/organisms/EventkyPostContent/EventkyOccurrenceContext';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import {
-  EMPTY_EVENTKY_PREFERENCES,
-  eventkyPreferenceScope,
-  useEventkyCalendarStore,
-} from '@/stores/eventkyCalendar/eventkyCalendar.store';
 import { eventkyEventFixture } from '@/test/fixtures/eventky';
 import {
   occurrencePageFixture,
@@ -32,6 +26,13 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(search.current),
 }));
 vi.mock('@/hooks/useEventkyCalendar/useEventkyCalendar', () => ({ useEventkyCalendar: mockQuery }));
+vi.mock('@/hooks/useEventkyCalendar/useEventkyCalendars', () => ({
+  useEventkyCalendars: () => ({
+    calendars: [{ uri: projectionPostUri, name: 'Builders' }],
+    isLoading: false,
+    hasMore: false,
+  }),
+}));
 vi.mock('@/libs/eventky/calendarView', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/libs/eventky/calendarView')>()),
   calendarToday: () => '2026-10-25',
@@ -54,6 +55,8 @@ vi.mock('@/organisms/PostMain/PostMain', () => ({
     );
   },
 }));
+
+const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
 
 const occurrence: CalendarOccurrence = {
   projection: projectedOccurrenceFixture,
@@ -79,11 +82,13 @@ function queryResult(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function (this: Intl.DateTimeFormat) {
+    return { ...originalResolvedOptions.call(this), timeZone: 'Europe/Zurich' };
+  });
   search.current = '';
   mockEnabled.mockReturnValue(true);
   mockQuery.mockReturnValue(queryResult());
   useAuthStore.setState({ currentUserPubky: null });
-  useEventkyCalendarStore.setState({ scopes: {} });
 });
 
 describe('Calendar', () => {
@@ -97,9 +102,9 @@ describe('Calendar', () => {
     expect(screen.getByRole('heading', { name: 'Pubky community meetup' })).toBeInTheDocument();
     expect(mockQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: '2026-10-25T00:00:00.000Z',
-        to: '2026-11-24T00:00:00.000Z',
-        timezone: 'UTC',
+        from: '2026-10-24T22:00:00.000Z',
+        to: '2026-11-23T23:00:00.000Z',
+        timezone: 'Europe/Zurich',
         include_cancelled: true,
       }),
     );
@@ -120,14 +125,91 @@ describe('Calendar', () => {
     },
   );
 
+  it('starts week columns on Monday without exposing week preferences', () => {
+    render(<Calendar />);
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+    expect(screen.getAllByRole('columnheader')[0]).toHaveTextContent('Mon');
+    expect(screen.queryByLabelText('Week starts on')).not.toBeInTheDocument();
+  });
+
+  it('shows hourly positions, duration labels and separate overlapping events in day view', () => {
+    mockQuery.mockReturnValue(
+      queryResult({
+        items: [
+          occurrence,
+          {
+            ...occurrence,
+            event: { ...occurrence.event, summary: 'Another meetup' },
+            projection: { ...occurrence.projection, post_id: 'other:event' },
+          },
+        ],
+      }),
+    );
+    render(<Calendar />);
+    fireEvent.click(screen.getByRole('button', { name: 'Day' }));
+    expect(screen.getByText('18:00')).toBeInTheDocument();
+    const event = within(screen.getByRole('table', { name: 'Day calendar' })).getByRole('button', {
+      name: /Pubky community meetup/,
+    });
+    expect(event.parentElement).toHaveStyle({ width: '50%' });
+    expect(event.parentElement).toHaveStyle({ height: '96px' });
+    expect(within(screen.getByRole('table')).getByRole('button', { name: /Another meetup/ })).toBeInTheDocument();
+  });
+
+  it('keeps repeated daylight-saving hours independently selectable', () => {
+    mockQuery.mockReturnValue(
+      queryResult({
+        items: [0, 1].map((hour) => ({
+          ...occurrence,
+          projection: {
+            ...occurrence.projection,
+            post_id: `repeat:${hour}`,
+            start_epoch_ms: Date.parse(`2026-10-25T0${hour}:30:00Z`),
+            end_epoch_ms: Date.parse(`2026-10-25T0${hour}:50:00Z`),
+          },
+        })),
+      }),
+    );
+    render(<Calendar />);
+    fireEvent.click(screen.getByRole('button', { name: 'Day' }));
+    const events = within(screen.getByRole('table', { name: 'Day calendar' })).getAllByRole('button', {
+      name: /Pubky community meetup/,
+    });
+    expect(events).toHaveLength(2);
+    expect(events[0].parentElement).toHaveStyle({ left: '0%', width: '50%' });
+    expect(events[1].parentElement).toHaveStyle({ left: '50%', width: '50%' });
+  });
+
+  it('keeps all-day events above the hourly schedule', () => {
+    mockQuery.mockReturnValue(
+      queryResult({
+        items: [
+          {
+            ...occurrence,
+            projection: {
+              ...occurrence.projection,
+              start: { type: 'date', value: '2026-10-25' },
+              end: { type: 'date', value: '2026-10-26' },
+            },
+          },
+        ],
+      }),
+    );
+    render(<Calendar />);
+    fireEvent.click(screen.getByRole('button', { name: 'Day' }));
+    const heading = screen.getByRole('rowheader', { name: 'All day' });
+    expect(within(heading.parentElement!).getByRole('button', { name: /Pubky community meetup/ })).toBeInTheDocument();
+  });
+
   it('changes date windows through the date control and navigation buttons', () => {
     render(<Calendar />);
-    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-12-31' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Date' }));
+    fireEvent.click(screen.getByRole('button', { name: /October 31st, 2026/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Day' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next date range' }));
-    expect(screen.getByLabelText('Date')).toHaveValue('2027-01-01');
+    expect(screen.getByRole('button', { name: 'Date' })).toHaveTextContent('Nov 1, 2026');
     expect(mockQuery).toHaveBeenLastCalledWith(
-      expect.objectContaining({ from: '2027-01-01T00:00:00.000Z', to: '2027-01-02T00:00:00.000Z' }),
+      expect.objectContaining({ from: '2026-10-31T23:00:00.000Z', to: '2026-11-01T23:00:00.000Z' }),
     );
   });
 
@@ -143,7 +225,7 @@ describe('Calendar', () => {
     mockQuery.mockReturnValue(queryResult({ items: [] }));
     render(<Calendar />);
     expect(mockQuery).toHaveBeenLastCalledWith(null);
-    expect(screen.getByRole('alert')).toHaveTextContent('valid calendar post URIs');
+    expect(screen.getByRole('alert')).toHaveTextContent('available calendars');
     expect(screen.queryByText('No visible events in this date range.')).not.toBeInTheDocument();
   });
 
@@ -155,55 +237,26 @@ describe('Calendar', () => {
     ]).toString();
     render(<Calendar />);
     expect(mockQuery).toHaveBeenCalledWith(expect.objectContaining({ calendars: [projectionPostUri, second] }));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove calendar 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Builders' }));
     expect(mockReplace).toHaveBeenCalledWith(getCalendarRoute([second]));
   });
 
-  it('validates timezone input and retains prior query semantics on invalid input', async () => {
+  it('always uses device timezone without display settings, import or URI fields', () => {
     render(<Calendar />);
-    fireEvent.change(screen.getByLabelText('Display timezone'), { target: { value: 'Not/AZone' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
-    await waitFor(() =>
-      expect(screen.getByText('Choose a supported timezone, such as Europe/Zurich.')).toBeInTheDocument(),
+    expect(mockQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
     );
-    expect(
-      (
-        useEventkyCalendarStore.getState().scopes[eventkyPreferenceScope(null, getNexusUrl())] ??
-        EMPTY_EVENTKY_PREFERENCES
-      ).timezone,
-    ).toBe('UTC');
-    fireEvent.change(screen.getByLabelText('Display timezone'), { target: { value: 'Europe/Zurich' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
-    await waitFor(() =>
-      expect(
-        (
-          useEventkyCalendarStore.getState().scopes[eventkyPreferenceScope(null, getNexusUrl())] ??
-          EMPTY_EVENTKY_PREFERENCES
-        ).timezone,
-      ).toBe('Europe/Zurich'),
-    );
-    expect(mockQuery).toHaveBeenLastCalledWith(expect.objectContaining({ timezone: 'Europe/Zurich' }));
+    expect(screen.queryByLabelText('Display timezone')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Add a calendar post URI')).not.toBeInTheDocument();
+    expect(screen.queryByText('Local calendar preferences')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Import calendar' })).not.toBeInTheDocument();
   });
 
-  it('uses this account’s shown calendars by default while allowing an explicit all-events view', () => {
-    const account = 'y'.repeat(52);
-    useAuthStore.setState({ currentUserPubky: account });
-    const scope = eventkyPreferenceScope(account, getNexusUrl());
-    useEventkyCalendarStore.getState().updateScope(scope, () => ({
-      ...EMPTY_EVENTKY_PREFERENCES,
-      subscriptions: [projectionPostUri],
-    }));
-    const { rerender } = render(<Calendar />);
-    expect(mockQuery).toHaveBeenLastCalledWith(expect.objectContaining({ calendars: [projectionPostUri] }));
-    expect(screen.getByRole('button', { name: 'Shown calendars (1)' })).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(screen.getByRole('button', { name: 'Remove calendar 1' }));
-    expect(mockReplace).toHaveBeenLastCalledWith('/calendar?all=1');
-    expect(useEventkyCalendarStore.getState().scopes[scope].subscriptions).toEqual([projectionPostUri]);
-    search.current = 'all=1';
-    rerender(<Calendar />);
+  it('selects discoverable calendars by name without saving local preferences', () => {
+    render(<Calendar />);
     expect(mockQuery).toHaveBeenLastCalledWith(expect.objectContaining({ calendars: [] }));
-    fireEvent.click(screen.getByRole('button', { name: 'Shown calendars (1)' }));
-    expect(mockReplace).toHaveBeenLastCalledWith('/calendar');
+    fireEvent.click(screen.getByRole('button', { name: 'Builders' }));
+    expect(mockReplace).toHaveBeenLastCalledWith(getCalendarRoute([projectionPostUri]));
   });
 
   it('distinguishes incomplete, stale, hidden, unavailable and truly empty results', () => {

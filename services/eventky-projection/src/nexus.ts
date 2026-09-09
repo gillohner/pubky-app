@@ -38,6 +38,8 @@ export class NexusProjectionSource implements SourceAdapter {
     private readonly baseUrl: string,
     private readonly token: string,
     private readonly request: typeof fetch = fetch,
+    private readonly pause: (milliseconds: number) => Promise<void> = (milliseconds) =>
+      new Promise((resolve) => setTimeout(resolve, milliseconds)),
   ) {
     const url = new URL(baseUrl);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
@@ -47,11 +49,32 @@ export class NexusProjectionSource implements SourceAdapter {
   }
 
   private async get(path: string): Promise<unknown> {
-    const response = await this.request(`${this.backendId}/v0/projection/posts/${path}`, {
-      headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/json' },
-      redirect: 'error',
-      signal: AbortSignal.timeout(15000),
-    });
+    // Inventory/replay needs several consecutive requests. Preserve the current request
+    // across throttling; restarting the whole pass can spend every available token on head.
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      response = await this.request(`${this.backendId}/v0/projection/posts/${path}`, {
+        headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/json' },
+        redirect: 'error',
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.status !== 429) break;
+      const retryAfter = response.headers.get('retry-after');
+      await response.body?.cancel();
+      if (attempt === 5) throw new Error('Nexus sync remained rate limited after bounded retries.');
+      const seconds =
+        retryAfter && /^\d+$/.test(retryAfter)
+          ? Number(retryAfter)
+          : retryAfter
+            ? (Date.parse(retryAfter) - Date.now()) / 1000
+            : 2 ** attempt;
+      // A malformed header uses exponential backoff. A valid long delay is left to
+      // the next sync pass instead of holding the single writer for unbounded time.
+      if (Number.isFinite(seconds) && seconds > 60)
+        throw new Error('Nexus sync rate-limit delay exceeds the retry budget.');
+      await this.pause(Math.max(1000, (Number.isFinite(seconds) ? seconds : 2 ** attempt) * 1000));
+    }
+    if (!response) throw new Error('Nexus sync response is empty.');
     if (response.status === 410) {
       await response.body?.cancel();
       throw new SourceResetError('Nexus source epoch or retention changed.');

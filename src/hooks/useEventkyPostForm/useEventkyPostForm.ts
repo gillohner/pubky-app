@@ -238,6 +238,7 @@ export function useEventkyPostForm(input: EventkyPostFormOptions) {
     previewEvent,
     pendingRetry,
     hasConflict,
+    postId: options.postId,
     isEditing: !!options.postId,
     dirty: form.formState.isDirty || files.changed || tags.length > 0,
   };

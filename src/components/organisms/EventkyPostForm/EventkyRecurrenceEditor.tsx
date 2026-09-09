@@ -10,7 +10,7 @@ import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
 import { Typography } from '@/atoms/Typography/Typography';
 import type { useEventkyPostForm } from '@/hooks/useEventkyPostForm/useEventkyPostForm';
-import { formatCalendarTime } from '@/libs/eventky/display';
+import { formatAuthoringCalendarTime as formatCalendarTime } from '@/libs/eventky/display';
 import {
   movedOccurrenceTime,
   moveOccurrence,
@@ -21,6 +21,7 @@ import {
   recurrencePreset,
 } from '@/libs/eventky/recurrenceEditor';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
+import { EventkyDatePicker } from '@/molecules/EventkyDatePicker/EventkyDatePicker';
 
 type State = ReturnType<typeof useEventkyPostForm>;
 
@@ -61,13 +62,14 @@ function OccurrenceEditor({ occurrence, state }: { occurrence: EventOccurrence; 
         <Label htmlFor={`${id}-title`}>Title for this occurrence</Label>
         <Input id={`${id}-title`} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={500} />
         <Label htmlFor={`${id}-date`}>Move to date</Label>
-        <Input id={`${id}-date`} type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+        <EventkyDatePicker id={`${id}-date`} value={date} onChange={setDate} />
         {occurrence.start.type !== 'date' && (
           <>
             <Label htmlFor={`${id}-time`}>Move to time</Label>
             <Input
               id={`${id}-time`}
               type="time"
+              className="scheme-dark"
               step={1}
               value={time}
               onChange={(event) => setTime(event.target.value)}
@@ -180,12 +182,11 @@ export function EventkyRecurrenceEditor({ state }: { state: State }) {
       <Container overrideDefaults className="flex flex-wrap items-end gap-2">
         <Container className="gap-2">
           <Label htmlFor={`${id}-preview`}>Preview from</Label>
-          <Input
+          <EventkyDatePicker
             id={`${id}-preview`}
-            type="date"
             value={date}
-            onChange={(event) => {
-              setDate(event.target.value);
+            onChange={(value) => {
+              setDate(value);
               setPreview(null);
             }}
           />

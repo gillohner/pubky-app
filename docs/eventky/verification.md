@@ -1,8 +1,67 @@
 # Eventky verification record
 
-This record distinguishes passing component checks from release gates that still need evidence. Commands run in the isolated feature checkouts, leaving the user's original repositories unchanged.
+This record separates observed checks from the remaining acceptance work. **The revised implementation is not yet verified complete.** Historical test totals below belong to the earlier scope and source revisions.
 
-## Recorded checks
+## Revised scope: observed checks
+
+| Check                               | Observed evidence                                                                                                                                                                        | Limit                                                                                                                                           |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Focused revised regression batch    | 210 tests / 14 files passed; `/tmp/eventky-revised-tests.log`                                                                                                                            | Earlier in the revision; later fixes require their own checks                                                                                   |
+| Device-timezone display             | 31 tests / 4 files passed; `/tmp/eventky-device-display-tests.log`                                                                                                                       | Covers engine/display/device-hook behavior, not all live browser journeys                                                                       |
+| Calendar schedule                   | 16 tests passed; `/tmp/calendar-schedule-final-tests.log`; 4 Chromium VRT tests passed in `/tmp/calendar-schedule-final-vrt2.log`                                                        | Mocked/fixture data; real staging view tests still required                                                                                     |
+| Composer lifecycle/serialization    | 21 existing hook tests passed                                                                                                                                                            | Scope is authoring logic, not complete social behavior                                                                                          |
+| Shared date/time fields             | 6 tests passed across shared picker and field suites; `/tmp/composer-recurrence-unit2.log`                                                                                               | Monday-first dates, disabled state, civil-date values, timezone/calendar selection and duration behavior                                        |
+| Advanced recurrence browser flow    | 2 Chromium tests passed; `/tmp/composer-recurrence-vrt2.log`                                                                                                                             | Browser fixture moves October 1 to October 2 and verifies original recurrence identity/source zone in saved payload; controller write is mocked |
+| Contributor full-name fix           | 1 regression test passed; `/tmp/eventky-contributor-tests.log`; focused ESLint and TypeScript checks passed                                                                              | Local fix; not yet verified in deployed browser                                                                                                 |
+| Native attendance                   | 10 tests / 3 files passed in `/tmp/attendance-final-tests.log`; 7 scope tests / 2 files passed in `/tmp/attendance-scope-tests.log`                                                      | Overlapping focused suites; real guest lifecycle remains a separate gate                                                                        |
+| Staging runtime isolation           | Real owner browser asserts `deployEnv=staging`, staging homeserver key and `/api/eventky/status` backend `http://staging-nexus:8080`; production homeserver network requests are blocked | Verifies the tested origin/configuration; recheck after deployment changes                                                                      |
+| Native staging publication          | Calendar and event created through the actual UI; successful homeserver PUTs captured in `/tmp/eventky-staging-fixtures.json`; `/tmp/eventky-authoring-create3.log`                      | Contributor was omitted while guest indexing was unavailable                                                                                    |
+| Native staging event fields         | Confirmed `America/New_York`, weekly COUNT=6, selected calendar URI and displayed `eventky-staging` tag                                                                                  | Further edit/attachment/curation checks pending                                                                                                 |
+| Native staging reading/edit opening | `view` and `compose-preview` phases passed; screenshots in `/tmp/eventky-staging-authoring/`                                                                                             | Opening the editor is not a successful edit/write test; user header indexing still incomplete                                                   |
+| Static checks                       | Focused composer lint, diff checks and later TypeScript checks passed                                                                                                                    | No claim that the latest complete worktree has a clean final whole-repository lint/test run                                                     |
+
+These suites overlap; do not sum them into a unique test count. Browser fixture tests do not substitute for real homeserver end-to-end tests.
+
+## Deployment update
+
+The lead reports both projection services healthy on `staging-backoff-20260909`. Frontend `staging-20260909c` built successfully and is being deployed with the full-name contributor fix. These operational results do not replace pending guest social, owner edit/attachment/curation and final loaded-screen checks. The canonical verified staging TLS/API hostname is `homeserver.staging.pubky.app`.
+
+## Screenshot review
+
+Checked-in Chromium baselines include desktop/mobile composer, open date picker, recurrence-preview picker and occurrence-move picker images. They were inspected for spacing, clipping, control alignment and theme consistency. The review led to friendly duration units and a corrected dark-theme occurrence-time icon.
+
+Real staging screenshots capture the calendar composer, populated event editor and native event post at desktop/mobile widths. The event's New York time correctly displays on the next day in Zurich. The first post captures still show author/loading skeletons while the staging user index catches up; they are diagnostic evidence, not the final clean visual acceptance set. The script now clears autofocus selection and waits for the relevant content before capture. Final screenshots must be taken again after indexing recovery and the last deployment.
+
+## Remaining end-to-end gates
+
+1. Finish staging backend indexing recovery and verify the owner/guest profiles and source projection reach the expected state.
+2. Complete guest Going/Maybe/Can't go changes, indexed attendance refresh, comments, tags, bookmarks and reposts with the native UI.
+3. Complete owner event editing, attachment upload, moved and cancelled occurrences, and preservation of series identity/social discussion.
+4. Deploy and exercise full-name contributor selection. Exercise named event exclusion and restoration without changing the event post.
+5. Verify calendar selection, agenda/month/week/day navigation and occurrence rendering against the real staging records, including display-zone/date-boundary behavior.
+6. Verify the final deployed UI has no import/export, subscription-link, alarm/reminder, saved local calendar-preference or URI-pasting controls.
+7. Run integrated checks appropriate to the final worktree and review the final loaded desktop/mobile screenshots. Do not infer complete Safari/Firefox coverage from Chromium.
+
+The owner script preserves fixture identities and refuses non-staging authoring. Its prepared `edit` and `curate` phases are not passing evidence until their actual runs finish. Only disposable staging accounts may write test data; no signup admin credential or signing key belongs in logs, docs or fixture manifests.
+
+## Repeatable current commands
+
+```sh
+NODE_OPTIONS=--no-webstorage npx vitest run --project unit src/hooks/useEventkyPostForm src/components/organisms/EventkyPostForm src/components/molecules/EventkyDatePicker
+NODE_OPTIONS=--no-webstorage npx vitest run --project vrt --browser.name chromium src/components/organisms/EventkyPostForm/EventkyPostForm.vrt.test.tsx
+npm run typecheck
+npm run lint
+EVENTKY_AUTHORING_PHASE=view EVENTKY_STAGING_ROUTE_READY=yes node scripts/eventky-staging-authoring.mjs
+# Run edit/curate only after coordinating fixture ownership and staging readiness:
+EVENTKY_AUTHORING_PHASE=edit EVENTKY_STAGING_ROUTE_READY=yes node scripts/eventky-staging-authoring.mjs
+EVENTKY_AUTHORING_PHASE=curate EVENTKY_STAGING_ROUTE_READY=yes node scripts/eventky-staging-authoring.mjs
+```
+
+The real-browser script also requires the already-created owner profile and public fixture files on the development machine; it does not create or silently replace an identity. WebKit host dependencies are unavailable in this environment. The Chromium harness can report a shutdown-timeout notice after passing tests; distinguish that notice from test failures and confirm process completion.
+
+## Historical baseline, before the revised scope
+
+The following table is retained from the original implementation record. It includes now-removed UI workflows and applies to that earlier source, not the final revised deployment. Backend [CI run 34246154418](https://github.com/gillohner/pubky-nexus/actions/runs/34246154418) passed on `4e930142` with 1,066 tests; the newer staging deployment and any indexing fixes need their own evidence. The original client full-suite result was local, not a current PR-check claim.
 
 | Check                             | Evidence                                                                                                                                                                                                                                                                                    |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -23,35 +82,3 @@ This record distinguishes passing component checks from release gates that still
 | Real homeserver social acceptance | One actual Pubky testnet homeserver→watcher→Neo4j/Redis fixture passed in 8.04 seconds. Both event/calendar kinds retained exact content, native comments, tags, reposts, bookmarks, kind-only/content edits and deletions.                                                                 |
 | Production packaging              | Dual-entry sidecar bundle passed. Migration CLI built and converted an owned legacy event without publication; oversized and non-regular file rejection passed. Final Next production build passed, including the bundled browser import worker, TypeScript, static pages and build traces. |
 | Static checks                     | Repository-wide ESLint and Prettier checks passed. Final build TypeScript passed; the test-only NODE_ENV typing issue is fixed. Rust formatting and both diff checks pass.                                                                                                                  |
-
-These are overlapping suites; do not sum the rows into a unique test count. Node 25 tests use `NODE_OPTIONS=--no-webstorage` because its native Web Storage shadows jsdom's localStorage. Sidecar runtime checks also ran on Node 24.18.0, matching its Dockerfile major version.
-
-## Delivery and deployment limits
-
-A combined run exhausted the temporary workspace quota. Generated webpack caches and superseded Rust intermediates were removed; the complete frontend regression suite then passed on frozen source. Interrupted quota runs are excluded from the passing evidence above. Temporary local database services used by completed homeserver acceptance tests were shut down afterward.
-
-The browser harness emits a shutdown-timeout notice after successful Chromium checks and exits 0. Firefox/WebKit are not established by these results; WebKit's host libraries are unavailable here. Docker image builds, live HTTPS login/write flows, external calendar-client compatibility and production throughput/capacity remain deployment checks. No implementation-phase VPS mutation or public demo-account publication occurred.
-
-The backend implementation is [PR #15](https://github.com/gillohner/pubky-nexus/pull/15), commit `4e930142d8541f9196a777aa874c495b9a1f468e` on `feat/eventky-generic-projection`, stacked on unchanged PR #14 at `77ae61a5`. Its initial CI formatter and test-only initializer warnings were corrected. A watcher CI deadlock exposed a neo4rs 0.8 PULL retry gap; the mutation boundary now drains results and retries only server-confirmed deadlock rollbacks. Six deterministic regressions pass, including bounded retries and no retry for ambiguous connection failures. The full workspace formatter and exact CI lint scope (`cargo clippy --all-targets -- -D warnings`) pass locally. Two runs on `4154c33b` passed 566 of 567 API tests and failed the pre-existing fixed-ID `test_global_influencers_with_today_timeframe` assertion. The custom-post API fixture leaked its random author into the shared graph, changing the tied-score ranking cutoff. The fixture now deletes its author after deleting its posts, and nextest runs it exclusively so ranking queries cannot cache its temporary data. Existing ranking assertions remain unchanged, and all 567 API tests pass with this fix.
-
-The client is [draft PR #1](https://github.com/gillohner/pubky-app/pull/1), with implementation commit `37913c32` and a documentation-only delivery update. The client fork currently reports no registered GitHub Actions workflows and no PR checks; its evidence is local. Backend [GitHub CI run 34246154418](https://github.com/gillohner/pubky-nexus/actions/runs/34246154418) passed on `4e930142`: 154 common tests, 567 API tests, 277 watcher tests and 68 daemon tests (1,066 passed; four explicitly ignored integration fixtures skipped). Formatting and lint also passed. The ignored projection/homeserver fixtures have separate local evidence above. Commits follow the current Git configuration and are unsigned.
-
-Permanent checkouts are `/home/gil/Repositories/pubky/pubky-app-eventky` and `/home/gil/Repositories/pubky/pubky-nexus-eventky`. Tests ran in the isolated temporary implementation checkouts before publication.
-
-## Repeatable commands
-
-```sh
-NODE_OPTIONS=--no-webstorage npm test -- --maxWorkers=4 --exclude='services/eventky-projection/**'
-# Run these with Node 24 for the sidecar runtime target:
-NODE_OPTIONS=--no-webstorage npm test -- --maxWorkers=2 services/eventky-projection/src
-npm run typecheck
-npm run lint
-NODE_OPTIONS=--no-webstorage NEXT_TELEMETRY_DISABLED=1 npm run build
-NODE_OPTIONS=--no-webstorage npx vitest run --project='vrt (chromium)' src/components/organisms/EventkyPostForm/EventkyPostForm.vrt.test.tsx
-npm run eventky:projection:build
-npm run eventky:migration:build
-```
-
-The repository's complete VRT project additionally selects Firefox and WebKit. WebKit's required host libraries are unavailable in this environment; do not claim Safari coverage from Chromium screenshots.
-
-For the Nexus tests and private protocol operation, see `docs/private-post-projection.md` in the backend feature branch. All test keys and isolated service data are disposable fixtures; no real account key is part of a source change or artifact.
