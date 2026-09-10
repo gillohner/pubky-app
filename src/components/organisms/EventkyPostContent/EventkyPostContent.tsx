@@ -169,6 +169,7 @@ export function EventkyPostContent({
           key={`${postId}:${occurrence?.projection.occurrence_key ?? 'series'}`}
           postId={postId}
           eventUid={parsed.value.uid}
+          recurring={!!(parsed.value.rrule || parsed.value.rdate?.length)}
           recurrenceId={
             occurrence?.projection.post_id === postId &&
             source.status === 'supported' &&

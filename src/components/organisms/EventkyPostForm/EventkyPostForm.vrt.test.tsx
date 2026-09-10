@@ -62,6 +62,11 @@ describe('native Eventky event composer', () => {
       await expect
         .element(page.getByRole('textbox', { name: 'Event title', exact: true }))
         .toHaveValue(EVENT_FIXTURE.summary);
+      await page.getByRole('checkbox', { name: 'All-day event', exact: true }).click();
+      await expect.element(page.getByRole('button', { name: 'Last day (inclusive)', exact: true })).toBeVisible();
+      await expect.element(page.getByRole('button', { name: 'Event timezone', exact: true })).not.toBeInTheDocument();
+      await page.getByRole('checkbox', { name: 'All-day event', exact: true }).click();
+      await expect.element(page.getByRole('button', { name: 'Event timezone', exact: true })).toBeVisible();
       await page.getByText('Description', { exact: true }).click();
       await matchVrtFrameScreenshot(`eventky-composer-${name}`);
       await page.getByRole('button', { name: 'Start date', exact: true }).click();

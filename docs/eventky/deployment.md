@@ -8,7 +8,9 @@ Review branches are `gillohner/pubky-app:feat/eventky-native` ([client PR #1](ht
 
 The HTTPS reverse proxy serves the frontend and routes Nexus reads to an isolated staging backend. The original production-homeserver Nexus dataset is not the staging test index. The browser writes through the staging homeserver; the projection is derived read-only data and receives no signing key.
 
-Frontend image `pubky-vibe/eventky-frontend:staging-20260909c` has built successfully and is being deployed. It includes the contributor full-name search fix. The earlier `staging-20260909b` image served the recorded owner publication tests. Both projection services are healthy with the `staging-backoff-20260909` image. This health result does not establish completion of the remaining user-profile/indexing and browser acceptance checks. The deployment lead owns current image/configuration state; inspect it before restart or rollback.
+Frontend `staging-20260909e` is live and healthy. Backend `dce35bf7` is live with sticky primary-user indexing enabled; both staging users are indexed and the configured projection is complete. Live HTTP 429 handling paused for 60 seconds, then a successful request advanced the persisted global cursor to 25350. Historical catch-up continues; projection completeness covers configured Nexus sources, not all homeserver history. Both projection services are healthy on `staging-backoff-20260909`. The e production build and repository lint passed.
+
+The public-key event endpoint can return HTTP 429 without `Retry-After`, while the canonical hostname succeeds at the same cursor. The deployed backend rejects non-success responses before parsing event data and applies configured exponential backoff. Cursor advancement is verified; a completed historical catch-up is not.
 
 | Boundary                       | Verified setting or behavior                                                                                    |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
@@ -30,9 +32,9 @@ Current application scope has no import/export, subscription-link, alarm/reminde
 
 1. Inspect the current frontend image, runtime network settings and reverse-proxy targets. Confirm the staging homeserver key and isolated backend identity again after any deployment change.
 2. Check the Nexus information endpoint and the private projection readiness/status. A running process or a `200` status envelope is not the same as `coverage.complete=true`.
-3. Verify newly created staging user profiles and native posts reach Nexus. At the time of this record, missing new user profiles and incomplete source catch-up remain under investigation.
+3. Verify newly created staging user profiles and native posts reach Nexus. Both fixture users and their native sources are now indexed; verify new writes separately from the still-throttled global historical stream.
 4. Reconcile projection coverage after the index is healthy. Verify zero unexplained pending/invalid/unavailable sources before interpreting an empty calendar result as complete.
-5. Run the pending real-browser gates in [verification.md](verification.md), including guest social/attendance and owner edit/curation, then capture and review the final loaded desktop/mobile UI.
+5. Run the pending real-browser gates in [verification.md](verification.md), including final current-attendee reload/occurrence checks, disposable guest-event deletion and clean desktop/mobile captures. Owner all-day creation/deletion, guest contribution, owner exclusion/restoration and the removed-workflow audit have passed.
 
 Safe public read-only checks:
 
@@ -61,6 +63,8 @@ The sidecar persists its backend identity, epoch/cursor, durable jobs, staged in
 Run one sidecar writer per database volume. Query workers use bounded execution and queue deadlines. `EVENTKY_WORKERS=1` is the conservative VPS configuration; do not override Node heap flags that defeat per-worker limits. Protocol-level feed/worker limits remain documented in [SUBSCRIPTIONS.md](../../services/eventky-projection/SUBSCRIPTIONS.md), even though the native UI has no subscription/export controls. Production throughput and broad external-client compatibility have not been established by staging functional checks.
 
 ## Recovery and rollback
+
+**Primary indexing is sticky once enabled.** Keep `watcher.primary_user_indexing=true`; do not disable it or roll back to an older backend while global history trails delegated users. Old global deletes could overwrite newer per-user state. There is no automatic safe drain/rollback protocol; a current cursor alone proves no safe handoff boundary. Follow the backend [primary-user indexing operating constraints](https://github.com/gillohner/pubky-nexus/blob/deploy/eventky-vps/docs/primary-user-indexing.md) and coordinate any ownership migration explicitly.
 
 - Capture the current image tags, source revisions, non-secret configuration and reverse-proxy targets before changing them. Keep the production and staging stacks/data identities distinct throughout recovery.
 - Disable the calendar-query flag first if projection results are unavailable. Normal event/calendar posts remain authoritative; changing feature flags does not rewrite them.

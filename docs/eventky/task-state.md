@@ -1,21 +1,25 @@
 # Eventky task state
 
-Status as of 2026-09-09: **implementation and staging acceptance in progress**. The revised user requirements supersede the original import/reminder delivery. This record does not claim completion. See [verification](verification.md) for observed results and [decisions](decisions.md) for shared boundaries.
+Status as of 2026-09-09: **final guest cleanup and staging captures in progress**. Current user decisions supersede the original import/reminder plan.
 
-| Area                                               | Owner             | Current state                                                                                                                                                      | Remaining acceptance                                                                              |
-| -------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| Native post contract and generic source projection | Lead/backend      | Existing event/calendar contract, immutable source synchronization and optional Nexus extension retained                                                           | Finish isolated staging indexing recovery; verify fresh complete projection coverage after writes |
-| Calendar views and named selection                 | calendar_ux       | Agenda/month/week/day, useful timed schedule views, shared date picker, device timezone and Monday week start implemented                                          | Real staging overlay/view/navigation checks against indexed fixtures; final visual review         |
-| Event/calendar authoring                           | composer_ux       | Shared ShadCN dates, event-only timezone selection, duration units, native named membership/contributor/exclusion controls implemented                             | Real event edit, attachment, occurrence move/cancel and calendar curation phases                  |
-| Native attendance                                  | attendance + lead | Native attendance replies, series/occurrence resolution, bounded discovery and retry/account guards implemented                                                    | Guest staging RSVP changes and social journeys, including post-index refresh behavior             |
-| Device-timezone display                            | attendance        | Reading surfaces convert through the shared calendar engine; authoring retains source wall-time labels                                                             | Final cross-device screenshot/acceptance checks                                                   |
-| Removed workflows                                  | Lead + workers    | Import/export and subscription-link UI, reminder activation and local preference controls removed; no URI-pasting controls                                         | Final absence audit in deployed UI                                                                |
-| Staging deployment                                 | Lead              | HTTPS frontend at `https://159.69.22.174`; separate staging Nexus/projection; staging homeserver runtime verified                                                  | Backend indexing fix and final frontend rebuild for later local fixes                             |
-| Real owner browser checks                          | composer_ux       | Staging calendar/event created through UI, homeserver PUTs confirmed; named calendar, timezone, recurrence and tag persisted; post rendering/editor opening passed | Run prepared edit/curate phases after guest checks and indexing readiness                         |
-| Real guest browser checks                          | Lead              | Guest staging account created                                                                                                                                      | Social/attendance results not yet established by this record                                      |
-| Evidence and review                                | Lead + workers    | Focused tests and Chromium screenshots recorded                                                                                                                    | Revised-scope completion audit and final integrated checks                                        |
+| Area | Observed state | Remaining acceptance |
+| --- | --- | --- |
+| Native event/calendar posts | Normal universal-kind posts and social actions published on staging | Final revised attendance integration |
+| Event authoring | Creation, edit, attachment, moved/cancelled recurrence and source identity preservation passed | None for these recorded journeys |
+| All-day lifecycle | Native create, civil-date projection, DELETE, exact source GET 404 and projected removal passed on d | None |
+| Calendar views | Named selection and agenda/month/week/day passed on d; mobile bounds and screenshots reviewed | Final clean captures after disposable guest event removal |
+| Guest contribution | Named owner calendar selected, source PUT/GET and complete projected membership passed on d | Owner exclusion/restoration passed on e; guest deletion pending |
+| Discovery freshness | Initial event/calendar streams and editable policy now refresh before picker use; 7 tests passed | Owner exclusion/restoration passed on e |
+| Attendance and comments | Going/Maybe and native comment/tag/bookmark/repost passed on c; grouped attendee UI and comment filtering implemented locally | e passed decline/indexed reload, unique grouped identities, clean discussion/counts and occurrence override with unchanged series response |
+| Description editor | Pubky border around full editor live on d; desktop/mobile reviewed | None |
+| Removed workflows | Import/export, subscription, alarms, local preferences and availability checkbox absent | Audit passed on e |
+| Backend | dce35bf7 live and healthy; primary users and complete configured projection verified; backoff and cursor advancement observed | Historical catch-up continues independently |
 
-Deployment update: both projection services are healthy on `staging-backoff-20260909`; frontend `staging-20260909c` built successfully and deployment is underway. The canonical staging hostname is `homeserver.staging.pubky.app`. Guest social and owner edit/curation acceptance remain pending.
+Public frontend: https://159.69.22.174. Live image: `staging-20260909e`, including attendance redesign and fresh picker discovery; production build and repository lint passed. Only the canonical staging homeserver `homeserver.staging.pubky.app` is configured for browser writes. The isolated staging projection uses `http://staging-nexus:8080`; its private source endpoints are not public.
+
+Backend `dce35bf7` handles HTTP 429 before parsing a response as event data. The live log showed a 60-second backoff and a subsequent successful request; Redis confirmed historical cursor 25350, beyond the earlier 15600 checkpoint. This is ongoing catch-up, not complete homeserver history. The source projection's completeness is scoped to its configured Nexus sources.
+
+Keep primary-user indexing enabled while global history trails delegated users. See the [backend rollback constraints](https://github.com/gillohner/pubky-nexus/blob/deploy/eventky-vps/docs/primary-user-indexing.md).
 
 ## Public staging fixtures
 
@@ -25,14 +29,19 @@ The owner key is `33z96rj5sgyodym3yf8j3jncecogmkssuzbuobprk7jts5j8swpy`.
 - Event post: `0035P2T1T0B20`.
 - Guest key: `ybjyked1u5ktb37rhzq71ddogywq7dcwmjsdumdcrh7u8reuscxy`.
 
-The event starts on 2026-10-01 at 18:00 in `America/New_York`, ends at 20:00 and repeats weekly six times. A Zurich device displays the first interval on October 2 from midnight to 02:00. The exact public source snapshots and successful owner checks are recorded in `/tmp/eventky-staging-fixtures.json` on the development machine. These are staging fixtures, not production posts.
+The event's series starts October 1, 2026 at 18:00 in `America/New_York`, ends at 20:00 and repeats weekly six times. Its first occurrence has now moved to October 2 at 18:00 New York (October 3 at midnight on a Zurich device); the original October 1 recurrence identity is retained. The October 8 occurrence is cancelled. Earlier screenshots of October 2 in Zurich describe the pre-edit first occurrence.
 
-`../../scripts/eventky-staging-authoring.mjs` uses the persistent disposable owner browser profile. Its `create`, `view` and `compose-preview` phases passed. `edit` and `curate` are prepared, not yet passed. Do not rerun `create` to duplicate existing fixtures or use the owner profile concurrently with another browser process.
+Public source/check evidence is in `/tmp/eventky-staging-fixtures.json`; projected overrides are in `/tmp/eventky-owner-edited-projection.json`. Guest evidence is `/tmp/eventky-staging-social/results.json`. These contain public staging fixture identifiers, never signing keys.
 
-## Open findings
+The owner harness creation, viewing, edit, main-event curation and all-day create/delete phases have passed. The guest-event exclusion/restoration phase passed on e. Persistent browser profiles must remain exclusive to their assigned worker.
 
-- The staging index has not yet supplied the new user profiles reliably. Author headers can remain skeletons and guest contributor discovery returns no user. The lead is investigating the backend before broadening acceptance claims.
-- A real full-name contributor search attempt exposed the mention-autocomplete restriction on spaces. The local picker now uses the existing general search hook; its regression test passes. The fix still needs deployment and real full-name selection verification.
-- Earlier baseline results (including the full 13,482 frontend and 1,066 backend suites) apply to their recorded source revisions. They are not a full regression run of the revised worktree.
+## Final handoffs
 
-Permanent implementation checkouts are `/home/gil/Repositories/pubky/pubky-app-eventky` and `/home/gil/Repositories/pubky/pubky-nexus-eventky`. The original user checkouts remain separate. Attendance invitations, delegated rosters and arbitrary RFC features outside the documented contract are not implied by native RSVP support.
+- Attendance worker owns grouped attendee UI, event discussion pagination/counts and regression coverage.
+- Composer worker owns owner curation of the held guest event and reviewed editor/attendee visuals.
+- Calendar worker owns the final guest attendance harness, disposable contribution deletion and clean calendar captures.
+- Lead owns integration review, production build/deployment, source commits, PR description and final evidence.
+
+The held guest contribution is `ybjyked1u5ktb37rhzq71ddogywq7dcwmjsdumdcrh7u8reuscxy:0035P3DJ95JTG`. Owner exclusion/restoration is verified; the assigned guest worker now owns its native deletion and projected-removal check. The main demo event and calendar remain published. The owner all-day disposable event `0035P3DM6N5Q0` has already been deleted and removed from the projection.
+
+Implementation checkouts: `/home/gil/Repositories/pubky/pubky-app-eventky` and `/home/gil/Repositories/pubky/pubky-nexus-eventky-vps`. Original user checkouts remain separate. Historical full-suite counts do not cover the final worktree; exact current evidence belongs in [verification](verification.md).

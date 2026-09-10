@@ -4,6 +4,7 @@ import type { EnrichedPostDetails } from '@/application/moderation/moderation.ty
 import { PostApplication } from '@/application/post/post';
 import type { TGetDetailsByIdsParams, TGetOrFetchPostParams, TPostUploadState } from '@/application/post/post.types';
 import { TagKind, type TCreateTagInput } from '@/application/tag/tag.types';
+import { getNexusUrl } from '@/config/nexus';
 import type {
   TCreateCollectionParams,
   TCreatePostParams,
@@ -44,11 +45,12 @@ import {
 } from '@/pipes/post/post.kind';
 import { PostNormalizer, type TToEditParams } from '@/pipes/post/post.normalizer';
 import { PostValidators } from '@/pipes/post/post.validators';
-import { builtinPostKind } from '@/pipes/post/post.wire';
+import { builtinPostKind, toPostWire } from '@/pipes/post/post.wire';
 import { TagNormalizer } from '@/pipes/tag/tag.normalizer';
 import type { NexusTag, NexusTaggers } from '@/services/nexus/nexus.types';
 import type { TCompositeId } from '@/services/nexus/post/post.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { eventkyReplyContext, useEventkyReplyWritesStore } from '@/stores/eventkyReplyWrites/eventkyReplyWrites.store';
 
 export class PostController {
   private constructor() {} // Prevent instantiation
@@ -187,7 +189,15 @@ export class PostController {
   }
 
   static async commitPreparedCreate(prepared: TPreparedPostCreate): Promise<TCreatePostResult> {
-    const outcome = await PostApplication.commitCreate(prepared);
+    if (prepared.eventReplyContext)
+      useEventkyReplyWritesStore
+        .getState()
+        .add(prepared.eventReplyContext, prepared.compositePostId, JSON.stringify(toPostWire(prepared.post)));
+    const outcome = await PostApplication.commitCreate(prepared).catch((error) => {
+      if (prepared.eventReplyContext && !prepared.uploadState.postUncertain)
+        useEventkyReplyWritesStore.getState().acknowledge(prepared.eventReplyContext, [prepared.compositePostId]);
+      throw error;
+    });
     return { compositePostId: prepared.compositePostId, tagsFailed: outcome?.tagsFailed ?? false };
   }
 
@@ -205,15 +215,18 @@ export class PostController {
     originalPostId,
   }: TCreatePostParams): Promise<TPreparedPostCreate> {
     let parentUri: string | undefined = undefined;
+    let replyContext: string | undefined;
     let repostedUri: string | undefined = undefined;
     let tagList: TCreateTagInput[] = [];
 
     // Validate and set parent URI if this is a reply
     if (parentPostId) {
+      const parent = await PostApplication.getDetails({ compositeId: parentPostId });
+      if (parent?.kind === 'event') replyContext = eventkyReplyContext(getNexusUrl(), authorId, parentPostId);
       parentUri = PostValidators.validatePostId({
         postId: parentPostId,
         message: 'Parent post',
-        post: await PostApplication.getDetails({ compositeId: parentPostId }),
+        post: parent,
       });
     }
     if (originalPostId) {
@@ -284,6 +297,7 @@ export class PostController {
       compositePostId,
       post,
       postUrl: meta.url,
+      ...(replyContext ? { eventReplyContext: replyContext } : {}),
       fileAttachments,
       tags: tagList,
       uploadState: { completed: false },
@@ -595,7 +609,26 @@ export class PostController {
   }
 
   static async commitPreparedEdit(prepared: TPreparedPostEdit): Promise<void> {
-    await PostApplication.commitEdit(prepared);
+    const parent = prepared.expectedSource?.parent?.match(/^pubky:\/\/([^/]+)\/pub\/pubky\.app\/posts\/([^/?#]+)$/);
+    let context: string | undefined;
+    if (parent) {
+      const eventId = `${parent[1]}:${parent[2]}`;
+      const details = await PostApplication.getDetails({ compositeId: eventId });
+      if (details?.kind === 'event') {
+        const { pubky: author } = parseCompositeId(prepared.compositePostId);
+        context = eventkyReplyContext(getNexusUrl(), author, eventId);
+        useEventkyReplyWritesStore
+          .getState()
+          .add(context, prepared.compositePostId, JSON.stringify(toPostWire(prepared.post)));
+      }
+    }
+    try {
+      await PostApplication.commitEdit(prepared);
+    } catch (error) {
+      if (context && !prepared.uploadState?.postUncertain)
+        useEventkyReplyWritesStore.getState().acknowledge(context, [prepared.compositePostId]);
+      throw error;
+    }
   }
 
   static async prepareEdit({

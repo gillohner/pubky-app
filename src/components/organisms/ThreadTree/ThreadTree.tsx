@@ -3,10 +3,12 @@
 import { Container } from '@/atoms/Container/Container';
 import { POST_THREAD_CONNECTOR_VARIANTS } from '@/atoms/PostThreadConnector/PostThreadConnector.constants';
 import { PostThreadSpacer } from '@/atoms/PostThreadSpacer/PostThreadSpacer';
+import { usePostDetails } from '@/hooks/usePostDetails/usePostDetails';
 import { usePostListKeyboard } from '@/hooks/usePostListKeyboard/usePostListKeyboard';
 import { usePostNavigation } from '@/hooks/usePostNavigation/usePostNavigation';
 import { useThreadReplies } from '@/hooks/useThreadReplies/useThreadReplies';
 import { ShowMoreReplies } from '@/molecules/ShowMoreReplies/ShowMoreReplies';
+import { EventkyDiscussion } from '@/organisms/EventkyDiscussion/EventkyDiscussion';
 import { QuickReply } from '../QuickReply/QuickReply';
 import { ReplyWithNested } from '../ReplyWithNested/ReplyWithNested';
 
@@ -25,7 +27,17 @@ interface ThreadTreeProps {
  *
  * Shared between the feed timeline and the single post page.
  */
-export function ThreadTree({ postId, showQuickReply = true }: ThreadTreeProps) {
+export function ThreadTree(props: ThreadTreeProps) {
+  const { postDetails } = usePostDetails(props.postId);
+  if (!postDetails) return null;
+  return postDetails.kind === 'event' ? (
+    <EventkyDiscussion key={props.postId} {...props} />
+  ) : (
+    <RegularThreadTree {...props} />
+  );
+}
+
+function RegularThreadTree({ postId, showQuickReply = true }: ThreadTreeProps) {
   const { replyIds, hasMore, totalCount, isExpandingAll, expandAll } = useThreadReplies(postId);
   const { handlePostKeyDown } = usePostNavigation();
   const { setCardRef, onListKeyDown } = usePostListKeyboard({

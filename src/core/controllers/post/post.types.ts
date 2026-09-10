@@ -28,7 +28,7 @@ export interface TCreatePostParams {
 
 export type TCreatePostResult = { compositePostId: string; tagsFailed: boolean };
 /** Keep this preparation with the draft so retries reuse its post, blob and file identities. */
-export type TPreparedPostCreate = TCreatePostInput & { uploadState: TPostUploadState };
+export type TPreparedPostCreate = TCreatePostInput & { uploadState: TPostUploadState; eventReplyContext?: string };
 export type TPreparedPostEdit = TEditPostInput & { uploadState: TPostUploadState };
 
 export interface TCreateCollectionParams {

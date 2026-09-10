@@ -36,6 +36,7 @@ import type { TagCollectionModelSchema } from '@/models/shared/tag/tag.schema';
 import { buildAuthorCollectionsStreamId } from '@/models/stream/post/postStream.types';
 import { CollectionPostContent } from '@/pipes/post/post.collection';
 import { type PubkyPostWire, toPostWire } from '@/pipes/post/post.wire';
+import type { EventkyReplyBatch } from '@/services/eventkyAttendance/eventkyAttendance';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalPostService } from '@/services/local/post/post';
 import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
@@ -45,6 +46,23 @@ import { NexusPostService } from '@/services/nexus/post/post';
 import type { TCompositeId } from '@/services/nexus/post/post.types';
 
 export class PostApplication {
+  static async persistEventkyReplies(
+    batch: EventkyReplyBatch,
+    viewerId: string | null | undefined,
+    expectedSources: Record<string, string>,
+  ) {
+    // Compare with the prepared write, not a local row which may still contain the old value during uploads.
+    const acknowledged = batch.sources
+      .filter((source) => expectedSources[`${source.author}:${source.id}`] === JSON.stringify(toPostWire(source)))
+      .map((source) => `${source.author}:${source.id}`);
+    const protectedIds = new Set(Object.keys(expectedSources).filter((id) => !acknowledged.includes(id)));
+    await PostStreamApplication.persistFetchedPosts(
+      batch.posts.filter((post) => !protectedIds.has(`${post.details.author}:${post.details.id}`)),
+      viewerId,
+    );
+    return { ...batch, acknowledged };
+  }
+
   /**
    * Reads post details from local database and enriches with moderation state
    * @param compositeId - Composite post ID in format "authorId:postId"

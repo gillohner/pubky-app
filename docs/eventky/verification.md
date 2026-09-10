@@ -1,48 +1,55 @@
 # Eventky verification record
 
-This record separates observed checks from the remaining acceptance work. **The revised implementation is not yet verified complete.** Historical test totals below belong to the earlier scope and source revisions.
+Final staging acceptance remains in progress. The following results distinguish deployed journeys from local regressions. Historical test totals apply only to their recorded source and must not be summed with overlapping focused suites.
 
-## Revised scope: observed checks
+## Current deployment
 
-| Check                               | Observed evidence                                                                                                                                                                        | Limit                                                                                                                                           |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Focused revised regression batch    | 210 tests / 14 files passed; `/tmp/eventky-revised-tests.log`                                                                                                                            | Earlier in the revision; later fixes require their own checks                                                                                   |
-| Device-timezone display             | 31 tests / 4 files passed; `/tmp/eventky-device-display-tests.log`                                                                                                                       | Covers engine/display/device-hook behavior, not all live browser journeys                                                                       |
-| Calendar schedule                   | 16 tests passed; `/tmp/calendar-schedule-final-tests.log`; 4 Chromium VRT tests passed in `/tmp/calendar-schedule-final-vrt2.log`                                                        | Mocked/fixture data; real staging view tests still required                                                                                     |
-| Composer lifecycle/serialization    | 21 existing hook tests passed                                                                                                                                                            | Scope is authoring logic, not complete social behavior                                                                                          |
-| Shared date/time fields             | 6 tests passed across shared picker and field suites; `/tmp/composer-recurrence-unit2.log`                                                                                               | Monday-first dates, disabled state, civil-date values, timezone/calendar selection and duration behavior                                        |
-| Advanced recurrence browser flow    | 2 Chromium tests passed; `/tmp/composer-recurrence-vrt2.log`                                                                                                                             | Browser fixture moves October 1 to October 2 and verifies original recurrence identity/source zone in saved payload; controller write is mocked |
-| Contributor full-name fix           | 1 regression test passed; `/tmp/eventky-contributor-tests.log`; focused ESLint and TypeScript checks passed                                                                              | Local fix; not yet verified in deployed browser                                                                                                 |
-| Native attendance                   | 10 tests / 3 files passed in `/tmp/attendance-final-tests.log`; 7 scope tests / 2 files passed in `/tmp/attendance-scope-tests.log`                                                      | Overlapping focused suites; real guest lifecycle remains a separate gate                                                                        |
-| Staging runtime isolation           | Real owner browser asserts `deployEnv=staging`, staging homeserver key and `/api/eventky/status` backend `http://staging-nexus:8080`; production homeserver network requests are blocked | Verifies the tested origin/configuration; recheck after deployment changes                                                                      |
-| Native staging publication          | Calendar and event created through the actual UI; successful homeserver PUTs captured in `/tmp/eventky-staging-fixtures.json`; `/tmp/eventky-authoring-create3.log`                      | Contributor was omitted while guest indexing was unavailable                                                                                    |
-| Native staging event fields         | Confirmed `America/New_York`, weekly COUNT=6, selected calendar URI and displayed `eventky-staging` tag                                                                                  | Further edit/attachment/curation checks pending                                                                                                 |
-| Native staging reading/edit opening | `view` and `compose-preview` phases passed; screenshots in `/tmp/eventky-staging-authoring/`                                                                                             | Opening the editor is not a successful edit/write test; user header indexing still incomplete                                                   |
-| Static checks                       | Focused composer lint, diff checks and later TypeScript checks passed                                                                                                                    | No claim that the latest complete worktree has a clean final whole-repository lint/test run                                                     |
+Frontend `staging-20260909e` is live and healthy. Backend `dce35bf7` is live with sticky primary-user indexing enabled; both staging users are indexed and the configured projection is complete. Live HTTP 429 handling paused for 60 seconds, then a successful request advanced the persisted global cursor to 25350. Historical catch-up continues; projection completeness covers configured Nexus sources, not all homeserver history.
 
-These suites overlap; do not sum them into a unique test count. Browser fixture tests do not substitute for real homeserver end-to-end tests.
+Keep primary-user indexing enabled under the [backend rollback constraints](https://github.com/gillohner/pubky-nexus/blob/deploy/eventky-vps/docs/primary-user-indexing.md). No cursor reset or skipped history is part of this deployment.
 
-## Deployment update
+## Real staging results
 
-The lead reports both projection services healthy on `staging-backoff-20260909`. Frontend `staging-20260909c` built successfully and is being deployed with the full-name contributor fix. These operational results do not replace pending guest social, owner edit/attachment/curation and final loaded-screen checks. The canonical verified staging TLS/API hostname is `homeserver.staging.pubky.app`.
+| Journey | Verified evidence | Scope |
+| --- | --- | --- |
+| Isolation and initial publication | `/tmp/eventky-staging-fixtures.json`; owner/guest harness checks staging environment, homeserver key and isolated projection identity | Staging writes only |
+| Owner edit and attachments | `/tmp/eventky-owner-edit.log`, `/tmp/eventky-owner-edited-projection.json` | First occurrence moved while retaining original identity; October 8 cancelled; complete configured projection |
+| Named calendar curation | `/tmp/eventky-owner-curate.log` | Full-name contributor selection and main-event exclusion/restoration |
+| Guest social actions | `/tmp/eventky-staging-social/results.json` | Going/Maybe, comment, tag, bookmark and repost passed on c; latest grouped-roster checks separate |
+| Calendar views | Same social results and reviewed calendar screenshots | Agenda/month/week/day and named selection passed; final clean captures pending |
+| All-day lifecycle | Owner native authoring harness, frontend d | Create, civil-date projection, native DELETE, source GET 404 and projected removal passed |
+| Guest contribution | Guest native publication, frontend d | Named owner calendar selected, source PUT/GET and complete projected membership passed |
+| Owner curation of guest contribution | `/tmp/eventky-owner-guest-curation-e.log`, guest excluded/included projection snapshots | Exclusion and restoration passed on e |
+| Removed-workflow audit | `/tmp/eventky-owner-authoring-audit-e3.log` | Final native authoring audit passed on e |
+| Grouped attendance | `/tmp/eventky-social-attendance-e2.log`, exit 0 on e | Whole-series decline PUT/GET/indexed reload; unique grouped identities; ordinary comment retained, status cards hidden and correct badge; occurrence Going with original recurrence identity survived reload while whole-series decline remained unchanged |
 
-## Screenshot review
+The edited first occurrence is October 2, 2026 at 18:00 New York, visible October 3 at midnight on a Zurich device. Its original recurrence identity remains October 1. Do not compare the earlier pre-edit screenshot dates as if the event source were unchanged.
 
-Checked-in Chromium baselines include desktop/mobile composer, open date picker, recurrence-preview picker and occurrence-move picker images. They were inspected for spacing, clipping, control alignment and theme consistency. The review led to friendly duration units and a corrected dark-theme occurrence-time icon.
+## Current local and backend regressions
 
-Real staging screenshots capture the calendar composer, populated event editor and native event post at desktop/mobile widths. The event's New York time correctly displays on the next day in Zurich. The first post captures still show author/loading skeletons while the staging user index catches up; they are diagnostic evidence, not the final clean visual acceptance set. The script now clears autofocus selection and waits for the relevant content before capture. Final screenshots must be taken again after indexing recovery and the last deployment.
+| Check | Evidence | Limit |
+| --- | --- | --- |
+| Integrated attendance/discussion and native shared paths | 383 tests / 16 files; `/tmp/eventky-attendee-final-tests.log` | Includes existing post, stream, thread and action tests; focused suite |
+| Attendance visual surfaces | Two Chromium tests, six desktop/mobile baselines; `/tmp/eventky-attendance-vrt.log` | Compact row and grouped dialogs visually reviewed |
+| Calendar visual surfaces | Six updated Chromium VRT cases passed for e | Mock-based screenshots supplement real calendar journeys |
+| TypeScript and final repository lint | `/tmp/eventky-attendee-final-typecheck.log`, `/tmp/eventky-final-e-lint2.log` | Passed for integrated e source |
+| Production packaging | `/tmp/eventky-frontend-staging-e-final-build.log` | e production build passed; image live healthy |
+| Real graph concurrency | Eight-writer regression passed in 11.05 seconds; `/tmp/eventky-graph-final-validation.log` | Disposable real Neo4j; not load certification |
+| Primary indexing integration | `/tmp/eventky-primary-global-integration.log`, `/tmp/eventky-primary-retry-integration.log`, `/tmp/eventky-primary-lane-final-integration.log` | Handoff, stale retry and ordered failure tests passed against isolated tunneled databases |
+| Backend focused units | Nine graph retry, four primary-lane, one legacy-config and one projection-quota test passed | Separate from historical full backend CI |
+| HTTP throttle handling | Three focused tests; `/tmp/eventky-http-status-units.log`, `/tmp/eventky-http-backoff-units.log`, `/tmp/eventky-http-backoff-check.log` | Live 60-second pause and subsequent cursor advancement also verified |
 
-## Remaining end-to-end gates
+Earlier revised-scope focused runs covered device-timezone semantics, form reactivity, calendar schedules, contributor freshness and projection backoff. They overlap these checks and are not a new full-suite total. The supported RFC profile and bounded recurrence/interchange limitations remain in the [contract documentation](../../packages/eventky-contract/README.md). Browser evidence is Chromium-only; Safari/Firefox compatibility has not been established. A runner shutdown-timeout notice after passed tests is distinct from an assertion failure.
 
-1. Finish staging backend indexing recovery and verify the owner/guest profiles and source projection reach the expected state.
-2. Complete guest Going/Maybe/Can't go changes, indexed attendance refresh, comments, tags, bookmarks and reposts with the native UI.
-3. Complete owner event editing, attachment upload, moved and cancelled occurrences, and preservation of series identity/social discussion.
-4. Deploy and exercise full-name contributor selection. Exercise named event exclusion and restoration without changing the event post.
-5. Verify calendar selection, agenda/month/week/day navigation and occurrence rendering against the real staging records, including display-zone/date-boundary behavior.
-6. Verify the final deployed UI has no import/export, subscription-link, alarm/reminder, saved local calendar-preference or URI-pasting controls.
-7. Run integrated checks appropriate to the final worktree and review the final loaded desktop/mobile screenshots. Do not infer complete Safari/Firefox coverage from Chromium.
+The first attendance harness repeatedly reloaded every five seconds, aborting outstanding reads while public bulk-post requests encountered HTTP 429. A settled retry passed against the unchanged deployed runtime. Dense browser reloads can hit the public bulk-read rate limit; this result does not establish unrestricted reload throughput. The final owner authoring audit also captured loaded event/calendar editors.
 
-The owner script preserves fixture identities and refuses non-staging authoring. Its prepared `edit` and `curate` phases are not passing evidence until their actual runs finish. Only disposable staging accounts may write test data; no signup admin credential or signing key belongs in logs, docs or fixture manifests.
+## Remaining acceptance gates
+
+1. Delete the disposable guest contribution through the native UI and verify source deletion and projected removal. Preserve the main demo event/calendar.
+2. Capture and review clean loaded desktop/mobile calendar and attendee surfaces after cleanup.
+3. Record final evidence and source/image identity. Historical homeserver catch-up remains ongoing independently of these functional gates.
+
+Only disposable staging accounts may publish test data. Evidence must contain no persistent browser sessions, admin credentials or signing keys.
 
 ## Repeatable current commands
 

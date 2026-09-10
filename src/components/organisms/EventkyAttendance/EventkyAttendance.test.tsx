@@ -5,6 +5,14 @@ import { EventkyAttendance } from './EventkyAttendance';
 const { state } = vi.hoisted(() => ({
   state: {
     status: 'ACCEPTED',
+    attendees: [
+      { author: 'alice', status: 'ACCEPTED' },
+      { author: 'bob', status: 'TENTATIVE' },
+      { author: 'chris', status: 'DECLINED' },
+    ],
+    hasMore: false,
+    loadMore: vi.fn(),
+    refresh: vi.fn(),
     counts: { ACCEPTED: 2, TENTATIVE: 1, DECLINED: 1 },
     busy: false,
     loading: false,
@@ -15,6 +23,18 @@ const { state } = vi.hoisted(() => ({
   },
 }));
 vi.mock('@/hooks/useEventkyAttendance/useEventkyAttendance', () => ({ useEventkyAttendance: () => state }));
+vi.mock('@/hooks/useUserDetailsFromIds/useUserDetailsFromIds', () => ({
+  useUserDetailsFromIds: () => ({
+    users: [
+      { id: 'alice', name: 'Alice' },
+      { id: 'bob', name: 'Bob' },
+      { id: 'chris', name: 'Chris' },
+    ],
+  }),
+}));
+vi.mock('@/organisms/AvatarWithFallback/AvatarWithFallback', () => ({
+  AvatarWithFallback: ({ name }: { name: string }) => <span aria-hidden="true">{name}</span>,
+}));
 beforeEach(() => {
   state.signedIn = true;
   state.complete = true;
@@ -37,7 +57,9 @@ describe('native RSVP controls', () => {
   it('disables cancelled events and anonymous responses', () => {
     state.signedIn = false;
     render(<EventkyAttendance postId="author:event" eventUid="uid" cancelled />);
-    for (const button of screen.getAllByRole('button')) expect(button).toBeDisabled();
+    for (const name of ['Going', 'Maybe', "Can't go"])
+      expect(screen.getByRole('button', { name })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'View attendees' })).not.toBeDisabled();
     expect(screen.getByText('Sign in to respond.')).toBeInTheDocument();
   });
   it('clearly labels incomplete counts', () => {
@@ -45,4 +67,15 @@ describe('native RSVP controls', () => {
     render(<EventkyAttendance postId="author:event" eventUid="uid" />);
     expect(screen.getByText(/Partial results/)).toBeInTheDocument();
   });
+});
+
+it('opens current attendees grouped by status without showing declined people on the card', () => {
+  render(<EventkyAttendance postId="author:event" eventUid="uid" recurring />);
+  expect(screen.getByText('Whole series')).toBeInTheDocument();
+  expect(screen.queryByText('Chris')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'View attendees' }));
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(screen.getByRole('list', { name: 'Going attendees' }).querySelectorAll('a')).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: "Can't go (1)" }));
+  expect(screen.getByRole('list', { name: "Can't go attendees" }).querySelectorAll('a')).toHaveLength(1);
 });

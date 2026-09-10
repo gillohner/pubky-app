@@ -1,7 +1,7 @@
 'use client';
 
 import { CalendarDays, ImagePlus, Loader2, Send } from 'lucide-react';
-import { Controller } from 'react-hook-form';
+import { Controller, useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Checkbox } from '@/atoms/Checkbox/Checkbox';
 import { Container } from '@/atoms/Container/Container';
@@ -49,8 +49,7 @@ export function EventkyPostForm({
     openPicker,
     ready,
   } = state.files;
-  const allDay = form.watch('allDay');
-  const useDuration = form.watch('useDuration');
+  const [allDay, useDuration] = useWatch({ control: form.control, name: ['allDay', 'useDuration'] });
   const busy = form.formState.isSubmitting;
   const input = (name: TextField, label: string, placeholder?: string) => (
     <ControlledInputField
@@ -61,7 +60,7 @@ export function EventkyPostForm({
       maxLength={name === 'title' ? (kind === 'calendar' ? 100 : 500) : undefined}
     />
   );
-  const check = (name: 'allDay' | 'useDuration' | 'transparent', label: string) => (
+  const check = (name: 'allDay' | 'useDuration', label: string) => (
     <Controller
       control={form.control}
       name={name}
@@ -87,12 +86,14 @@ export function EventkyPostForm({
             name="description"
             render={({ field, fieldState }) => (
               <>
-                <MarkdownEditor
-                  markdown={field.value}
-                  onChange={field.onChange}
-                  readOnly={busy || pendingRetry}
-                  placeholder="Add details…"
-                />
+                <div className="min-h-40 min-w-0 rounded-md border border-input p-3 focus-within:border-ring">
+                  <MarkdownEditor
+                    markdown={field.value}
+                    onChange={field.onChange}
+                    readOnly={busy || pendingRetry}
+                    placeholder="Add details…"
+                  />
+                </div>
                 {fieldState.error && <Typography role="alert">{fieldState.error.message}</Typography>}
               </>
             )}
@@ -157,7 +158,6 @@ export function EventkyPostForm({
                 {input('organizerName', 'Organizer name')}
                 {input('organizerUrl', 'Organizer contact link', 'mailto:…')}
                 {input('categories', 'Calendar categories', 'Community, Workshop')}
-                {check('transparent', 'Show this time as free')}
               </Container>
             </details>
           </>

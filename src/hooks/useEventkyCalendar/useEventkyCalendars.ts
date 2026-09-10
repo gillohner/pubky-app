@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { type CalendarContent, parseEventkyContent } from '@eventky/contract';
 import { PostController } from '@/controllers/post/post';
+import { FORCE_FETCH_NEW_POSTS } from '@/controllers/stream/posts/post.constants';
 import { StreamPostsController } from '@/controllers/stream/posts/posts';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
@@ -38,6 +39,18 @@ export function useEventkyCalendars() {
     setError(undefined);
     void (async () => {
       try {
+        if (!cursor.current.lastPostId && cursor.current.streamTail === undefined) {
+          const streamId = 'timeline:all:calendar' as const;
+          // Refresh new publications before reading the ordinary moderated, paginated cache.
+          await StreamPostsController.prepareStreamForInitialLoad({ streamId });
+          const streamHead = await StreamPostsController.getStreamHead({ streamId });
+          await StreamPostsController.getOrFetchStreamSlice({
+            streamId,
+            streamHead: streamHead || FORCE_FETCH_NEW_POSTS,
+            limit: 20,
+          });
+          await StreamPostsController.mergeUnreadStreamWithPostStream({ streamId });
+        }
         const result = await StreamPostsController.getOrFetchStreamSlice({
           streamId: 'timeline:all:calendar',
           limit: 20,
@@ -45,6 +58,9 @@ export function useEventkyCalendars() {
         });
         const options = await Promise.all(
           result.nextPageIds.map(async (id) => {
+            // Calendar membership is editable policy: refresh it before offering a publish destination.
+            const refreshed = await PostController.fetch({ compositeId: id, viewerId: viewerId ?? undefined });
+            if (!refreshed) return null;
             const post = await PostController.getDetails({ compositeId: id });
             if (!post || post.is_blurred) return null;
             const parsed = parseEventkyContent(post.kind, post.content);

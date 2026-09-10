@@ -5,6 +5,7 @@ import { Ellipsis, MessageCircle, Repeat, Tag } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Typography } from '@/atoms/Typography/Typography';
+import { useEventkyDiscussion } from '@/hooks/useEventkyDiscussion/useEventkyDiscussion';
 import { usePostCounts } from '@/hooks/usePostCounts/usePostCounts';
 import { usePostDetails } from '@/hooks/usePostDetails/usePostDetails';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
@@ -46,6 +47,7 @@ export function PostActionsBar({
 }: PostActionsBarProps) {
   const { postCounts, isLoading: isCountsLoading } = usePostCounts(postId);
   const { postDetails } = usePostDetails(postId);
+  const discussion = useEventkyDiscussion(postDetails?.kind === 'event' ? postId : null);
   const { requireAuth } = useRequireAuth();
   const buttonClassName = postActionsButtonVariants({
     variant,
@@ -62,6 +64,8 @@ export function PostActionsBar({
     className: buttonClassName,
   };
   const tagCount = postCounts.unique_tags ?? 0;
+  const replyCount =
+    postDetails?.kind === 'event' ? (discussion.complete ? discussion.replyIds.length : undefined) : postCounts.replies;
   const isCollection = postDetails?.kind === 'collection';
   const actionButtons: ActionButtonConfig[] = [
     {
@@ -74,9 +78,9 @@ export function PostActionsBar({
     {
       id: 'reply',
       icon: MessageCircle,
-      count: postCounts.replies,
+      count: replyCount,
       onClick: () => requireAuth(() => onReplyClick?.()),
-      ariaLabel: `Reply to post (${postCounts.replies})`,
+      ariaLabel: replyCount === undefined ? 'Reply to event (comment count pending)' : `Reply to post (${replyCount})`,
     },
     {
       id: 'repost',

@@ -13,6 +13,11 @@ function edited(source: EventContent) {
 }
 
 describe('native event form serialization', () => {
+  it('preserves existing transparent wire semantics without an availability control', () => {
+    const source: EventContent = { ...EVENT_FIXTURE, transp: 'TRANSPARENT' };
+    expect(edited(source).transp).toBe('TRANSPARENT');
+  });
+
   it('edits the title without resetting identity, revision history, recurrence exceptions or duration', () => {
     const source: EventContent = {
       ...EVENT_FIXTURE,

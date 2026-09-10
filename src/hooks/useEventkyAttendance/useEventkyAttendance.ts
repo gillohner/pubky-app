@@ -3,20 +3,17 @@ import { useEffect, useRef, useState } from 'react';
 import { type AttendanceSource, type AttendanceStatus, resolveAttendance } from '@eventky/attendance';
 import { occurrenceKey } from '@eventky/temporal';
 import type { CalendarTime } from '@eventky/types';
-import { EventkyAttendanceController } from '@/controllers/eventkyAttendance/eventkyAttendance';
 import { PostController } from '@/controllers/post/post';
 import type { TPreparedPostCreate } from '@/controllers/post/post.types';
+import { useEventkyReplies } from '@/hooks/useEventkyReplies/useEventkyReplies';
 import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 export function useEventkyAttendance(eventId: string, eventUid: string, recurrenceId?: CalendarTime) {
   const author = useAuthStore((state) => state.currentUserPubky);
-  const [snapshot, setSnapshot] = useState<{ sources: AttendanceSource[]; complete: boolean }>({
-    sources: [],
-    complete: false,
-  });
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
+  const replies = useEventkyReplies(eventId);
+  const { loading, failed } = replies;
+  const [optimistic, setOptimistic] = useState<AttendanceSource[]>([]);
   const [busy, setBusy] = useState(false);
   const context = JSON.stringify([author, eventId, eventUid, recurrenceId ? occurrenceKey(recurrenceId) : null]);
   const currentContext = useRef<string | null>(context);
@@ -43,25 +40,15 @@ export function useEventkyAttendance(eventId: string, eventUid: string, recurren
   const [eventAuthor, postId] = eventId.split(':');
   const eventUri = `pubky://${eventAuthor}/pub/pubky.app/posts/${postId}`;
   useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setFailed(false);
-    setSnapshot({ sources: [], complete: false });
-    void EventkyAttendanceController.fetch(eventId)
-      .then((result) => {
-        if (active) setSnapshot(result);
-      })
-      .catch(() => {
-        if (active) setFailed(true);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [eventId]);
-  const resolved = resolveAttendance(snapshot.sources, eventUri, eventUid, recurrenceId);
+    setOptimistic((previous) => {
+      const remaining = previous.filter(
+        (source) =>
+          !replies.sources.some((indexed) => indexed.uri === source.uri && indexed.content === source.content),
+      );
+      return remaining.length === previous.length ? previous : remaining;
+    });
+  }, [replies.sources]);
+  const resolved = resolveAttendance([...replies.sources, ...optimistic], eventUri, eventUid, recurrenceId);
   const status = author ? resolved.get(author)?.response.partstat : undefined;
   const counts = { ACCEPTED: 0, TENTATIVE: 0, DECLINED: 0 };
   for (const item of resolved.values()) counts[item.response.partstat]++;
@@ -113,10 +100,7 @@ export function useEventkyAttendance(eventId: string, eventUid: string, recurren
       const source = draft.source;
       pending.current.delete(context);
       if (currentContext.current !== context) return true;
-      setSnapshot((previous) => ({
-        ...previous,
-        sources: [...previous.sources.filter((item) => item.uri !== source.uri), source],
-      }));
+      setOptimistic((previous) => [...previous.filter((item) => item.uri !== source.uri), source]);
       setPendingState(undefined);
       toast({ title: 'Response saved' });
       return true;
@@ -136,7 +120,11 @@ export function useEventkyAttendance(eventId: string, eventUid: string, recurren
     busy,
     loading,
     failed,
-    complete: snapshot.complete,
+    complete: replies.complete,
+    attendees: [...resolved.entries()].map(([author, item]) => ({ author, status: item.response.partstat })),
+    hasMore: replies.hasMore,
+    loadMore: replies.loadMore,
+    refresh: replies.refresh,
     signedIn: !!author,
     respond,
   };

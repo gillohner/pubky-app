@@ -2,6 +2,7 @@
 
 import { useId, useState } from 'react';
 import { Globe } from 'lucide-react';
+import { useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
@@ -13,8 +14,7 @@ export function EventkyTimezoneField({ state }: { state: Pick<ReturnType<typeof 
   const id = useId();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const timezone = state.form.watch('timezone');
-  const timeMode = state.form.watch('timeMode');
+  const [timezone, timeMode] = useWatch({ control: state.form.control, name: ['timezone', 'timeMode'] });
   const zones = [...new Set([timezone, 'UTC', ...Intl.supportedValuesOf('timeZone')])];
   const matching = zones.filter((zone) => zone.replaceAll('_', ' ').toLowerCase().includes(query.toLowerCase()));
   return (

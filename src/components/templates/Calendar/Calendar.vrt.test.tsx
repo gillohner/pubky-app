@@ -63,9 +63,20 @@ vi.mock('@/hooks/useEventkyAttendance/useEventkyAttendance', () => ({
     loading: false,
     failed: false,
     complete: true,
-    counts: { ACCEPTED: 8, TENTATIVE: 2, DECLINED: 1 },
+    counts: { ACCEPTED: 1, TENTATIVE: 1, DECLINED: 0 },
+    attendees: [
+      { author: 'y'.repeat(52), status: 'ACCEPTED' },
+      { author: 'o'.repeat(52), status: 'TENTATIVE' },
+    ],
+    hasMore: false,
+    pendingStatus: undefined,
+    loadMore: vi.fn(),
+    refresh: vi.fn(),
     respond: vi.fn(),
   }),
+}));
+vi.mock('@/hooks/useUserDetailsFromIds/useUserDetailsFromIds', () => ({
+  useUserDetailsFromIds: () => ({ users: [] }),
 }));
 vi.mock('@/hooks/usePostDetails/usePostDetails', async () => {
   const { eventkyEventFixture } = await import('@/test/fixtures/eventky');
@@ -115,6 +126,32 @@ beforeEach(() => {
 });
 
 describe('native Eventky calendar display', () => {
+  for (const view of ['Month', 'Week'] as const) {
+    it(`keeps the selected event visible in mobile ${view.toLowerCase()} view`, async () => {
+      await renderForVRT(<Calendar />, { viewport: VRT_VIEWPORT_MOBILE });
+      await page.getByRole('button', { name: view, exact: true }).click();
+      const table = page.getByRole('table', { name: `${view} calendar` }).element();
+      const event = page.getByRole('button', { name: /Pubky community meetup/ }).element();
+      await expect
+        .poll(() => {
+          const bounds = event.getBoundingClientRect();
+          const frame = table.parentElement!.getBoundingClientRect();
+          return bounds.left >= frame.left && bounds.right <= frame.right;
+        })
+        .toBe(true);
+      if (view === 'Month') {
+        expect(table.scrollWidth).toBeLessThanOrEqual(table.parentElement!.clientWidth);
+        expect(table.querySelectorAll('thead th')).toHaveLength(7);
+      } else {
+        expect(table.parentElement!.scrollLeft).toBeGreaterThan(0);
+        await expect.element(page.getByText('Swipe to see the other days')).toBeVisible();
+      }
+      await matchVrtFrameScreenshot(`eventky-calendar-${view.toLowerCase()}-mobile`);
+      await page.getByRole('button', { name: /Pubky community meetup/ }).click();
+      await expect.element(page.getByRole('region', { name: 'Selected event' })).toBeInTheDocument();
+    });
+  }
+
   for (const [name, viewport] of [
     ['desktop', VRT_VIEWPORT_DESKTOP],
     ['mobile', VRT_VIEWPORT_MOBILE],

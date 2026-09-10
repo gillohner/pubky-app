@@ -44,6 +44,7 @@ function CalendarSchedule({
   timezone,
   view,
   selectedKey,
+  anchor,
   onSelect,
   onDay,
 }: {
@@ -52,6 +53,7 @@ function CalendarSchedule({
   timezone: string;
   view: 'week' | 'day';
   selectedKey: string | null;
+  anchor: string;
   onSelect: (key: string) => void;
   onDay: (date: string) => void;
 }) {
@@ -65,6 +67,20 @@ function CalendarSchedule({
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = Math.max(0, Math.floor(firstMinute / 60) - 1) * 48;
   }, [firstMinute, view]);
+  useEffect(() => {
+    const container = scroll.current;
+    if (!container || view !== 'week') return;
+    const revealSelectedDay = () => {
+      const selectedDay = container.querySelector<HTMLElement>(`[data-date="${anchor}"]`);
+      if (selectedDay && container.scrollWidth > container.clientWidth) {
+        container.scrollLeft = Math.max(0, selectedDay.offsetLeft - 56);
+      }
+    };
+    revealSelectedDay();
+    const resize = new ResizeObserver(revealSelectedDay);
+    resize.observe(container);
+    return () => resize.disconnect();
+  }, [anchor, view]);
   const time = (epoch: number) =>
     new Intl.DateTimeFormat(undefined, { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(epoch);
   const keyFor = (item: CalendarOccurrence) => `${item.projection.post_id}:${item.projection.occurrence_key}`;
@@ -90,112 +106,126 @@ function CalendarSchedule({
     </Button>
   );
   return (
-    <div
-      ref={scroll}
-      className="max-h-[420px] overflow-auto rounded-lg border border-input md:max-h-[640px]"
-      tabIndex={0}
-      aria-label="Event schedule"
-    >
-      <table
-        className={cn('w-full table-fixed border-collapse', view === 'week' && 'min-w-3xl')}
-        aria-label={`${view === 'week' ? 'Week' : 'Day'} calendar`}
+    <div className="min-w-0">
+      {view === 'week' && (
+        <p className="mb-2 flex items-center gap-2 text-xs text-muted-foreground md:hidden">
+          <ArrowLeft className="size-3" aria-hidden="true" />
+          Swipe to see the other days
+          <ArrowRight className="size-3" aria-hidden="true" />
+        </p>
+      )}
+      <div
+        ref={scroll}
+        className="max-h-[420px] overflow-auto rounded-lg border border-input md:max-h-[640px]"
+        tabIndex={0}
+        aria-label="Event schedule"
       >
-        <thead className="sticky top-0 z-10 bg-background">
-          <tr>
-            <td className="w-14 border-b border-input" />
-            {days.map((day) => (
-              <th key={day.date} scope="col" className="border-b border-input py-2 text-xs">
-                <Button variant="ghost" size="sm" aria-label={`Show ${day.label}`} onClick={() => onDay(day.date)}>
-                  <span>
-                    {day.weekday}
-                    <span className="block font-normal text-muted-foreground">{day.label}</span>
-                  </span>
-                </Button>
-              </th>
-            ))}
-          </tr>
-          {items.some((item) => item.projection.start.type === 'date') && (
+        <table
+          className={cn('w-full table-fixed border-collapse', view === 'week' && 'min-w-3xl')}
+          aria-label={`${view === 'week' ? 'Week' : 'Day'} calendar`}
+        >
+          <thead className="sticky top-0 z-10 bg-background">
             <tr>
-              <th scope="row" className="p-1 text-xs font-normal text-muted-foreground">
-                All day
-              </th>
+              <td className="sticky left-0 z-30 w-14 border-b border-input bg-background" />
               {days.map((day) => (
-                <td key={day.date} className="border border-input p-1 align-top">
-                  <div className="space-y-1">
-                    {items
-                      .filter(
-                        (item) => item.projection.start.type === 'date' && occurrenceOverlapsDay(item.projection, day),
-                      )
-                      .map((item) => (
-                        <div key={keyFor(item)}>{eventButton(item)}</div>
-                      ))}
-                  </div>
-                </td>
+                <th key={day.date} data-date={day.date} scope="col" className="border-b border-input py-2 text-xs">
+                  <Button variant="ghost" size="sm" aria-label={`Show ${day.label}`} onClick={() => onDay(day.date)}>
+                    <span>
+                      {day.weekday}
+                      <span className="block font-normal text-muted-foreground">{day.label}</span>
+                    </span>
+                  </Button>
+                </th>
               ))}
             </tr>
-          )}
-        </thead>
-        <tbody>
-          <tr>
-            <td className="relative h-[1152px] align-top">
-              {Array.from({ length: 24 }, (_, hour) => (
-                <span
-                  key={hour}
-                  className="absolute right-2 text-[10px] text-muted-foreground"
-                  style={{ top: hour * 48 }}
+            {items.some((item) => item.projection.start.type === 'date') && (
+              <tr>
+                <th
+                  scope="row"
+                  className="sticky left-0 z-30 bg-background p-1 text-xs font-normal text-muted-foreground"
                 >
-                  {String(hour).padStart(2, '0')}:00
-                </span>
-              ))}
-            </td>
-            {days.map((day) => {
-              const dayItems = timed
-                .filter((item) => occurrenceOverlapsDay(item.projection, day))
-                .sort((a, b) => a.projection.start_epoch_ms - b.projection.start_epoch_ms);
-              // Overlapping events retain separate columns and independent native-post targets.
-              const columns: number[] = [];
-              const positioned = dayItems.map((item) => {
-                const start = item.projection.start_epoch_ms <= day.start ? 0 : minute(item.projection.start_epoch_ms);
-                const end = item.projection.end_epoch_ms >= day.end ? 1440 : minute(item.projection.end_epoch_ms);
-                const duration =
-                  end > start
-                    ? end - start
-                    : Math.max(30, (item.projection.end_epoch_ms - item.projection.start_epoch_ms) / 60000);
-                // Compare drawn intervals too: repeated DST hours and short touch targets must not cover one another.
-                let column = columns.findIndex((end) => end <= start);
-                if (column < 0) column = columns.length;
-                columns[column] = start + Math.max(40, duration);
-                return { item, column, start, duration };
-              });
-              return (
-                <td
-                  key={day.date}
-                  className="relative h-[1152px] border-l border-input align-top"
-                  style={{
-                    backgroundImage:
-                      'repeating-linear-gradient(to bottom, transparent 0, transparent 47px, var(--input) 47px, var(--input) 48px)',
-                  }}
-                >
-                  {positioned.map(({ item, column, start, duration }) => (
-                    <div
-                      key={keyFor(item)}
-                      className="absolute px-0.5 py-px"
-                      style={{
-                        top: start * 0.8,
-                        height: Math.max(32, Math.min(duration, 1440 - start) * 0.8),
-                        left: `${(column * 100) / columns.length}%`,
-                        width: `${100 / columns.length}%`,
-                      }}
-                    >
-                      {eventButton(item)}
+                  All day
+                </th>
+                {days.map((day) => (
+                  <td key={day.date} className="border border-input p-1 align-top">
+                    <div className="space-y-1">
+                      {items
+                        .filter(
+                          (item) =>
+                            item.projection.start.type === 'date' && occurrenceOverlapsDay(item.projection, day),
+                        )
+                        .map((item) => (
+                          <div key={keyFor(item)}>{eventButton(item)}</div>
+                        ))}
                     </div>
-                  ))}
-                </td>
-              );
-            })}
-          </tr>
-        </tbody>
-      </table>
+                  </td>
+                ))}
+              </tr>
+            )}
+          </thead>
+          <tbody>
+            <tr>
+              <td className="sticky left-0 z-10 h-[1152px] bg-background align-top">
+                {Array.from({ length: 24 }, (_, hour) => (
+                  <span
+                    key={hour}
+                    className="absolute right-2 text-[10px] text-muted-foreground"
+                    style={{ top: hour * 48 }}
+                  >
+                    {String(hour).padStart(2, '0')}:00
+                  </span>
+                ))}
+              </td>
+              {days.map((day) => {
+                const dayItems = timed
+                  .filter((item) => occurrenceOverlapsDay(item.projection, day))
+                  .sort((a, b) => a.projection.start_epoch_ms - b.projection.start_epoch_ms);
+                // Overlapping events retain separate columns and independent native-post targets.
+                const columns: number[] = [];
+                const positioned = dayItems.map((item) => {
+                  const start =
+                    item.projection.start_epoch_ms <= day.start ? 0 : minute(item.projection.start_epoch_ms);
+                  const end = item.projection.end_epoch_ms >= day.end ? 1440 : minute(item.projection.end_epoch_ms);
+                  const duration =
+                    end > start
+                      ? end - start
+                      : Math.max(30, (item.projection.end_epoch_ms - item.projection.start_epoch_ms) / 60000);
+                  // Compare drawn intervals too: repeated DST hours and short touch targets must not cover one another.
+                  let column = columns.findIndex((end) => end <= start);
+                  if (column < 0) column = columns.length;
+                  columns[column] = start + Math.max(40, duration);
+                  return { item, column, start, duration };
+                });
+                return (
+                  <td
+                    key={day.date}
+                    className="relative h-[1152px] border-l border-input align-top"
+                    style={{
+                      backgroundImage:
+                        'repeating-linear-gradient(to bottom, transparent 0, transparent 47px, var(--input) 47px, var(--input) 48px)',
+                    }}
+                  >
+                    {positioned.map(({ item, column, start, duration }) => (
+                      <div
+                        key={keyFor(item)}
+                        className="absolute px-0.5 py-px"
+                        style={{
+                          top: start * 0.8,
+                          height: Math.max(32, Math.min(duration, 1440 - start) * 0.8),
+                          left: `${(column * 100) / columns.length}%`,
+                          width: `${100 / columns.length}%`,
+                        }}
+                      >
+                        {eventButton(item)}
+                      </div>
+                    ))}
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -415,6 +445,7 @@ function CalendarBody() {
                     timezone={timezone}
                     view={view}
                     selectedKey={selectedKey}
+                    anchor={anchor}
                     onSelect={setSelectedKey}
                     onDay={(date) => {
                       setDate(date);
@@ -424,7 +455,7 @@ function CalendarBody() {
                 ) : (
                   <Container overrideDefaults className="overflow-x-auto rounded-lg border border-input">
                     <table
-                      className={cn('w-full table-fixed border-collapse', 'min-w-3xl')}
+                      className="w-full table-fixed border-collapse"
                       aria-label={`${view[0].toUpperCase() + view.slice(1)} calendar`}
                     >
                       <thead>
@@ -433,7 +464,7 @@ function CalendarBody() {
                             <th
                               scope="col"
                               key={day.date}
-                              className="border-b border-input p-2 text-sm text-muted-foreground"
+                              className="border-b border-input px-0.5 py-2 text-xs text-muted-foreground md:p-2 md:text-sm"
                             >
                               {day.weekday}
                             </th>
@@ -444,7 +475,7 @@ function CalendarBody() {
                         {Array.from({ length: Math.ceil(window.days.length / 7) }, (_, row) => (
                           <tr key={row}>
                             {window.days.slice(row * 7, (row + 1) * 7).map((day) => (
-                              <td key={day.date} className="h-32 border border-input p-2 align-top">
+                              <td key={day.date} className="h-24 border border-input p-0.5 align-top md:h-32 md:p-2">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -455,7 +486,8 @@ function CalendarBody() {
                                     changeView('day');
                                   }}
                                 >
-                                  {day.label}
+                                  <span className="md:hidden">{Number(day.date.slice(-2))}</span>
+                                  <span className="hidden md:inline">{day.label}</span>
                                 </Button>
                                 <Container className="gap-1">
                                   {calendar.items
@@ -466,14 +498,15 @@ function CalendarBody() {
                                         variant={selectedKey === keyFor(item) ? 'default' : 'secondary'}
                                         overrideDefaults
                                         className={cn(
-                                          'w-full cursor-pointer rounded-md bg-muted p-2 text-left text-xs focus-visible:ring-2 focus-visible:ring-ring',
+                                          'w-full min-w-0 cursor-pointer overflow-hidden rounded-md bg-muted px-0.5 py-1 text-left text-[10px] focus-visible:ring-2 focus-visible:ring-ring md:p-2 md:text-xs',
                                           item.projection.status === 'CANCELLED' && 'line-through',
                                           selectedKey === keyFor(item) && 'ring-2 ring-brand',
                                         )}
+                                        aria-label={`${item.event.summary}, ${compactTime(item)}`}
                                         aria-pressed={selectedKey === keyFor(item)}
                                         onClick={() => setSelectedKey(keyFor(item))}
                                       >
-                                        <span className="block text-muted-foreground">
+                                        <span className="block truncate text-muted-foreground">
                                           {compactTime(item)}
                                           {item.projection.status === 'CANCELLED' && ' · Cancelled'}
                                         </span>

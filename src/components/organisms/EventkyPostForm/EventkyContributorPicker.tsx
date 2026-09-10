@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { X } from 'lucide-react';
-import { Controller } from 'react-hook-form';
+import { Controller, useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
 import type { useEventkyPostForm } from '@/hooks/useEventkyPostForm/useEventkyPostForm';
@@ -11,7 +11,8 @@ import { useUserDetailsFromIds } from '@/hooks/useUserDetailsFromIds/useUserDeta
 
 export function EventkyContributorPicker({ state }: { state: Pick<ReturnType<typeof useEventkyPostForm>, 'form'> }) {
   const [query, setQuery] = useState('');
-  const selected = state.form.watch('contributors').split('\n').filter(Boolean);
+  const contributors = useWatch({ control: state.form.control, name: 'contributors' });
+  const selected = contributors.split('\n').filter(Boolean);
   const { users: selectedUsers } = useUserDetailsFromIds({ userIds: selected });
   const { users, isLoading } = useSearchAutocomplete({ query, enabled: query.trim().length >= 2 });
   return (

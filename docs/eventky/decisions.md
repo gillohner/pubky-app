@@ -29,6 +29,10 @@ The revised application has no calendar import/export, subscription-link, alarm/
 
 The earlier implementation included a durable import ledger and account/backend-scoped reminder/preferences stores. Those designs are historical and no longer define the native experience. Retained protocol/interchange modules and readable existing wire metadata must not reactivate removed workflows. Their historical tests do not prove the revised UI requirements.
 
+## Public events and availability
+
+Public Pubky events describe an event, not the viewer's personal availability. The editor therefore has no “Show this time as free” control or replacement availability setting. Existing RFC `TRANSP` values remain compatible: the hidden form defaults retain an existing event's value during edits, while new events use the existing opaque default. Removing the control must not rewrite a transparent source merely because another field was edited.
+
 ## Projection boundary
 
 `packages/eventky-api` shares validated read contracts between the sidecar and client proxy. The sidecar owns a derived SQLite database and uses private generic Nexus inventory plus immutable change payloads. It stages full inventories, replays retained changes before promotion, tracks pending work durably, and periodically reconciles. Its server receives no authoring requests.
@@ -39,7 +43,7 @@ Public `/api/eventky/occurrences` and `/api/eventky/calendar.ics` proxy only to 
 
 Calendar_ux owns calendar navigation/filter discovery, composer_ux owns authoring controls, attendance owns response contracts and native content actions, and the lead owns shared integration, backend review, staging infrastructure and final evidence. Coordinate shared-boundary changes before editing; [task-state.md](task-state.md) records handoffs and unresolved acceptance work.
 
-The application is published at `https://159.69.22.174`, using `homeserver.staging.pubky.app` and an isolated staging Nexus/projection. Production-homeserver test publication is prohibited. The projection backend identity is `http://staging-nexus:8080`. Both projection services are healthy with the `staging-backoff-20260909` image; frontend `staging-20260909c` has built and deployment is underway. See [deployment.md](deployment.md) for current operational boundaries. Healthy services and a successful image build do not complete the browser acceptance gates.
+The application is published at `https://159.69.22.174`, using `homeserver.staging.pubky.app` and an isolated staging Nexus/projection. Frontend `staging-20260909e` is live and healthy. Backend `dce35bf7` is live with sticky primary-user indexing enabled; both staging users are indexed and the configured projection is complete. Live HTTP 429 handling paused for 60 seconds, then a successful request advanced the persisted global cursor to 25350. Historical catch-up continues; projection completeness covers configured Nexus sources, not all homeserver history. Production-homeserver test publication is prohibited. See [deployment.md](deployment.md) for image identity, private boundaries and the sticky-primary rollback constraint, and [verification.md](verification.md) for completed journeys and remaining acceptance.
 
 ## Current scope revision (2026-09-09)
 
@@ -48,3 +52,12 @@ The latest user requirements supersede the earlier import/preferences scope. The
 Acceptance now requires real staging-homeserver end-to-end journeys (never production fixture publication), desktop/mobile screenshots and visual review. Earlier tests are historical evidence, not proof of this revision. The deployed VPS Nexus/projection are available for inspection; staging test data must stay separate from its production homeserver dataset.
 
 Current ownership: calendar_ux owns calendar navigation/filter discovery; composer_ux owns authoring controls; attendance owns response contracts and native content actions; root owns shared integration, backend review, staging harness and final evidence. No completion claim until the revised requirements are verified.
+
+
+## Attendance roster and discussion boundary (2026-09-09)
+
+Universal `attendance` posts remain the public write contract and history. Event discussion suppresses their status cards in favor of a compact current-attendee row and native grouped dialog. Resolution stays author-bound and recurrence-aware; each selected scope resolves one current response per person. No organizer-maintained roster or private attendance store is introduced.
+
+Reply discovery is shared across attendee, discussion and count consumers, scoped by backend/viewer/event/cursor. It scans raw pages of 50 with a 1,000-record work budget per request and explicit continuation/partial states. Filtering after pagination prevents status-only pages from prematurely ending discussion. Exact comment counts are shown only for complete discovery; index completeness is not a guarantee of an atomic homeserver snapshot.
+
+Hydration reuses the native post application path. Only explicitly pending event reply writes can override indexed source content; full prepared-envelope comparison protects content and attachment-only edits until indexing catches up. Pending acknowledgement is versioned, account/backend scoped and ephemeral. Native tombstones retain deletion protection. Local unit and visual results are recorded in [attendance.md](attendance.md); deployed browser acceptance remains separately owned by the staging verification workflow.

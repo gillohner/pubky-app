@@ -2,7 +2,7 @@
 
 Events and calendars are ordinary `PubkyAppPost` records at `/pub/pubky.app/posts/<id>`, using the exact kinds `event` and `calendar`. Their versioned JSON is serialized into the post's string `content`. Comments, tags, bookmarks, reposts, moderation, attachments and deletion use Pubky's existing post machinery.
 
-The revised staging application is published at [https://159.69.22.174](https://159.69.22.174). It uses the staging homeserver and an isolated staging Nexus/projection. Acceptance is still in progress: native calendar/event publication has passed, while backend indexing recovery and the remaining real-browser social/edit/curation journeys are open. See [verification](verification.md) for the precise evidence.
+The revised staging application is published at [https://159.69.22.174](https://159.69.22.174), using only the staging homeserver and isolated staging Nexus/projection. Frontend `staging-20260909e` is live and healthy. Backend `dce35bf7` is live with sticky primary-user indexing enabled; both staging users are indexed and the configured projection is complete. Live HTTP 429 handling paused for 60 seconds, then a successful request advanced the persisted global cursor to 25350. Historical catch-up continues; projection completeness covers configured Nexus sources, not all homeserver history. Owner authoring, all-day create/delete, guest contribution and owner exclusion/restoration have passed real staging checks. Grouped attendance and scope-specific reload checks also passed. Guest cleanup and clean captures remain pending; see [verification](verification.md).
 
 ## Native experience
 
@@ -12,7 +12,7 @@ Reading surfaces always use the device timezone. There is no display-timezone se
 
 Calendars have names, descriptions, colors and contributor/exclusion policies. Native people and event pickers replace public-key and URI text entry. Calendar selection belongs to the current navigation state, with no local preference-management workflow. The native UI has no calendar import/export, subscription-link, alarm or reminder actions. Existing RFC interchange/protocol modules remain available internally; their presence does not make them part of this app experience.
 
-Attendance uses ordinary `attendance` reply posts and Going, Maybe and Can't go controls. Series and occurrence-specific responses preserve native author identity and discussion behavior. Read [attendance semantics and limits](attendance.md) and [device-timezone display](native-display.md).
+Attendance uses ordinary `attendance` reply posts and Going, Maybe and Can't go controls. A compact avatar row opens a grouped current-attendee dialog. Series and occurrence-specific responses preserve native author identity; historical status replies stay out of event discussion. Read [attendance semantics and limits](attendance.md) and [device-timezone display](native-display.md).
 
 ## Run locally
 
