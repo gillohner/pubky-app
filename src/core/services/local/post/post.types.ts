@@ -1,15 +1,15 @@
-import { PubkyAppPost } from 'pubky-app-specs';
 import { HttpMethod } from '@/libs/http/http.types';
+import type { PostSource } from '@/pipes/post/post.wire';
 
 export interface TLocalSavePostParams {
   compositePostId: string;
-  post: PubkyAppPost;
+  post: PostSource;
 }
 
 export interface TLocalUpdatePostStreamParams {
   compositePostId: string;
   kind: string;
-  parentUri?: string;
+  parentUri?: string | null;
   ops: Promise<unknown>[];
   action: HttpMethod.PUT | HttpMethod.DELETE;
 }

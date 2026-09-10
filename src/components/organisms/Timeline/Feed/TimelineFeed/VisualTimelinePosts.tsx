@@ -26,6 +26,7 @@ import { PostUnavailable } from '@/molecules/PostUnavailable/PostUnavailable';
 import { TimelineEndMessage } from '@/molecules/Timeline/TimelineEndMessage';
 import { TimelineError } from '@/molecules/Timeline/TimelineError';
 import { TimelineStateWrapper } from '@/molecules/Timeline/TimelineStateWrapper/TimelineStateWrapper';
+import { PostMain } from '@/organisms/PostMain/PostMain';
 import { ClickableTagsList } from '../../../ClickableTagsList/ClickableTagsList';
 import { PostActionsBar } from '../../../PostActionsBar/PostActionsBar';
 import { PostContentBlurred } from '../../../PostContentBlurred/PostContentBlurred';
@@ -352,6 +353,8 @@ function VisualTimelineRow({ cell, onNavigate, trailingSlot }: VisualTimelineRow
           className="rounded-md border border-dashed border-white/10 bg-white/[0.03]"
           style={{ aspectRatio: VISUAL_TILE_ASPECT_RATIOS[cell.size] }}
         />
+      ) : cell.tile.renderAsPost ? (
+        <PostMain postId={cell.tile.postId} className="h-full" pinActionsToBottom showFullContentInListLayout />
       ) : cell.tile.placeholderKind ? (
         <VisualTimelinePlaceholderTile tile={cell.tile} size={cell.size} onNavigate={onNavigate} />
       ) : (

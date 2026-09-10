@@ -1,11 +1,14 @@
 'use client';
 
 import { Dispatch, SetStateAction } from 'react';
+import { parseEventkyContent } from '@eventky/contract';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/atoms/Dialog/Dialog';
 import { useConfirmableDialog } from '@/hooks/useConfirmableDialog/useConfirmableDialog';
 import { usePostDetails } from '@/hooks/usePostDetails/usePostDetails';
 import { isArticleContent } from '@/libs/post/articleContent';
 import { DialogConfirmDiscard } from '@/molecules/DialogConfirmDiscard/DialogConfirmDiscard';
+import { PostUnavailable } from '@/molecules/PostUnavailable/PostUnavailable';
+import { DialogEventkyPost } from '@/organisms/DialogEventkyPost/DialogEventkyPost';
 import { POST_INPUT_VARIANT } from '@/organisms/PostInput/PostInput.constants';
 import { PostInput } from '../PostInput/PostInput';
 
@@ -24,6 +27,29 @@ export function DialogEditPost({ open, onOpenChangeAction, postId }: DialogEditP
   const { postDetails } = usePostDetails(postId);
 
   if (!postDetails) return null;
+
+  if (postDetails.kind === 'event' || postDetails.kind === 'calendar') {
+    const parsed = parseEventkyContent(postDetails.kind, postDetails.content);
+    if (parsed.status === 'supported')
+      return open ? (
+        <DialogEventkyPost
+          open
+          kind={parsed.kind}
+          source={parsed.value}
+          originalContent={postDetails.content}
+          postId={postDetails.id}
+          attachmentUris={postDetails.attachments ?? []}
+          onOpenChange={onOpenChangeAction}
+        />
+      ) : null;
+    return (
+      <Dialog open={open} onOpenChange={onOpenChangeAction}>
+        <DialogContent hiddenTitle="Cannot edit this post">
+          <PostUnavailable message="This event format cannot be edited by this version of the app." />
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const isArticle = postDetails.kind === 'long' && isArticleContent(postDetails.content);
   const title = isArticle ? 'Edit Article' : 'Edit Post';

@@ -34,6 +34,7 @@ import { usePostDetails } from '@/hooks/usePostDetails/usePostDetails';
 import { useUserProfile } from '@/hooks/useUserProfile/useUserProfile';
 import { isAppError } from '@/libs/error/error.utils';
 import { isArticleContent } from '@/libs/post/articleContent';
+import { canEditPostContent, deriveCopyText } from '@/libs/post/postPreview';
 import { stripPubkyPrefix, truncateString, withPubkyPrefix } from '@/libs/utils/utils';
 import type { Pubky } from '@/models/models.types';
 import { parseCompositeId } from '@/models/models.utils';
@@ -123,14 +124,14 @@ export function usePostMenuActions(postId: string, options: UsePostMenuActionsOp
     },
     variant: POST_MENU_ACTION_VARIANTS.DEFAULT,
   });
-  if (!isArticle && !isCollection) {
+  if (!isArticle && !isCollection && (!postDetails || canEditPostContent(postDetails))) {
     menuItems.push({
       id: POST_MENU_ACTION_IDS.COPY_TEXT,
       label: 'Copy text of post',
       icon: FileText,
       onClick: async () => {
         try {
-          await copyText(postDetails?.content ?? '');
+          await copyText(postDetails ? deriveCopyText(postDetails) : '');
         } catch (error) {
           toast({
             variant: 'error',
@@ -177,6 +178,7 @@ export function usePostMenuActions(postId: string, options: UsePostMenuActionsOp
       icon: Edit,
       onClick: onEditClick,
       variant: POST_MENU_ACTION_VARIANTS.DEFAULT,
+      disabled: !postDetails || !canEditPostContent(postDetails),
     });
     menuItems.push({
       id: POST_MENU_ACTION_IDS.DELETE,

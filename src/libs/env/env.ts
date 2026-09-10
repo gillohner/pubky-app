@@ -38,6 +38,7 @@ const envSchema = z.object({
 
   // Server-side only admin credentials for signup token generation (dev/test only)
   // These are NOT exposed to the client bundle - only available on the server
+  EVENTKY_PROJECTION_URL: z.url().optional(),
   HOMESERVER_ADMIN_URL: z.url().default('http://localhost:6288/generate_signup_token'),
   HOMESERVER_ADMIN_PASSWORD: z.string().default('admin'),
 
@@ -133,6 +134,7 @@ function parseEnv(): z.infer<typeof envSchema> {
     NEXT_PUBLIC_DEBUG_MODE: process.env.NEXT_PUBLIC_DEBUG_MODE,
     NEXT_PUBLIC_APP_VERSION: process.env.NEXT_PUBLIC_APP_VERSION,
     VITEST: process.env.VITEST,
+    EVENTKY_PROJECTION_URL: process.env.EVENTKY_PROJECTION_URL,
     HOMESERVER_ADMIN_URL: process.env.HOMESERVER_ADMIN_URL,
     HOMESERVER_ADMIN_PASSWORD: process.env.HOMESERVER_ADMIN_PASSWORD,
     BASE_URL_SUPPORT: process.env.BASE_URL_SUPPORT,

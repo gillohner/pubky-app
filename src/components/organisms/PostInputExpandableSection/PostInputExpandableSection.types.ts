@@ -25,4 +25,6 @@ export interface PostInputExpandableSectionProps {
   onEmojiSelect: (emoji: { native: string }) => void;
   onImageClick?: () => void;
   onArticleClick?: () => void;
+  onEventClick?: () => void;
+  onCalendarClick?: () => void;
 }

@@ -1,5 +1,6 @@
 import type { TFetchStreamParams } from '@/application/stream/posts/post.types';
 import { getMaxStreamTags } from '@/libs/runtime-config/runtime-config';
+import { streamSegmentToPostKind } from '@/models/stream/post/postStream.kind';
 import {
   CONTENT_SEARCH_STREAM_PREFIX,
   isContentSearchStream,
@@ -17,7 +18,6 @@ import {
   POST_STREAM_WOT_DEFAULT_DEPTH,
 } from '@/services/nexus/stream/posts/postStream.constants';
 import {
-  StreamKind,
   StreamOrder,
   StreamSource,
   type TPostStreamFetchParams,
@@ -260,24 +260,7 @@ function parseSorting(sorting: string): StreamSorting | undefined {
   return sortingMap[sorting];
 }
 
-/**
- * Parses a content string into the corresponding StreamKind enum value.
- * @param content - The content string to parse
- */
-function parseContent(content: string): StreamKind | undefined {
-  // When content is 'all', return undefined (no kind filter)
-  if (content === 'all') {
-    return undefined;
-  }
-
-  const contentMap: Record<string, StreamKind> = {
-    short: StreamKind.SHORT,
-    long: StreamKind.LONG,
-    image: StreamKind.IMAGE,
-    video: StreamKind.VIDEO,
-    link: StreamKind.LINK,
-    file: StreamKind.FILE,
-    collection: StreamKind.COLLECTION,
-  };
-  return contentMap[content];
+/** Decode the exact cache-key kind; only the `all` sentinel omits the filter. */
+function parseContent(content: string): string | undefined {
+  return streamSegmentToPostKind(content);
 }

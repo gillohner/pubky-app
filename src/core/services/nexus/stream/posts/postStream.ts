@@ -2,6 +2,7 @@ import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
+import { normalizeLegacyPostDetailsEmbed } from '@/models/post/details/postDetails.helpers';
 import type { NexusPostsKeyStream, NexusPostWithAttachmentMetadata } from '@/services/nexus/nexus.types';
 import { queryNexus } from '@/services/nexus/nexus.utils';
 import { searchApi } from '@/services/nexus/search/search.api';
@@ -32,11 +33,12 @@ export class NexusPostStreamService {
    */
   static async fetchByIds(params: TStreamPostsByIdsParams): Promise<NexusPostWithAttachmentMetadata[]> {
     const { url, body } = postStreamApi.postsByIds(params);
-    return await queryNexus<NexusPostWithAttachmentMetadata[]>({
+    const posts = await queryNexus<NexusPostWithAttachmentMetadata[]>({
       url,
       method: HttpMethod.POST,
       body: JSON.stringify(body),
     });
+    return posts.map((post) => ({ ...post, details: normalizeLegacyPostDetailsEmbed(post.details) }));
   }
 
   /**

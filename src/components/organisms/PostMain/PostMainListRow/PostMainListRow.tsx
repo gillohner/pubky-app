@@ -13,6 +13,7 @@ import { useRelativeTime } from '@/hooks/useRelativeTime/useRelativeTime';
 import { useRepostInfo } from '@/hooks/useRepostInfo/useRepostInfo';
 import { useUserDetails } from '@/hooks/useUserDetails/useUserDetails';
 import { parseCollectionContent } from '@/libs/post/collectionContent';
+import { deriveTextPreview, isBuiltinPostKind } from '@/libs/post/postPreview';
 import { cn, formatPublicKey, isPostDeleted } from '@/libs/utils/utils';
 import { PostHeaderTimestamp } from '@/molecules/PostHeaderTimestamp/PostHeaderTimestamp';
 import { PostListMediaThumbnail } from '@/molecules/PostListMediaThumbnail/PostListMediaThumbnail';
@@ -35,6 +36,7 @@ const LIST_SNIPPET_MAX_CHARS = 120;
 const stopCardPropagation = (event: React.MouseEvent) => event.stopPropagation();
 
 function getListPostSnippet(content: string, kind: string): string {
+  if (kind && !isBuiltinPostKind(kind)) return deriveTextPreview({ content, kind });
   const trimmed = content.trim();
   if (!trimmed) {
     return '';

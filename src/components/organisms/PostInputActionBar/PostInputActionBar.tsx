@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Image, Loader2, Newspaper, Send, Smile } from 'lucide-react';
+import { CalendarDays, CalendarRange, Image, Loader2, Newspaper, Send, Smile } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Typography } from '@/atoms/Typography/Typography';
@@ -25,6 +25,8 @@ export function PostInputActionBar({
   onEmojiClick,
   onImageClick,
   onArticleClick,
+  onEventClick,
+  onCalendarClick,
   onPostClick,
   isPostDisabled = false,
   isSubmitting = false,
@@ -76,6 +78,28 @@ export function PostInputActionBar({
             <ActionButtonContent Icon={Newspaper} />
           </Button>
         ) : null}
+        {!hideArticleButton && onEventClick && (
+          <Button
+            {...COMMON_BUTTON_PROPS}
+            onClick={onEventClick}
+            disabled={isSubmitting}
+            aria-label="Add event"
+            data-cy="post-input-action-bar-add-event"
+          >
+            <ActionButtonContent Icon={CalendarDays} />
+          </Button>
+        )}
+        {!hideArticleButton && onCalendarClick && (
+          <Button
+            {...COMMON_BUTTON_PROPS}
+            onClick={onCalendarClick}
+            disabled={isSubmitting}
+            aria-label="Add calendar"
+            data-cy="post-input-action-bar-add-calendar"
+          >
+            <ActionButtonContent Icon={CalendarRange} />
+          </Button>
+        )}
       </Container>
       <Container className="flex shrink-0 items-center justify-end gap-2" overrideDefaults>
         <Button

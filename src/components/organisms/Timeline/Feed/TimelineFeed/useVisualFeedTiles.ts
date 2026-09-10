@@ -10,6 +10,7 @@ import { getAttachmentPreviewUrl } from '@/libs/file/attachmentPreviewUrl';
 import { Logger } from '@/libs/logger/logger';
 import { parseArticleContent } from '@/libs/post/articleContent';
 import { articleHasInlineSlotZero } from '@/libs/post/articleInlineImages';
+import { isBuiltinPostKind } from '@/libs/post/postPreview';
 import { isPostDeleted } from '@/libs/utils/utils';
 import type { FileDetailsModelSchema } from '@/models/file/fileDetails.schema';
 import { CompositeIdDomain } from '@/models/models.types';
@@ -76,6 +77,7 @@ const EMPTY_SNAPSHOT: VisualFeedSnapshot = {
  * article body, never as standalone visual tiles. Non-articles pass through.
  */
 function visualMediaAttachments<T>(post: EnrichedPostDetails, attachments: readonly T[]): readonly T[] {
+  if (!isBuiltinPostKind(post.kind)) return [];
   if (post.kind !== 'long') return attachments;
   const hasCover = attachments.length > 0 && !articleHasInlineSlotZero(parseArticleContent(post.content)?.body ?? '');
   return attachments.slice(0, hasCover ? 1 : 0);
@@ -164,7 +166,7 @@ function buildRemoteTile(post: EnrichedPostDetails, file: FileDetailsModelSchema
 function resolveTileProbeState(tile: VisualTile): VisualTile {
   // Placeholder tiles mount with a resolved size; probing would misread their
   // empty media fields as a pending probe and stall the row packer.
-  if (tile.placeholderKind) {
+  if (tile.placeholderKind || tile.renderAsPost) {
     return tile;
   }
 
@@ -342,6 +344,20 @@ export function useVisualFeedTiles({
 
         if (isPostDeleted(post.content)) {
           return showUnavailablePosts ? [buildPlaceholderTile(postId, 'deleted', post.indexed_at)] : [];
+        }
+
+        if (!isBuiltinPostKind(post.kind)) {
+          return [
+            {
+              ...buildPlaceholderTile(postId, 'missing', post.indexed_at),
+              id: `${postId}:content`,
+              placeholderKind: undefined,
+              renderAsPost: true,
+              isBlurred: post.is_blurred,
+              preferredSize: 'medium' as const,
+              sizeOptions: ['medium' as const],
+            },
+          ];
         }
 
         const localAttachments = localPostAttachments[postId];

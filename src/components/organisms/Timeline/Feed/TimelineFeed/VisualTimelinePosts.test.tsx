@@ -28,6 +28,10 @@ const {
   )),
 }));
 
+vi.mock('@/organisms/PostMain/PostMain', () => ({
+  PostMain: ({ postId }: { postId: string }) => <article data-testid="native-visual-post">{postId}</article>,
+}));
+
 vi.mock('./useVisualFeedTiles', () => ({
   useVisualFeedTiles: mockUseVisualFeedTiles,
 }));
@@ -293,6 +297,33 @@ describe('VisualTimelinePosts', () => {
       hasPendingFiles: false,
       hasPendingPostDetails: false,
     });
+  });
+
+  it('renders custom content through the native social post shell instead of a media overlay', () => {
+    const rows = createRows();
+    const tile = rows[0].cells[0].tile!;
+    tile.renderAsPost = true;
+    mockUseVisualFeedTiles.mockReturnValue({
+      rows,
+      tail: [],
+      tiles: [],
+      hasPendingSnapshot: false,
+      hasPendingTiles: false,
+      hasPendingFiles: false,
+      hasPendingPostDetails: false,
+    });
+    render(
+      <VisualTimelinePosts
+        postIds={[tile.postId]}
+        loading={false}
+        loadingMore={false}
+        error={null}
+        hasMore={false}
+        loadMore={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('native-visual-post')).toHaveTextContent(tile.postId);
+    expect(screen.queryByLabelText(`Open post ${tile.postId}`)).not.toBeInTheDocument();
   });
 
   it('navigates to the parent post when the tile is clicked', () => {
