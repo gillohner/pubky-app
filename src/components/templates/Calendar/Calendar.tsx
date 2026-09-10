@@ -17,6 +17,7 @@ import type { CalendarOccurrence } from '@/hooks/useEventkyCalendar/useEventkyCa
 import { useEventkyCalendars } from '@/hooks/useEventkyCalendar/useEventkyCalendars';
 import {
   calendarToday,
+  type CalendarView,
   getCalendarWindow,
   moveCalendarAnchor,
   occurrenceOverlapsDay,
@@ -27,7 +28,6 @@ import { EventkyDatePicker } from '@/molecules/EventkyDatePicker/EventkyDatePick
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { EventkyOccurrenceProvider } from '@/organisms/EventkyPostContent/EventkyOccurrenceContext';
 import { PostMain } from '@/organisms/PostMain/PostMain';
-import { type CalendarView } from '@/stores/eventkyCalendar/eventkyCalendar.store';
 
 function OccurrencePost({ occurrence }: { occurrence: CalendarOccurrence }) {
   return (

@@ -1,6 +1,7 @@
 import type { ProjectedOccurrence } from '@eventky-api/types';
 import { Temporal } from '@js-temporal/polyfill';
-import type { CalendarView } from '@/stores/eventkyCalendar/eventkyCalendar.store';
+
+export type CalendarView = 'agenda' | 'month' | 'week' | 'day';
 
 export interface CalendarDay {
   date: string;

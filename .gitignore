@@ -86,5 +86,4 @@ public/sw.js.map
 
 # Rebuildable Eventky service artifacts and local derived state
 /dist/eventky-projection/
-/dist/eventky-migration-preview.cjs
 /services/eventky-projection/data/

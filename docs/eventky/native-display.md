@@ -6,6 +6,4 @@ All-day dates remain civil dates and retain exclusive DTEND semantics. Floating 
 
 The native event renderer uses an automatic device-zone hook. Server rendering and the hydration snapshot use UTC consistently, then React updates to the actual device zone. Focus and visibility changes refresh the zone after device settings change. No preference is persisted.
 
-Native event/calendar surfaces have no import, export, subscription-link, alarm or local calendar-preference actions. RFC interchange functions and backend ICS endpoints remain available as protocol capabilities; the native app does not expose them as competing calendar workflows.
-
-Regression tests cover Zurich/New York DST differences, cross-date conversions in both directions, UTC, floating dates, unshifted all-day dates, a custom VTIMEZONE, unknown-zone failure, device-zone changes, native rendering and the absence of the event export action.
+Native event/calendar surfaces have no import, export, subscription-link, alarm or local calendar-preference actions. The sidecar's `.ics` feed is a protocol endpoint, not an app workflow.

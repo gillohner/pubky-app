@@ -1,77 +1,57 @@
-# Eventky deployment and recovery
+# Eventky deployment
 
-The revised application is published at [https://159.69.22.174](https://159.69.22.174). Staging acceptance is still in progress. The presence of a healthy frontend container is not evidence that indexing, projection coverage or the complete user journey has passed.
+A complete Eventky stack is: a Nexus built from the fork with the projection API enabled, the `eventky-projection` sidecar, and the Pubky App frontend with the Eventky flags on. Everything else (homeserver, Neo4j, Redis) is the standard Pubky stack.
 
-Review branches are `gillohner/pubky-app:feat/eventky-native` ([client PR #1](https://github.com/gillohner/pubky-app/pull/1)) and the optional generic Nexus extension ([PR #15](https://github.com/gillohner/pubky-nexus/pull/15), stacked on PR #14). Deployed source can include later integration changes; never assume a PR's earlier CI run covers the current image. No server credential, homeserver admin password or account signing key belongs in either repository.
+No server credential, homeserver admin password, replication token or account signing key belongs in this repository or in any `PUBKY_RUNTIME_*` variable.
 
-## Current staging deployment
+## Components
 
-The HTTPS reverse proxy serves the frontend and routes Nexus reads to an isolated staging backend. The original production-homeserver Nexus dataset is not the staging test index. The browser writes through the staging homeserver; the projection is derived read-only data and receives no signing key.
+| Component | Source | Notes |
+| --- | --- | --- |
+| Nexus | `gillohner/pubky-nexus` branch `feat/eventky-generic-projection` (stacked on `feat/custom-post-kinds`) | Set `NEXUS_PROJECTION_TOKEN` (≥ 32 chars). Keep `/v0/projection/*` off the public proxy. |
+| Sidecar | `services/eventky-projection` | `docker build -f services/eventky-projection/Dockerfile -t eventky-projection:<rev> .` from the repo root (Node 24, `node:sqlite`). |
+| Frontend | this branch | Standard Dockerfile plus the flags below. |
 
-Frontend `staging-20260909e` is live and healthy. Backend `dce35bf7` is live with sticky primary-user indexing enabled; both staging users are indexed and the configured projection is complete. Live HTTP 429 handling paused for 60 seconds, then a successful request advanced the persisted global cursor to 25350. Historical catch-up continues; projection completeness covers configured Nexus sources, not all homeserver history. Both projection services are healthy on `staging-backoff-20260909`. The e production build and repository lint passed.
+[compose.example.yaml](compose.example.yaml) shows the sidecar and frontend attached to an existing Nexus network.
 
-The public-key event endpoint can return HTTP 429 without `Retry-After`, while the canonical hostname succeeds at the same cursor. The deployed backend rejects non-success responses before parsing event data and applies configured exponential backoff. Cursor advancement is verified; a completed historical catch-up is not.
+### Sidecar environment
 
-| Boundary                       | Verified setting or behavior                                                                                    |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| Public frontend                | `https://159.69.22.174`                                                                                         |
-| Runtime environment            | `window.__PUBKY_CONFIG__.deployEnv` equals `staging`                                                            |
-| Authoritative write homeserver | `ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy` (`homeserver.staging.pubky.app`)                         |
-| Native event/calendar flags    | Both enabled for this staging application                                                                       |
-| Browser read path              | Same-origin Nexus and `/api/eventky/*` routes                                                                   |
-| Projection backend identity    | `/api/eventky/status` returns `{ "ok": true, "value": { "backend_id": "http://staging-nexus:8080", ... } }`     |
-| Private staging loopback ports | Nexus `8082`, projection `8092`; these are operator endpoints, not browser configuration                        |
-| Browser cache separation       | Frontend build uses `eventky-staging-v2` database name to avoid carrying over the earlier production read cache |
-| Test identities                | Disposable owner and guest created on staging; persistent profiles stay on the development machine              |
+| Variable | Meaning |
+| --- | --- |
+| `EVENTKY_NEXUS_URL` | Private Nexus base URL (e.g. `http://nexus:8080`). |
+| `EVENTKY_NEXUS_SYNC_TOKEN` | Same value as Nexus `NEXUS_PROJECTION_TOKEN`. Server-only. |
+| `EVENTKY_DATABASE` | SQLite path on a persistent volume (UID 1000), default `/data/eventky.sqlite`. |
+| `EVENTKY_WORKERS` | Query worker count; `1` is fine for a small VPS. |
+| `EVENTKY_PORT`, `EVENTKY_BIND`, `EVENTKY_POLL_MS` | Listener and replication poll interval. |
 
-The owner authoring harness explicitly checks the environment, homeserver key and staging projection identity before enabling writes. It aborts requests to the production homeserver. Keep these checks when extending the harness. Do not reuse the production homeserver for convenience or copy browser profile contents into evidence artifacts.
+Run one sidecar per database volume. The database records the Nexus backend identity and refuses to open against a different backend; rebuild the projection instead of pointing an existing database at another Nexus.
 
-Current application scope has no import/export, subscription-link, alarm/reminder or local calendar-preference controls. The internal RFC/ICS protocol modules may still exist; they do not require exposing another app workflow or public route. Reading uses the device timezone automatically. Authoring can use a different event timezone, and its recurrence editor preserves that source wall-time meaning.
+### Frontend environment
 
-## Verification before broader use
+- Normal `PUBKY_RUNTIME_*` settings for the homeserver and Nexus of the environment.
+- `PUBKY_RUNTIME_EVENTKY_ENABLED=true` enables event/calendar/attendance kinds in the composer and post rendering.
+- `PUBKY_RUNTIME_EVENTKY_CALENDAR_ENABLED=true` enables the `/calendar` page; it needs the sidecar.
+- `EVENTKY_PROJECTION_URL` (server-only) points the `/api/eventky/*` routes at the sidecar.
+- Use a distinct `NEXT_PUBLIC_DB_NAME` per environment so browser caches from another Nexus dataset are not reused.
 
-1. Inspect the current frontend image, runtime network settings and reverse-proxy targets. Confirm the staging homeserver key and isolated backend identity again after any deployment change.
-2. Check the Nexus information endpoint and the private projection readiness/status. A running process or a `200` status envelope is not the same as `coverage.complete=true`.
-3. Verify newly created staging user profiles and native posts reach Nexus. Both fixture users and their native sources are now indexed; verify new writes separately from the still-throttled global historical stream.
-4. Reconcile projection coverage after the index is healthy. Verify zero unexplained pending/invalid/unavailable sources before interpreting an empty calendar result as complete.
-5. Run the pending real-browser gates in [verification.md](verification.md), including final current-attendee reload/occurrence checks, disposable guest-event deletion and clean desktop/mobile captures. Owner all-day creation/deletion, guest contribution, owner exclusion/restoration and the removed-workflow audit have passed.
+### Reverse proxy
 
-Safe public read-only checks:
+Expose the frontend and the public Nexus read routes (`/v0/`, `/static/`, and Swagger if wanted). Return 404 for `/v0/projection/` and keep the sidecar reachable only from the frontend container.
+
+## Health checks
 
 ```sh
-curl --fail https://159.69.22.174/v0/info
-curl --fail https://159.69.22.174/api/eventky/status
+curl --fail https://<host>/v0/info
+curl --fail https://<host>/api/eventky/status
+curl --fail "https://<host>/v0/stream/posts?kind=event&limit=1"
 ```
 
-Use the configured trust chain for HTTPS; do not make certificate verification bypasses part of the application. Inspect private readiness from the VPS itself. Do not print Docker environment arrays or secret files when collecting evidence.
+`/api/eventky/status` returns `{ ok, value: { backend_id, coverage, ... } }`. A `200` is not the same as `coverage.complete=true`; an empty calendar is only meaningful once coverage is complete and there are no pending/invalid sources.
 
-## Building another isolated deployment
+## Operational notes
 
-1. Build the frontend from the intended source with its Dockerfile and environment-specific database name. Supply the normal required `PUBKY_RUNTIME_*` settings, `PUBKY_RUNTIME_EVENTKY_ENABLED=true`, and `PUBKY_RUNTIME_EVENTKY_CALENDAR_ENABLED=true`. Serve authenticated browser functionality over HTTPS.
-2. Use a compatible Nexus build with the generic projection extension and the intended homeserver dataset. Allocate separate graph/cache state for a staging index. Preserve any newer universal-parent compatibility changes when choosing a deployment revision.
-3. Generate a server-only `NEXUS_PROJECTION_TOKEN` of at least 32 characters. The private `/v0/projection/posts/*` endpoints expose retained source history and belong only on the trusted service network. Never pass the token through a `PUBKY_RUNTIME_*` variable or forward it to browsers.
-4. Build the sidecar from the repository root with `docker build -f services/eventky-projection/Dockerfile -t eventky-projection:<revision> .`. Its Node 24 runtime supports `node:sqlite`. Set `EVENTKY_NEXUS_URL` to the isolated Nexus and `EVENTKY_NEXUS_SYNC_TOKEN` to the same server-only token. Mount a persistent writable `/data` volume owned by UID 1000.
-5. Set the frontend server-only `EVENTKY_PROJECTION_URL` to that sidecar. The browser uses same-origin application proxy routes. Bind backend services to private networks/loopback; permit only the required public read routes through the reverse proxy.
-6. Wait for an actual complete inventory/replay state, then perform the real application acceptance checks. Do not silently change the backend behind an existing projection database.
-
-## Resource and history limits
-
-The generic Nexus outbox retains 10,000 source revisions. At the maximum custom-post size, payloads alone can approach 5 GiB, before graph indexes, active data, Redis, frontend and sidecar storage. Measure host disk and memory headroom before another build or enabling history; a revision cap is not a byte quota. Keep container limits within the host's actual capacity.
-
-The sidecar persists its backend identity, epoch/cursor, durable jobs, staged inventories and current sources in SQLite with WAL enabled. It rejects a database opened against a different backend. Inventory promotion, range expansion, response size, pagination and recurrence work are bounded. Retention expiry triggers a fresh staged inventory rather than guessed deletions.
-
-Run one sidecar writer per database volume. Query workers use bounded execution and queue deadlines. `EVENTKY_WORKERS=1` is the conservative VPS configuration; do not override Node heap flags that defeat per-worker limits. Protocol-level feed/worker limits remain documented in [SUBSCRIPTIONS.md](../../services/eventky-projection/SUBSCRIPTIONS.md), even though the native UI has no subscription/export controls. Production throughput and broad external-client compatibility have not been established by staging functional checks.
-
-## Recovery and rollback
-
-**Primary indexing is sticky once enabled.** Keep `watcher.primary_user_indexing=true`; do not disable it or roll back to an older backend while global history trails delegated users. Old global deletes could overwrite newer per-user state. There is no automatic safe drain/rollback protocol; a current cursor alone proves no safe handoff boundary. Follow the backend [primary-user indexing operating constraints](https://github.com/gillohner/pubky-nexus/blob/deploy/eventky-vps/docs/primary-user-indexing.md) and coordinate any ownership migration explicitly.
-
-- Capture the current image tags, source revisions, non-secret configuration and reverse-proxy targets before changing them. Keep the production and staging stacks/data identities distinct throughout recovery.
-- Disable the calendar-query flag first if projection results are unavailable. Normal event/calendar posts remain authoritative; changing feature flags does not rewrite them.
-- Stop the sidecar before restoring its database. Use SQLite's backup API, or stop the process and copy the main database with its WAL/SHM files. A fresh projection can be rebuilt from the intended Nexus inventory.
-- Never copy a production projection database into a staging sidecar. After restoration, verify backend identity, epoch, source coverage and checkpoint before trusting query results.
-- A failed inventory must not replace the active generation, and an unavailable source must not be interpreted as deleted. Keep fail-closed behavior while diagnosing indexing gaps.
-- Reverting the Nexus extension stops new invalidations. Retain source-history nodes until a separate explicit maintenance decision; ordinary rollback must not destroy graph or homeserver data.
-- Keep disposable browser profiles intact while tests are underway. Clearing site storage can remove the authenticated test session and local unsynchronized work; it is not a backend repair or a public-post deletion.
-
-The older read-only migration preview and interchange code are outside the current native workflow. Do not add migration publication, alarms or preference management to a deployment acceptance run for this revision.
+- **Primary-user indexing is sticky.** If the Nexus fork runs with `watcher.primary_user_indexing=true`, keep it on; rolling back to an older backend while the global stream lags can let old deletes overwrite newer per-user state. See the fork's `docs/primary-user-indexing.md`.
+- **Retention.** The Nexus projection outbox retains 10,000 post revisions. At the 512 KiB post cap that is up to ~5 GiB before graph, Redis and sidecar storage. Check disk headroom before enabling it on a small host.
+- **Rollback order.** Disable `PUBKY_RUNTIME_EVENTKY_CALENDAR_ENABLED` first if the projection is unhealthy; posts stay authoritative on the homeserver and Nexus. Stop the sidecar before restoring or copying its SQLite database (include WAL/SHM files). A fresh projection can always be rebuilt from Nexus.
+- **Fail closed.** A failed inventory never replaces the active generation and an unavailable source is never treated as deleted.
+- **Staging only.** Test against the staging homeserver with disposable keys. Never publish test data to a production homeserver or copy a production projection database into a staging sidecar.

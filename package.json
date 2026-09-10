@@ -29,8 +29,7 @@
     "precommit": "lint-staged && npm run typecheck",
     "prepare": "husky",
     "eventky:projection:build": "esbuild services/eventky-projection/src/server.ts services/eventky-projection/src/worker.ts --bundle --platform=node --format=cjs --target=node24 --outdir=dist/eventky-projection --out-extension:.js=.cjs",
-    "eventky:projection:start": "node dist/eventky-projection/server.cjs",
-    "eventky:migration:build": "esbuild scripts/eventky-migration-preview.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/eventky-migration-preview.cjs"
+    "eventky:projection:start": "node dist/eventky-projection/server.cjs"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [

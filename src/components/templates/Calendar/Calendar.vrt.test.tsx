@@ -4,14 +4,13 @@ import { page } from 'vitest/browser';
 import { Card } from '@/atoms/Card/Card';
 import { EventkyPostContent } from '@/organisms/EventkyPostContent/EventkyPostContent';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { useEventkyCalendarStore } from '@/stores/eventkyCalendar/eventkyCalendar.store';
 import { eventkyCalendarFixture, eventkyEventFixture } from '@/test/fixtures/eventky';
 import { projectionPostId, projectionPostUri } from '@/test/fixtures/eventkyProjection';
 import { matchVrtFrameScreenshot, renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { Calendar } from './Calendar';
 
-const mocks = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn(), copy: vi.fn(), download: vi.fn() }));
+const mocks = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn(), copy: vi.fn() }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: mocks.replace, push: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
@@ -115,14 +114,9 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
 vi.mock('@/hooks/useCopyToClipboard/useCopyToClipboard', () => ({
   useCopyToClipboard: () => ({ copyToClipboard: mocks.copy }),
 }));
-vi.mock('@/hooks/useEventkyDownload/useEventkyDownload', () => ({
-  useEventkyDownload: () => ({ downloadEvent: mocks.download }),
-}));
-
 beforeEach(() => {
   vi.clearAllMocks();
   useAuthStore.setState({ currentUserPubky: 'y'.repeat(52) });
-  useEventkyCalendarStore.setState({ scopes: {} });
 });
 
 describe('native Eventky calendar display', () => {
