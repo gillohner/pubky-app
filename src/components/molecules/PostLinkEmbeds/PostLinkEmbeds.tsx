@@ -83,7 +83,11 @@ const parseContentForLinkEmbed = (content: string, allowInApp: boolean): ParseUr
   }
 };
 
-export const PostLinkEmbeds = ({ content }: PostLinkEmbedsProps) => {
+/**
+ * Embeds the first link of `content`. That link is only in the post's text, not the post's embed, so a
+ * generic link keeps its own website preview rather than the external resource card.
+ */
+export const PostLinkEmbeds = ({ content, isComposing = false }: PostLinkEmbedsProps) => {
   const isNested = useIsNestedPostPreview();
   const { embed, provider } = useMemo(() => parseContentForLinkEmbed(content, !isNested), [content, isNested]);
   const mediaContainerRef = usePauseMediaOutsideViewport();
@@ -92,7 +96,7 @@ export const PostLinkEmbeds = ({ content }: PostLinkEmbedsProps) => {
 
   return (
     <Container ref={mediaContainerRef} className="w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
-      {provider.renderEmbed(embed)}
+      {provider.renderEmbed(embed, { isComposing })}
     </Container>
   );
 };

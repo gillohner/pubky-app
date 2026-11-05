@@ -1,6 +1,8 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { isPinakesConfigured } from '@/config/pinakes';
+import { usePinakesCard } from '@/hooks/usePinakesCard/usePinakesCard';
 import { PostPreviewNestingProvider } from '@/molecules/PostPreviewCard/PostPreviewNestingContext';
 import { PostLinkEmbeds } from './PostLinkEmbeds';
 
@@ -115,6 +117,12 @@ vi.mock('./Providers/Generic/GenericPreview', () => ({
       Mocked Generic Preview
     </div>
   ),
+}));
+
+// No Pinakes card unless a test gives one, as with Pinakes not configured
+vi.mock('@/config/pinakes', () => ({ isPinakesConfigured: vi.fn(() => false) }));
+vi.mock('@/hooks/usePinakesCard/usePinakesCard', () => ({
+  usePinakesCard: vi.fn(() => ({ data: null, isLoading: false, isError: false })),
 }));
 
 // Mock PostPreviewCard to avoid pulling in local-first data hooks
@@ -816,6 +824,26 @@ describe('PostLinkEmbeds', () => {
       );
 
       expect(screen.getByTestId('YouTube video player')).toBeInTheDocument();
+    });
+  });
+
+  describe('Link in the text', () => {
+    afterEach(() => {
+      vi.mocked(isPinakesConfigured).mockReturnValue(false);
+    });
+
+    it('keeps the website preview of a link that is only in the text, also when Pinakes is configured', () => {
+      vi.mocked(isPinakesConfigured).mockReturnValue(true);
+
+      render(<PostLinkEmbeds content="Read https://en.wikipedia.org/wiki/Bitcoin" />);
+
+      expect(screen.getByTestId('generic-preview')).toHaveAttribute(
+        'data-url',
+        'https://en.wikipedia.org/wiki/Bitcoin',
+      );
+      expect(screen.queryByTestId('resource-card')).not.toBeInTheDocument();
+      expect(screen.queryByText(/^Tags on/)).not.toBeInTheDocument();
+      expect(usePinakesCard).not.toHaveBeenCalled();
     });
   });
 

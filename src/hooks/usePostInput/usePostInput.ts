@@ -97,6 +97,7 @@ export function usePostInput({
   active = true,
   variant,
   postId,
+  parentUri,
   originalPostId,
   editPostId,
   editLock,
@@ -441,7 +442,11 @@ export function usePostInput({
         useLocalFilesStore.getState().setPostAttachments(createdPostId, attachments.map(newFileToLocalAttachment));
       }
 
-      if (variant === POST_INPUT_VARIANT.REPLY) {
+      // A reply to a post joins its thread. A reply to an external resource is a root post (its
+      // `parent` is no post). It starts from a card in any feed, like a repost, so it goes on top of
+      // the open timeline only where a repost does (not someone's profile, a collection, ...).
+      const isResourceReply = variant === POST_INPUT_VARIANT.REPLY && parentUri !== undefined;
+      if (variant === POST_INPUT_VARIANT.REPLY && !isResourceReply) {
         onSuccess?.(createdPostId);
         return;
       }
@@ -449,7 +454,7 @@ export function usePostInput({
       const feedVariant = timelineFeed?.variant;
       const shouldPrepend =
         variant === POST_INPUT_VARIANT.POST ||
-        (variant === POST_INPUT_VARIANT.REPOST &&
+        ((variant === POST_INPUT_VARIANT.REPOST || isResourceReply) &&
           feedVariant != null &&
           REPOST_OPTIMISTIC_PREPEND_VARIANTS.has(feedVariant));
 
@@ -497,7 +502,11 @@ export function usePostInput({
 
     switch (variant) {
       case POST_INPUT_VARIANT.REPLY:
-        await reply({ postId: postId!, onSuccess: handleSuccess });
+        await reply(
+          parentUri !== undefined
+            ? { parentUri, onSuccess: handleSuccess }
+            : { postId: postId!, onSuccess: handleSuccess },
+        );
         break;
       case POST_INPUT_VARIANT.REPOST:
         await repost({
@@ -532,6 +541,7 @@ export function usePostInput({
     articleTitle,
     variant,
     postId,
+    parentUri,
     originalPostId,
     successToastTitle,
     reply,

@@ -1,5 +1,5 @@
 import { BookmarkApplication } from '@/application/bookmark/bookmark';
-import type { TBookmarkEventParams } from '@/controllers/bookmark/bookmark.types';
+import type { TBookmarkEventParams, TResourceBookmarkParams } from '@/controllers/bookmark/bookmark.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { parseCompositeId } from '@/models/models.utils';
 import { BookmarkNormalizer } from '@/pipes/bookmark/bookmark.normalizer';
@@ -63,5 +63,30 @@ export class BookmarkController {
     const { url } = BookmarkNormalizer.to(parseCompositeId(postId), userId);
 
     await BookmarkApplication.persist(HttpMethod.DELETE, { postId, bookmarkUrl: url });
+  }
+
+  /**
+   * Whether the viewer bookmarked an external resource (a web link). Bookmarks are private, so
+   * this is only ever the viewer's own state. Network only: the homeserver holds the only record
+   * of a web bookmark.
+   */
+  static fetchResourceBookmarked({ uri, userId }: TResourceBookmarkParams): Promise<boolean> {
+    const { url } = BookmarkNormalizer.toResource(uri, userId);
+
+    return BookmarkApplication.fetchResourceBookmarked(url);
+  }
+
+  /** Bookmark an external resource: `/priv/social/v1/bookmarks/`, targeting the link. */
+  static async commitCreateResource({ uri, userId }: TResourceBookmarkParams) {
+    const { url, body } = BookmarkNormalizer.toResource(uri, userId);
+
+    await BookmarkApplication.persistResource(HttpMethod.PUT, { bookmarkUrl: url, bookmarkBody: body });
+  }
+
+  /** Remove the bookmark of an external resource; its path spells the link, so it is built again. */
+  static async commitDeleteResource({ uri, userId }: TResourceBookmarkParams) {
+    const { url } = BookmarkNormalizer.toResource(uri, userId);
+
+    await BookmarkApplication.persistResource(HttpMethod.DELETE, { bookmarkUrl: url });
   }
 }
