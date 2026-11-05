@@ -26,11 +26,9 @@ interface ResourceActionsProps {
   tagsLabel: string;
   /** The link's web address (`getResourceLinks().linkUrl`) for the ⋯ menu; `null` for a non-web URI. */
   linkUrl?: string | null;
-  /** The site's name for the ⋯ menu's "Open in <site>". */
-  siteName?: string | null;
   /** The card's title for the ⋯ menu's "Copy title"; absent when the card has none. */
   title?: string | null;
-  /** Extra ⋯ menu entries after the card's own (Open in other services, Also on). */
+  /** Extra ⋯ menu entries after the card's own (the other services it is on, "Also on"). */
   extraMenuContent?: ResourceExtraMenuContent;
 }
 
@@ -54,7 +52,6 @@ export function ResourceActions({
   collectionsCount,
   tagsLabel,
   linkUrl = null,
-  siteName,
   title,
   extraMenuContent,
 }: ResourceActionsProps) {
@@ -127,13 +124,7 @@ export function ResourceActions({
         />
         <ResourcePostButton uri={uri} />
         <ResourceSavePicker uri={uri} collectionsCount={collectionsCount} />
-        <ResourceMoreMenu
-          uri={uri}
-          linkUrl={linkUrl}
-          siteName={siteName}
-          title={title}
-          extraMenuContent={extraMenuContent}
-        />
+        <ResourceMoreMenu uri={uri} linkUrl={linkUrl} title={title} extraMenuContent={extraMenuContent} />
       </Container>
       {isReplying && <DialogReply resourceUri={uri} open={isReplying} onOpenChangeAction={setIsReplying} />}
     </Container>

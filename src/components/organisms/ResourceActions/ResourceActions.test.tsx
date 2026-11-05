@@ -2,7 +2,9 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MENU_VARIANT } from '@/config/ui';
 import { PostController } from '@/controllers/post/post';
+import { ResourceAlsoOn } from '@/molecules/ResourceCard/ResourceAlsoOn';
 import type { NexusTag } from '@/services/nexus/nexus.types';
+import videoFixture from '@/services/pinakes/fixtures/by-uri.video.json';
 import { ResourceActions } from './ResourceActions';
 
 const URI = 'https://open.spotify.com/track/5Z01UMMf7V1o0MzF86s6WJ';
@@ -143,7 +145,6 @@ const renderActions = (collectionsCount?: number | null) =>
       collectionsCount={collectionsCount}
       tagsLabel="Tags on this song"
       linkUrl={LINK}
-      siteName="Spotify"
       title="Bohemian Rhapsody"
     />,
   );
@@ -468,25 +469,14 @@ describe('ResourceActions', () => {
   describe('more', () => {
     const menuLabels = () => screen.getAllByRole('menuitem').map((item) => item.textContent);
 
-    it('opens the link on its site, copies its link and copies its title, signed out too', async () => {
+    it('copies its link and its title, signed out too, and leaves opening the link to the card’s header', async () => {
       mocks.isSignedIn = false;
       renderActions();
 
       openMenu('More options');
 
-      await waitFor(() => expect(menuLabels()).toEqual(['Open in Spotify', 'Copy link', 'Copy title']));
+      await waitFor(() => expect(menuLabels()).toEqual(['Copy link', 'Copy title']));
       expect(mocks.signInRequests).toBe(0);
-    });
-
-    it('opens the web link in a new tab', async () => {
-      const open = vi.spyOn(window, 'open').mockReturnValue(null);
-      renderActions();
-
-      openMenu('More options');
-      fireEvent.click(await screen.findByText('Open in Spotify'));
-
-      expect(open).toHaveBeenCalledWith(LINK, '_blank', 'noopener,noreferrer');
-      open.mockRestore();
     });
 
     it('copies the web link and the title', async () => {
@@ -502,7 +492,7 @@ describe('ResourceActions', () => {
       expect(mocks.copyTitles).toContain('Title copied');
     });
 
-    it('offers only what applies: no open item without a web link, no title item without a title', async () => {
+    it('offers only what applies: no title item without a title, the URI as written without a web link', async () => {
       render(<ResourceActions uri="isbn:9780140328721" tagsLabel="Tags on this book" linkUrl={null} />);
 
       openMenu('More options');
@@ -514,20 +504,45 @@ describe('ResourceActions', () => {
 
     it('adds the extra entries after its own, in the menu’s variant', async () => {
       const extra = vi.fn(({ variant }: { variant: string }) => <div role="menuitem">{`Also on (${variant})`}</div>);
+      render(<ResourceActions uri={URI} tagsLabel="Tags on this song" linkUrl={LINK} extraMenuContent={extra} />);
+
+      openMenu('More options');
+
+      await waitFor(() => expect(menuLabels()).toEqual(['Copy link', `Also on (${MENU_VARIANT.DROPDOWN})`]));
+    });
+
+    it('lists the other services last, one row per service under "Also on", in a menu that scrolls', async () => {
       render(
         <ResourceActions
           uri={URI}
           tagsLabel="Tags on this song"
           linkUrl={LINK}
-          siteName="Spotify"
-          extraMenuContent={extra}
+          title="Bohemian Rhapsody"
+          extraMenuContent={({ variant, closeMenu }) => (
+            <ResourceAlsoOn alsoOn={videoFixture.also_on} variant={variant} closeMenu={closeMenu} />
+          )}
         />,
       );
 
       openMenu('More options');
 
-      await waitFor(() =>
-        expect(menuLabels()).toEqual(['Open in Spotify', 'Copy link', `Also on (${MENU_VARIANT.DROPDOWN})`]),
+      const menu = await screen.findByRole('menu');
+      expect(menuLabels()).toEqual([
+        'Copy link',
+        'Copy title',
+        'TIDAL',
+        'Apple Music',
+        'YouTube',
+        'MusicBrainz',
+        'Deezer',
+        'Spotify',
+      ]);
+      expect(within(menu).getByRole('group', { name: 'Also on' })).toBeInTheDocument();
+      // The post's menu width; the rows are one line each.
+      expect(menu).toHaveClass(
+        'w-56',
+        'max-h-[var(--radix-dropdown-menu-content-available-height)]',
+        'overflow-y-auto',
       );
     });
 
@@ -552,6 +567,28 @@ describe('ResourceActions', () => {
       fireEvent.click(screen.getByRole('button', { name: 'More options' }));
       const sheet = await screen.findByRole('dialog');
       fireEvent.click(within(sheet).getByRole('button', { name: `Also on (${MENU_VARIANT.SHEET})` }));
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('lists the other services in the sheet as links, which close it once followed', async () => {
+      mocks.isMobile = true;
+      render(
+        <ResourceActions
+          uri={URI}
+          tagsLabel="Tags on this song"
+          linkUrl={LINK}
+          extraMenuContent={({ variant, closeMenu }) => (
+            <ResourceAlsoOn alsoOn={videoFixture.also_on} variant={variant} closeMenu={closeMenu} />
+          )}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      const sheet = await screen.findByRole('dialog');
+      expect(sheet).toHaveClass('max-h-dvh', 'overflow-y-auto');
+      const group = within(sheet).getByRole('group', { name: 'Also on' });
+      fireEvent.click(within(group).getByRole('link', { name: 'TIDAL' }));
 
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     });

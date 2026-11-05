@@ -1,7 +1,7 @@
 'use client';
 
 import { type ReactNode, useState } from 'react';
-import { Ellipsis, ExternalLink, FileText, Link } from 'lucide-react';
+import { Ellipsis, FileText, Link } from 'lucide-react';
 import { Container } from '@/atoms/Container/Container';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/atoms/DropdownMenu/DropdownMenu';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/atoms/Sheet/Sheet';
@@ -15,16 +15,17 @@ import {
   type PostMenuActionListItem,
 } from '@/organisms/PostMenuActions/PostMenuActionList/PostMenuActionList';
 
-/** What renders extra ⋯ menu entries after the card's own, in the dropdown or the mobile sheet. */
+/**
+ * What renders extra ⋯ menu entries after the card's own, in the dropdown or the mobile sheet (the
+ * other services the external resource is on, "Also on").
+ */
 export type ResourceExtraMenuContent = (props: { variant: MenuVariant; closeMenu: () => void }) => ReactNode;
 
 interface ResourceMoreMenuProps {
   /** The external resource's link exactly as written: copied when it has no web link. */
   uri: string;
-  /** Its web link (`getResourceLinks().linkUrl`), opened and copied; `null` for a non-web URI. */
+  /** Its web link (`getResourceLinks().linkUrl`), copied; `null` for a non-web URI. */
   linkUrl: string | null;
-  /** The site's name for "Open in <site>"; the link's host when the card names none. */
-  siteName?: string | null;
   /** The card's title, copied by "Copy title"; no item without one. */
   title?: string | null;
   extraMenuContent?: ResourceExtraMenuContent;
@@ -32,36 +33,28 @@ interface ResourceMoreMenuProps {
 
 /**
  * The ⋯ of an external resource card: the post's More button and menu (a dropdown, a bottom sheet
- * on a phone) with what fits a link: open it on its site, copy its link, copy its title. Every item
- * only reads, so the menu opens signed out too.
+ * on a phone) with what fits a link: copy its link, copy its title, then the extra entries. The card's
+ * header already opens the link on its site, so the menu does not. Every item only reads, so the menu
+ * opens signed out too. Both shells scroll when the extra entries make the menu taller than the screen.
  */
-export function ResourceMoreMenu({ uri, linkUrl, siteName, title, extraMenuContent }: ResourceMoreMenuProps) {
+export function ResourceMoreMenu({ uri, linkUrl, title, extraMenuContent }: ResourceMoreMenuProps) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const { shareUrl: copyLink } = useShareUrl({ successTitle: 'Link copied to clipboard' });
   const { copyToClipboard: copyTitle } = useCopyToClipboard({ successTitle: 'Title copied' });
   const closeMenu = () => setOpen(false);
 
-  const items: PostMenuActionListItem[] = [];
-  if (linkUrl) {
-    items.push({
-      id: 'open',
-      label: siteName ? `Open in ${siteName}` : 'Open link',
-      icon: ExternalLink,
-      onClick: () => {
-        window.open(linkUrl, '_blank', 'noopener,noreferrer');
+  const items: PostMenuActionListItem[] = [
+    {
+      id: 'copy-link',
+      label: 'Copy link',
+      icon: Link,
+      onClick: async () => {
+        // useShareUrl reports its own success/failure toasts and never throws.
+        await copyLink(linkUrl ?? uri);
       },
-    });
-  }
-  items.push({
-    id: 'copy-link',
-    label: 'Copy link',
-    icon: Link,
-    onClick: async () => {
-      // useShareUrl reports its own success/failure toasts and never throws.
-      await copyLink(linkUrl ?? uri);
     },
-  });
+  ];
   if (title) {
     items.push({
       id: 'copy-title',
@@ -92,7 +85,11 @@ export function ResourceMoreMenu({ uri, linkUrl, siteName, title, extraMenuConte
     return (
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>{trigger}</SheetTrigger>
-        <SheetContent side="bottom" onOpenAutoFocus={(event) => event.preventDefault()}>
+        <SheetContent
+          side="bottom"
+          className="max-h-dvh overflow-y-auto"
+          onOpenAutoFocus={(event) => event.preventDefault()}
+        >
           <SheetHeader>
             <SheetTitle className="sr-only">{'External resource actions'}</SheetTitle>
           </SheetHeader>
@@ -109,7 +106,7 @@ export function ResourceMoreMenu({ uri, linkUrl, siteName, title, extraMenuConte
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="flex w-56 flex-col gap-2.5"
+        className="flex max-h-[var(--radix-dropdown-menu-content-available-height)] w-56 flex-col gap-2.5 overflow-y-auto"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         {content(MENU_VARIANT.DROPDOWN)}
