@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getResourceRoute } from '@/app/routes';
 import { PostPreviewNavigableProvider } from '@/molecules/PostPreviewCard/PostPreviewNestingContext';
@@ -21,6 +21,11 @@ import videoFixture from '@/services/pinakes/fixtures/by-uri.video.json';
 import { PinakesStatus, type TPinakesResourceDetail } from '@/services/pinakes/pinakes.types';
 import { ResourceCard } from './ResourceCard';
 import { ResourceFamily } from './ResourceCard.types';
+
+// The link's own preview (OpenGraph) fills only what a card lacks; its tests are in ResourceCard.fallback.test.
+vi.mock('@/hooks/useOgMetadata/useOgMetadata', () => ({
+  useOgMetadata: () => ({ metadata: null, isLoading: false, error: null }),
+}));
 
 const ARTICLE: TPinakesResourceDetail = articleFixture;
 
@@ -208,8 +213,31 @@ describe('ResourceCard', () => {
       expect(screen.getByTestId('resource-card-description').textContent).toMatch(
         /^Bitcoin is the first decentralized/,
       );
+      // A Wikimedia file is shown without a credit too.
       expect(screen.getByTestId('resource-card-image')).toHaveAttribute('src', ARTICLE.image);
+      expect(screen.queryByTestId('resource-card-type-tile')).not.toBeInTheDocument();
       expect(screen.queryByTestId('resource-card-status')).not.toBeInTheDocument();
+    });
+
+    it('shows a Wikimedia image with its credit, or with the card’s own attribution', () => {
+      const credited = { ...ARTICLE, credits: mbGroupEnrichedFixture.credits };
+      const { unmount } = render(<ResourceCard card={credited} href={ARTICLE.uri} />);
+      expect(screen.getByTestId('resource-card-image')).toHaveAttribute('src', ARTICLE.image);
+      unmount();
+
+      const file = {
+        ...ARTICLE,
+        type: 'ImageObject',
+        type_path: ['Thing', 'CreativeWork', 'MediaObject', 'ImageObject'],
+      };
+      render(<ResourceCard card={{ ...file, attribution: 'Grayliptrot, public domain' }} href={ARTICLE.uri} />);
+      expect(screen.getByTestId('resource-card-image')).toHaveAttribute('src', ARTICLE.image);
+    });
+
+    it('shows a Wikimedia image without any credit too', () => {
+      render(<ResourceCard card={{ ...ARTICLE, credits: [], attribution: '© OpenStreetMap contributors (ODbL)' }} />);
+
+      expect(screen.getByTestId('resource-card-image')).toHaveAttribute('src', ARTICLE.image);
     });
 
     it('links the title to the resource’s page and the source to the post’s link in a new tab', () => {
@@ -267,12 +295,42 @@ describe('ResourceCard', () => {
       expect(source().querySelector('svg')).toHaveClass('lucide-globe');
     });
 
-    it('hides an image that fails to load', () => {
-      render(<ResourceCard card={ARTICLE} href={ARTICLE.uri} />);
+    it('shows the type’s icon in place of an image that fails to load', () => {
+      render(<ResourceCard card={musicRecordingFixture} href={musicRecordingFixture.uri} />);
 
       fireEvent.error(screen.getByTestId('resource-card-image'));
 
       expect(screen.queryByTestId('resource-card-image')).not.toBeInTheDocument();
+      expect(screen.getByTestId('resource-card-type-tile').querySelector('svg')).toHaveClass('lucide-music');
+    });
+
+    it('aligns the image to the top, so a tall text column never stretches it', () => {
+      render(<ResourceCard card={videoFixture} href={videoFixture.uri} />);
+
+      expect(screen.getByTestId('resource-card-image')).toHaveClass('self-start');
+    });
+
+    it('shows an upright image (a poster) as a square once it has loaded, even for a film', async () => {
+      render(<ResourceCard card={movieFixture} href={movieFixture.uri} />);
+      const image = screen.getByTestId('resource-card-image');
+      expect(image).toHaveAttribute('data-shape', 'wide');
+      Object.defineProperty(image, 'naturalWidth', { value: 500 });
+      Object.defineProperty(image, 'naturalHeight', { value: 750 });
+
+      fireEvent.load(image);
+
+      await waitFor(() => expect(screen.getByTestId('resource-card-image')).toHaveAttribute('data-shape', 'square'));
+    });
+
+    it('shows a wide image as a 16:9 thumbnail once it has loaded, whatever the type', async () => {
+      render(<ResourceCard card={musicRecordingFixture} href={musicRecordingFixture.uri} />);
+      const image = screen.getByTestId('resource-card-image');
+      Object.defineProperty(image, 'naturalWidth', { value: 1200 });
+      Object.defineProperty(image, 'naturalHeight', { value: 784 });
+
+      fireEvent.load(image);
+
+      await waitFor(() => expect(screen.getByTestId('resource-card-image')).toHaveAttribute('data-shape', 'wide'));
     });
 
     it.each([
@@ -289,7 +347,7 @@ describe('ResourceCard', () => {
 
     it.each([
       ['song', musicRecordingFixture],
-      ['article', articleFixture],
+      ['band', mbGroupEnrichedFixture],
     ])('keeps a %s’s image square', (_, fixture) => {
       render(<ResourceCard card={fixture} href={fixture.uri} />);
 
@@ -342,10 +400,70 @@ describe('ResourceCard', () => {
 
       expect(card()).toHaveAttribute('data-family', ResourceFamily.PLACE);
       expect(screen.getByTestId('resource-card-type')).toHaveTextContent('City');
-      expect(screen.getByTestId('resource-card-point')).toHaveTextContent('52.5174, 13.3951');
+      // A city's address is its country; no raw coordinates when the card says where it is.
+      expect(screen.getByTestId('resource-card-summary')).toHaveTextContent('Germany');
+      expect(screen.queryByTestId('resource-card-point')).not.toBeInTheDocument();
       expect(screen.getByTestId('resource-card-attribution')).toHaveTextContent('© OpenStreetMap contributors (ODbL)');
       expect(screen.queryByTestId('resource-card-dates')).not.toBeInTheDocument();
       expect(screen.queryByTestId('resource-card-image')).not.toBeInTheDocument();
+      expect(screen.getByTestId('resource-card-type-tile').querySelector('svg')).toHaveClass('lucide-map-pin');
+    });
+
+    it('shows a place’s address instead of its coordinates', () => {
+      const cafe = {
+        ...placeFixture,
+        type: 'CafeOrCoffeeShop',
+        type_path: ['Thing', 'Organization', 'Place', 'LocalBusiness', 'FoodEstablishment', 'CafeOrCoffeeShop'],
+        name: 'Henrici',
+        address: {
+          street: 'Niederdorfstrasse',
+          house_number: '1',
+          postcode: '8001',
+          city: 'Zürich',
+          country_code: 'ch',
+        },
+        category: 'amenity/cafe',
+      };
+      render(<ResourceCard card={cafe} href={placeFixture.uri} />);
+
+      expect(screen.getByTestId('resource-card-summary').textContent).toMatch(
+        /^Niederdorfstrasse 1, 8001 Zürich, Switzerland$/,
+      );
+      expect(screen.queryByTestId('resource-card-point')).not.toBeInTheDocument();
+    });
+
+    it('shows a place’s point when it has no address', () => {
+      render(<ResourceCard card={{ ...placeFixture, address: null }} href={placeFixture.uri} />);
+
+      expect(screen.getByTestId('resource-card-point')).toHaveTextContent('52.5174, 13.3951');
+    });
+
+    it('leads an event with its dates, then the venue, the organizer and whether it is online', () => {
+      render(<ResourceCard card={{ ...eventFixture, attendance: 'online' }} href={eventFixture.uri} />);
+
+      const dates = screen.getByTestId('resource-card-dates');
+      const description = screen.getByTestId('resource-card-description');
+      expect(dates.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.getByTestId('resource-card-organizer')).toHaveTextContent(
+        'by 2026 Principled Business Summit - Austin',
+      );
+      expect(within(screen.getByTestId('resource-card-organizer')).getByRole('link')).toHaveAttribute(
+        'href',
+        eventFixture.organizer?.url,
+      );
+      expect(screen.getByTestId('resource-card-attendance')).toHaveTextContent('Online');
+    });
+
+    it('leaves out an organizer that only repeats the performer, and an in-person event’s chip', () => {
+      const concert = {
+        ...eventFixture,
+        organizer: { name: 'Noah Kahan', url: 'https://www.songkick.com/concerts/1' },
+        facts: { performer: 'Noah Kahan' },
+      };
+      render(<ResourceCard card={concert} href={eventFixture.uri} />);
+
+      expect(screen.queryByTestId('resource-card-organizer')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('resource-card-attendance')).not.toBeInTheDocument();
     });
 
     it.each([
@@ -449,7 +567,7 @@ describe('ResourceCard', () => {
     it('says a pending card has not been read yet', () => {
       render(<ResourceCard card={{ ...ARTICLE, status: PinakesStatus.PENDING }} />);
 
-      expect(screen.getByTestId('resource-card-status')).toHaveTextContent('Details not read yet');
+      expect(screen.getByTestId('resource-card-status')).toHaveTextContent('Details are still being read');
       expect(title()).toHaveTextContent('Bitcoin');
     });
 
@@ -481,10 +599,34 @@ describe('ResourceCard', () => {
       expect(card()).not.toHaveAttribute('data-click-through');
     });
 
-    it('shows the whole description', () => {
+    it('shows the whole description, clamped on a phone until “More”', () => {
       render(<ResourceCard card={ARTICLE} size="large" />);
 
-      expect(screen.getByTestId('resource-card-description')).not.toHaveClass('line-clamp-2');
+      const description = screen.getByTestId('resource-card-description');
+      expect(description).not.toHaveClass('line-clamp-2');
+      expect(description).toHaveClass('max-sm:line-clamp-6');
+      const more = screen.getByTestId('resource-card-more');
+      expect(more).toHaveAttribute('aria-expanded', 'false');
+      expect(more).toHaveAttribute('aria-controls', description.id);
+      fireEvent.click(more);
+      expect(screen.getByTestId('resource-card-description')).not.toHaveClass('max-sm:line-clamp-6');
+      expect(more).toHaveTextContent('Less');
+      expect(more).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('lists every fact under “Details”, known ones formatted, unknown ones in words, ids left out', () => {
+      const song = {
+        ...musicRecordingFixture,
+        facts: { duration: '369', isrc: 'USQX91300108', mbid: '833f00e1', some_new_fact: 'value' },
+      };
+      render(<ResourceCard card={song} size="large" />);
+
+      expect(screen.getByRole('region', { name: 'Details' })).toBeInTheDocument();
+      expect(screen.getAllByTestId('resource-fact').map((row) => row.textContent)).toEqual([
+        'Duration6:09',
+        'ISRCUSQX91300108',
+        'Some new factvalue',
+      ]);
     });
 
     it('titles a card without a web link as text', () => {
@@ -495,7 +637,21 @@ describe('ResourceCard', () => {
       expect(screen.queryByRole('link')).not.toBeInTheDocument();
     });
 
-    it('does not send the heading or the source to a link that is gone upstream', () => {
+    it('does not send the card, its source or its heading to a link that is gone upstream', () => {
+      const { unmount } = render(<ResourceCard card={missingFixture} href={missingFixture.uri} />);
+      expect(source().tagName).toBe('SPAN');
+      expect(card()).not.toHaveAttribute('data-click-through');
+      unmount();
+
+      // Where links may not navigate, its title is text too.
+      const { unmount: unmountQuoted } = render(
+        <PostPreviewNavigableProvider navigable={false}>
+          <ResourceCard card={missingFixture} href={missingFixture.uri} />
+        </PostPreviewNavigableProvider>,
+      );
+      expect(title().tagName).not.toBe('A');
+      unmountQuoted();
+
       render(<ResourceCard card={missingFixture} size="large" />);
 
       expect(title().tagName).toBe('SPAN');
@@ -521,8 +677,10 @@ describe('ResourceCard', () => {
       expect(credits()).toHaveAttribute('data-variant', 'compact');
       expect(credits().parentElement?.lastElementChild).toBe(credits());
       expect(credits().parentElement?.nextElementSibling).toBe(screen.getByTestId('actions'));
-      expect(credits()).toHaveTextContent('Sources: Wikipedia · Wikimedia Commons');
-      expect(screen.getByRole('link', { name: 'Wikipedia (text, CC BY-SA 4.0)' })).toHaveAttribute(
+      expect(credits()).toHaveTextContent(
+        'Sources: Text: Wikipedia, CC BY-SA 4.0 · Image: Sony Music Entertainment, Wikimedia Commons, CC BY 4.0',
+      );
+      expect(screen.getByRole('link', { name: 'Wikipedia' })).toHaveAttribute(
         'href',
         'https://en.wikipedia.org/wiki/Daft_Punk',
       );
@@ -533,7 +691,7 @@ describe('ResourceCard', () => {
       render(<ResourceCard card={MB_GROUP} size="large" actions={<div data-testid="actions" />} />);
 
       expect(credits()).toHaveAttribute('data-variant', 'full');
-      expect(credits().previousElementSibling).toContainElement(screen.getByTestId('resource-card-image'));
+      expect(credits().previousElementSibling).toBe(screen.getByTestId('resource-facts'));
       expect(credits().parentElement?.nextElementSibling).toBe(screen.getByTestId('actions'));
       expect(screen.getByRole('region', { name: 'Sources' })).toBe(credits());
       expect(screen.getAllByTestId('resource-credit').map((line) => line.textContent)).toEqual([
@@ -548,7 +706,7 @@ describe('ResourceCard', () => {
       const open = vi.spyOn(window, 'open').mockReturnValue(null);
       render(<ResourceCard card={MB_GROUP} href={MB_GROUP.uri} actions={<div data-resource-controls />} />);
 
-      fireEvent.click(screen.getByRole('link', { name: 'Wikipedia (text, CC BY-SA 4.0)' }));
+      fireEvent.click(screen.getByRole('link', { name: 'Wikipedia' }));
       expect(open).not.toHaveBeenCalled();
 
       fireEvent.click(screen.getByTestId('resource-card-description'));
@@ -557,7 +715,10 @@ describe('ResourceCard', () => {
 
     it('treats a source that is not an http(s) page as the card’s surface, like the description', () => {
       const open = vi.spyOn(window, 'open').mockReturnValue(null);
-      const card = { ...MB_GROUP, credits: MB_GROUP.credits?.map((credit) => ({ ...credit, source_url: 'urn:x' })) };
+      const card = {
+        ...MB_GROUP,
+        credits: MB_GROUP.credits?.map((credit) => ({ ...credit, source_url: 'urn:x', license_url: null })),
+      };
       render(<ResourceCard card={card} href={MB_GROUP.uri} actions={<div data-resource-controls />} />);
 
       expect(within(credits()).queryByRole('link')).not.toBeInTheDocument();
@@ -570,7 +731,7 @@ describe('ResourceCard', () => {
 
       fireEvent.error(screen.getByTestId('resource-card-image'));
 
-      expect(credits()).toHaveTextContent('Sources: Wikipedia');
+      expect(credits()).toHaveTextContent('Sources: Text: Wikipedia');
       expect(credits()).not.toHaveTextContent('Wikimedia Commons');
     });
 
@@ -589,49 +750,37 @@ describe('ResourceCard', () => {
       expect(screen.queryByTestId('resource-credits')).not.toBeInTheDocument();
     });
 
-    it('still shows an image that has no credit', () => {
+    it('still shows an image that has no credit and needs none', () => {
+      render(<ResourceCard card={{ ...musicRecordingFixture, credits: [] }} />);
+
+      expect(screen.getByTestId('resource-card-image')).toHaveAttribute('src', musicRecordingFixture.image);
+    });
+
+    it('shows a Wikimedia Commons image without its credit, crediting only the text', () => {
       render(<ResourceCard card={{ ...MB_GROUP, credits: MB_GROUP.credits?.slice(0, 1) }} />);
 
       expect(screen.getByTestId('resource-card-image')).toHaveAttribute('src', MB_GROUP.image);
-      expect(credits()).toHaveTextContent('Sources: Wikipedia');
+      expect(credits()).toHaveTextContent('Sources: Text: Wikipedia');
       expect(credits()).not.toHaveTextContent('Wikimedia Commons');
     });
 
-    it('shows no sources line on a non-music card', () => {
+    it('shows no sources line on a card without credits', () => {
       render(<ResourceCard card={ARTICLE} />);
 
       expect(screen.queryByTestId('resource-credits')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('resource-card-no-description')).not.toBeInTheDocument();
     });
 
     it.each([
       ['stable', mbArtistSparseFixture],
       ['enriched, nothing found', mbArtistSparseEnrichedFixture],
-    ])('says a music card has no description on its page (%s)', (_, sparse) => {
-      render(<ResourceCard card={sparse} size="large" />);
+    ])('never says a sparse card has no description; its facts and type icon stand in (%s)', (_, sparse) => {
+      const card = { ...sparse, facts: { ...sparse.facts, disambiguation: 'frenchcore artist', area: 'Netherlands' } };
+      render(<ResourceCard card={card} size="large" />);
 
-      expect(screen.getByTestId('resource-card-no-description')).toHaveTextContent('No description available');
+      expect(screen.getByTestId('resource-card-summary')).toHaveTextContent('Frenchcore artist · Netherlands');
       expect(screen.queryByTestId('resource-card-description')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('resource-credits')).not.toBeInTheDocument();
-    });
-
-    it.each([PinakesStatus.PENDING, PinakesStatus.ERROR, PinakesStatus.UNREACHABLE])(
-      'does not say a %s music card has no description: it was not read',
-      (status) => {
-        render(<ResourceCard card={{ ...mbArtistSparseFixture, status }} size="large" />);
-
-        expect(screen.getByTestId('resource-card-status')).toBeInTheDocument();
-        expect(screen.queryByTestId('resource-card-no-description')).not.toBeInTheDocument();
-      },
-    );
-
-    it('leaves the missing description out of a music card in a post, and of other cards on their page', () => {
-      const { unmount } = render(<ResourceCard card={mbArtistSparseFixture} />);
-      expect(screen.queryByTestId('resource-card-no-description')).not.toBeInTheDocument();
-      unmount();
-
-      render(<ResourceCard card={{ ...ARTICLE, description: null }} size="large" />);
-      expect(screen.queryByTestId('resource-card-no-description')).not.toBeInTheDocument();
+      expect(screen.queryByText('No description available')).not.toBeInTheDocument();
+      expect(screen.getByTestId('resource-card-type-tile').querySelector('svg')).toHaveClass('lucide-user');
     });
   });
 });

@@ -1,17 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import articleFixture from '@/services/pinakes/fixtures/by-uri.article.json';
-import mbArtistSparseFixture from '@/services/pinakes/fixtures/by-uri.mb-artist-sparse.json';
 import mbGroupEnrichedFixture from '@/services/pinakes/fixtures/by-uri.mb-group.enriched.json';
-import mbRecordingFixture from '@/services/pinakes/fixtures/by-uri.mb-recording.json';
-import mbReleaseGroupFixture from '@/services/pinakes/fixtures/by-uri.mb-release-group.json';
-import musicRecordingFixture from '@/services/pinakes/fixtures/by-uri.music-recording.json';
 import type { TPinakesCredit, TPinakesResourceDetail } from '@/services/pinakes/pinakes.types';
 import {
   getCreditProviderName,
   getCreditSubjectLabel,
   getLicenseLabel,
   getShownCredits,
-  isMusicResource,
 } from './ResourceCredits.utils';
 
 const MB_GROUP: TPinakesResourceDetail = mbGroupEnrichedFixture;
@@ -95,21 +89,5 @@ describe('getCreditSubjectLabel', () => {
     expect(getCreditSubjectLabel('https://www.wikidata.org/wiki/Q187745')).toBe('a related page on wikidata.org');
     expect(getCreditSubjectLabel('javascript:alert(1)')).toBeNull();
     expect(getCreditSubjectLabel(null)).toBeNull();
-  });
-});
-
-describe('isMusicResource', () => {
-  it.each([
-    ['a MusicBrainz album', mbReleaseGroupFixture],
-    ['a MusicBrainz recording', mbRecordingFixture],
-    ['a MusicBrainz artist (Person)', mbArtistSparseFixture],
-    ['a Spotify track', musicRecordingFixture],
-  ])('is true for %s', (_, card) => {
-    expect(isMusicResource(card)).toBe(true);
-  });
-
-  it('is false for a person from another site and for other types', () => {
-    expect(isMusicResource({ ...mbArtistSparseFixture, site: 'Wikipedia (en)' })).toBe(false);
-    expect(isMusicResource(articleFixture)).toBe(false);
   });
 });

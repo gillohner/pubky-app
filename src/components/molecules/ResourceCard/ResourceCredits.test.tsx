@@ -116,41 +116,61 @@ describe('ResourceCredits', () => {
   });
 
   describe('compact', () => {
-    it('names each source in one truncated line, linked, with its license in the link’s name and title', () => {
+    it('names each value’s source and licence in one line, an image’s author first, sources linked', () => {
       render(<ResourceCredits credits={[TEXT_CREDIT, IMAGE_CREDIT]} variant="compact" />);
 
       const line = screen.getByTestId('resource-credits');
       expect(line).toHaveAttribute('data-variant', 'compact');
-      expect(line).toHaveClass('truncate');
-      expect(line).toHaveTextContent('Sources: Wikipedia · Wikimedia Commons');
-      const wikipedia = screen.getByRole('link', { name: 'Wikipedia (text, CC BY-SA 4.0)' });
-      expectLinkOut(wikipedia, TEXT_CREDIT.source_url);
-      expect(wikipedia).toHaveAttribute('title', 'Wikipedia (text, CC BY-SA 4.0)');
-      expectLinkOut(
-        screen.getByRole('link', { name: 'Wikimedia Commons (image, CC BY 4.0)' }),
-        IMAGE_CREDIT.source_url,
+      expect(line).not.toHaveClass('truncate');
+      expect(line).toHaveTextContent(
+        'Sources: Text: Wikipedia, CC BY-SA 4.0 · Image: Sony Music Entertainment, Wikimedia Commons, CC BY 4.0',
       );
+      expectLinkOut(screen.getByRole('link', { name: 'Wikipedia' }), TEXT_CREDIT.source_url);
+      expectLinkOut(screen.getByRole('link', { name: 'Wikimedia Commons' }), IMAGE_CREDIT.source_url);
     });
 
-    it('names a source once for a text and an image from the same page', () => {
+    it('names a Wikidata text by its provider, without an author', () => {
+      const wikidata = {
+        ...TEXT_CREDIT,
+        provider: 'wikidata',
+        source_url: 'https://www.wikidata.org/wiki/Q55825905',
+        author: null,
+        license: 'CC0-1.0',
+      };
+      render(<ResourceCredits credits={[wikidata]} variant="compact" />);
+
+      expect(screen.getByTestId('resource-credits')).toHaveTextContent('Sources: Text: Wikidata, CC0 1.0');
+    });
+
+    it('links the licence to its text', () => {
+      render(<ResourceCredits credits={[TEXT_CREDIT]} variant="compact" />);
+
+      expectLinkOut(screen.getByRole('link', { name: 'CC BY-SA 4.0' }), TEXT_CREDIT.license_url!);
+    });
+
+    it('shows a source that is not http(s) as text', () => {
       render(
         <ResourceCredits
-          credits={[TEXT_CREDIT, { ...IMAGE_CREDIT, provider: 'wikipedia', source_url: TEXT_CREDIT.source_url }]}
+          credits={[{ ...TEXT_CREDIT, source_url: 'javascript:alert(1)', license_url: null }]}
           variant="compact"
         />,
       );
 
-      expect(screen.getAllByRole('link')).toHaveLength(1);
-      expect(screen.getByRole('link')).toHaveAccessibleName('Wikipedia (text, CC BY-SA 4.0; image, CC BY 4.0)');
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      expect(screen.getByTestId('resource-credit-source')).toHaveTextContent('Wikipedia');
     });
 
-    it('shows a source that is not http(s) as text', () => {
-      render(<ResourceCredits credits={[{ ...TEXT_CREDIT, source_url: 'javascript:alert(1)' }]} variant="compact" />);
+    it('names a value borrowed from another service by that service', () => {
+      render(
+        <ResourceCredits
+          credits={[]}
+          borrowed={[{ field: 'image', site: 'TIDAL', href: 'https://tidal.com/artist/7429906' }]}
+          variant="compact"
+        />,
+      );
 
-      expect(screen.queryByRole('link')).not.toBeInTheDocument();
-      expect(screen.getByTestId('resource-credit-source')).toHaveAttribute('title', 'Wikipedia (text, CC BY-SA 4.0)');
-      expect(screen.getByTestId('resource-credit-source')).toHaveTextContent('Wikipedia (text, CC BY-SA 4.0)');
-      expect(screen.getByText('(text, CC BY-SA 4.0)', { exact: false })).toHaveClass('sr-only');
+      expect(screen.getByTestId('resource-credits')).toHaveTextContent('Sources: Image: TIDAL');
+      expectLinkOut(screen.getByRole('link', { name: 'TIDAL' }), 'https://tidal.com/artist/7429906');
     });
   });
 

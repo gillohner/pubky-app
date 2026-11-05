@@ -11,12 +11,26 @@ export enum ResourceFamily {
   WEB = 'web',
 }
 
+/** The resource read's fields the card shows when it has them. */
+export type TResourceCardDetailField =
+  | 'tz'
+  | 'all_day'
+  | 'venue'
+  | 'event_status'
+  | 'organizer'
+  | 'attendance'
+  | 'address'
+  | 'category'
+  | 'stream'
+  | 'facts';
+
 export interface ResourceCardProps {
   /**
-   * A card from any Pinakes read; a resource read (`by-uri`) adds `tz`, `all_day`, `venue` and
-   * `event_status` for events.
+   * A card from any Pinakes read; a resource read (`by-uri`) adds the details: an event's `tz`,
+   * `all_day`, `venue`, `event_status`, `organizer` and `attendance`, a place's `address` and
+   * `category`, an episode's `stream`, and the source's `facts`.
    */
-  card: TPinakesCard & Partial<Pick<TPinakesResourceDetail, 'tz' | 'all_day' | 'venue' | 'event_status'>>;
+  card: TPinakesCard & Partial<Pick<TPinakesResourceDetail, TResourceCardDetailField>>;
   /**
    * Where the source (and a large card's title, or the title where links may not navigate) link
    * to: the link as written in the post. Defaults to the card's `uri`. Only an `http(s)` value
