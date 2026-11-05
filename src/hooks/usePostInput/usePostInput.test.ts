@@ -2289,6 +2289,121 @@ describe('usePostInput', () => {
     });
   });
 
+  describe('link embed', () => {
+    const LINK = 'https://en.wikipedia.org/wiki/Bitcoin';
+
+    it('embeds the first link of a new post', () => {
+      mockContent = `Read ${LINK} and https://luma.com/376whqyw`;
+
+      const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+      expect(result.current.embedUrl).toBe(LINK);
+      expect(result.current.isEmbedRemoved).toBe(false);
+    });
+
+    it('embeds the link "Post about this" opens the composer with, its only text', () => {
+      mockContent = 'https://www.openstreetmap.org/node/240109189';
+
+      const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+      expect(result.current.embedUrl).toBe('https://www.openstreetmap.org/node/240109189');
+    });
+
+    it('embeds nothing without a link', () => {
+      mockContent = 'No link here';
+
+      const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+      expect(result.current.embedUrl).toBeNull();
+      expect(result.current.isEmbedRemoved).toBe(false);
+    });
+
+    it.each([
+      ['reply', { variant: 'reply' as const, postId: 'parent-post-id' }],
+      ['repost', { variant: 'repost' as const, originalPostId: 'original-post-id' }],
+      ['edit', { variant: 'edit' as const, editPostId: 'post-to-edit-id' }],
+    ])('embeds nothing in a %s', (_name, options) => {
+      mockContent = `Read ${LINK}`;
+
+      const { result } = renderHook(() => usePostInput(options));
+
+      expect(result.current.embedUrl).toBeNull();
+    });
+
+    it('embeds nothing in an article', () => {
+      mockContent = `Read ${LINK}`;
+      mockIsArticle = true;
+
+      const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+      expect(result.current.embedUrl).toBeNull();
+    });
+
+    it('publishes the embed with the post', async () => {
+      mockContent = `Read ${LINK}`;
+
+      const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+
+      expect(mockPost).toHaveBeenCalledWith({ embedUrl: LINK, onSuccess: expect.any(Function) });
+    });
+
+    it('publishes no embed once it is removed, and keeps the link in the text', async () => {
+      mockContent = `Read ${LINK}`;
+
+      const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+      act(() => {
+        result.current.removeEmbed();
+      });
+
+      expect(result.current.embedUrl).toBeNull();
+      expect(result.current.isEmbedRemoved).toBe(true);
+      expect(mockSetContent).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+
+      expect(mockPost).toHaveBeenCalledWith({ onSuccess: expect.any(Function) });
+      expect(mockPost.mock.calls[0][0].embedUrl).toBeUndefined();
+    });
+
+    it('embeds the removed link again once restored', () => {
+      mockContent = `Read ${LINK}`;
+
+      const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+      act(() => {
+        result.current.removeEmbed();
+      });
+      act(() => {
+        result.current.restoreEmbed();
+      });
+
+      expect(result.current.embedUrl).toBe(LINK);
+      expect(result.current.isEmbedRemoved).toBe(false);
+    });
+
+    it('embeds a different first link again after a removal', () => {
+      mockContent = `Read ${LINK}`;
+
+      const { result, rerender } = renderHook(() => usePostInput({ variant: 'post' }));
+
+      act(() => {
+        result.current.removeEmbed();
+      });
+      mockContent = 'Read https://luma.com/376whqyw';
+      rerender();
+
+      expect(result.current.embedUrl).toBe('https://luma.com/376whqyw');
+      expect(result.current.isEmbedRemoved).toBe(false);
+    });
+  });
+
   describe('removeExistingAttachment', () => {
     it('filters the removed uri out of existingAttachments', () => {
       const kept = mockExistingAttachment('pubky://user/pub/pubky.app/files/F1');

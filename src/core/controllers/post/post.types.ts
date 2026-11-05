@@ -21,6 +21,11 @@ export interface TCreatePostParams {
   parentUri?: string;
   originalPostId?: string;
   /**
+   * A web link the post embeds (social v1 `embed`, an `http(s)` reference stored as written). A post
+   * has one embed, so it never comes with `originalPostId`.
+   */
+  embedUrl?: string;
+  /**
    * `pubky://` URL of a Locks lock file. Set only when this post is the public announcement of locked
    * content; the locked content itself never goes through this controller.
    */

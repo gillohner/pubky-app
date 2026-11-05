@@ -30,6 +30,7 @@ import { Logger } from '@/libs/logger/logger';
 import { parseArticleContent } from '@/libs/post/articleContent';
 import { resolveArticleCover } from '@/libs/post/articleCover';
 import { collectAttachmentRefIndexes } from '@/libs/post/articleInlineMedia';
+import { getComposerEmbedUrl } from '@/libs/post/postEmbedUrl';
 import { isViewerExcludedWotStream } from '@/models/stream/post/postStream.types';
 import { toast } from '@/molecules/Toaster/toast';
 import { POST_INPUT_PLACEHOLDER, POST_INPUT_VARIANT } from '@/organisms/PostInput/PostInput.constants';
@@ -161,6 +162,15 @@ export function usePostInput({
   } = usePost({ keepInlineMedia, active });
   const timelineFeed = useTimelineFeedContext();
   const { undoRepost } = useUndoRepost(isCollectionShare, { outlivesOwner: true });
+
+  // A new post embeds the first link of its text until the author removes it; the link stays in the
+  // text. The removal is kept per link, so a different first link is embedded again.
+  const [removedEmbedUrl, setRemovedEmbedUrl] = useState<string | null>(null);
+  const firstEmbedUrl = variant === POST_INPUT_VARIANT.POST && !isArticle ? getComposerEmbedUrl(content) : null;
+  const isEmbedRemoved = firstEmbedUrl !== null && firstEmbedUrl === removedEmbedUrl;
+  const embedUrl = isEmbedRemoved ? null : firstEmbedUrl;
+  const removeEmbed = () => setRemovedEmbedUrl(firstEmbedUrl);
+  const restoreEmbed = () => setRemovedEmbedUrl(null);
 
   // Article edits show only the cover in the attachment strip — inline media
   // lives in the body. Where the cover is and what each `attachment:{n}` names
@@ -438,6 +448,8 @@ export function usePostInput({
         return;
       }
 
+      setRemovedEmbedUrl(null);
+
       if (!isArticle && attachments.length) {
         useLocalFilesStore.getState().setPostAttachments(createdPostId, attachments.map(newFileToLocalAttachment));
       }
@@ -530,7 +542,7 @@ export function usePostInput({
         break;
       case POST_INPUT_VARIANT.POST:
       default:
-        await post({ article: latestArticle, onSuccess: handleSuccess });
+        await post({ article: latestArticle, embedUrl: embedUrl ?? undefined, onSuccess: handleSuccess });
         break;
     }
   }, [
@@ -544,6 +556,7 @@ export function usePostInput({
     parentUri,
     originalPostId,
     successToastTitle,
+    embedUrl,
     reply,
     post,
     repost,
@@ -876,6 +889,8 @@ export function usePostInput({
     isEditInlineMediaLoading,
     serializeArticleForLock,
     getLatestArticle,
+    embedUrl,
+    isEmbedRemoved,
 
     // Mention autocomplete state
     mentionUsers,
@@ -900,6 +915,8 @@ export function usePostInput({
     handleFilesAdded,
     handleFileClick,
     removeExistingAttachment,
+    removeEmbed,
+    restoreEmbed,
     handleDragEnter,
     handleDragLeave,
     handleDragOver,

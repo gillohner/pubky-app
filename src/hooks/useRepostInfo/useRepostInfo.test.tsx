@@ -113,6 +113,43 @@ describe('useRepostInfo', () => {
     expect(result.current.originalPostId).toBe('original-author:original-post');
   });
 
+  it('returns a web link embed as embedUrl, not as a repost', () => {
+    const link = 'https://en.wikipedia.org/wiki/Bitcoin';
+    setMockRelationships({ id: mockPostId, reposted: link, replied: null, mentioned: [] });
+
+    const { result } = renderHook(() => useRepostInfo(mockPostId));
+
+    expect(result.current.embedUrl).toBe(link);
+    expect(result.current.isRepost).toBe(false);
+    expect(result.current.originalPostId).toBe(null);
+    expect(result.current.repostAuthorId).toBe(null);
+    expect(mockBuildCompositeIdFromPubkyUri).not.toHaveBeenCalled();
+  });
+
+  it('keeps the header of a web link embed without text by the current user', () => {
+    const currentUserPostId = `${mockCurrentUserPubky}:post-123`;
+    setMockRelationships({
+      id: currentUserPostId,
+      reposted: 'https://en.wikipedia.org/wiki/Bitcoin',
+      replied: null,
+      mentioned: [],
+    });
+
+    const { result } = renderHook(() => usePostHeaderVisibility(currentUserPostId));
+
+    expect(result.current.showRepostHeader).toBe(false);
+    expect(result.current.shouldShowPostHeader).toBe(true);
+    expect(result.current.isContentlessRepost).toBe(false);
+  });
+
+  it('returns no embedUrl for a repost', () => {
+    setMockRelationships({ id: mockPostId, reposted: mockRepostedUri, replied: null, mentioned: [] });
+
+    const { result } = renderHook(() => useRepostInfo(mockPostId));
+
+    expect(result.current.embedUrl).toBe(null);
+  });
+
   it('returns repostAuthorId correctly from postId', () => {
     const repostPostId = 'repost-author:repost-post';
     setMockRelationships({ id: repostPostId, reposted: mockRepostedUri, replied: null, mentioned: [] });
