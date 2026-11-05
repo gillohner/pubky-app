@@ -45,4 +45,31 @@ describe('ResourceCardSkeleton', () => {
       expect(button).not.toHaveClass('bg-muted');
     }
   });
+
+  it('keeps the large card’s button placeholders muted, so they show on its card surface', () => {
+    render(<ResourceCardSkeleton withActions size="large" />);
+
+    const buttons = screen.getByTestId('resource-card-skeleton-actions').lastElementChild?.children ?? [];
+    expect(buttons).toHaveLength(5);
+    for (const button of Array.from(buttons)) {
+      expect(button).toHaveClass('bg-muted');
+      expect(button).not.toHaveClass('bg-card');
+    }
+  });
+
+  it('mirrors the large card’s surface and padding, and its image and title from `sm`, when large', () => {
+    const { rerender } = render(<ResourceCardSkeleton withActions />);
+    const skeleton = screen.getByTestId('resource-card-skeleton');
+    expect(skeleton).toHaveAttribute('data-size', 'default');
+    expect(skeleton).toHaveClass('bg-muted');
+    expect(skeleton.firstElementChild).toHaveClass('p-4');
+
+    rerender(<ResourceCardSkeleton withActions size="large" />);
+    expect(skeleton).toHaveAttribute('data-size', 'large');
+    expect(skeleton).toHaveClass('bg-card');
+    expect(skeleton).not.toHaveClass('bg-muted');
+    expect(skeleton.firstElementChild).toHaveClass('p-6');
+    expect(skeleton.querySelector('.sm\\:size-40')).toBeInTheDocument();
+    expect(screen.getByTestId('resource-card-skeleton-actions')).toHaveClass('px-6', 'py-4');
+  });
 });

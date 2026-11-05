@@ -5,6 +5,7 @@ import videoFixture from '@/services/pinakes/fixtures/by-uri.video.json';
 import type { TPinakesAlsoOn } from '@/services/pinakes/pinakes.types';
 import {
   dedupeAlsoOn,
+  getAlsoOnEditionNote,
   getLanguageName,
   getLanguageTag,
   groupAlsoOn,
@@ -167,6 +168,15 @@ describe('getLanguageName', () => {
   it('falls back to the code for a tag the runtime cannot name', () => {
     expect(getLanguageName('qqq')).toBe('qqq');
     expect(getLanguageName('not a tag')).toBe('not a tag');
+  });
+});
+
+describe('getAlsoOnEditionNote', () => {
+  it('puts the language first, then the entry’s own note', () => {
+    expect(getAlsoOnEditionNote({ lang: 'de', entry: wiki('de') })).toBe('Deutsch (de) · Found via wikidata');
+    expect(getAlsoOnEditionNote({ lang: 'de', entry: { uri: wiki('de').uri, site: 'Wikipedia (de)' } })).toBe(
+      'Deutsch (de)',
+    );
   });
 });
 

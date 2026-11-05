@@ -1,5 +1,5 @@
 import type { TPinakesAlsoOn } from '@/services/pinakes/pinakes.types';
-import { getAlsoOnName, getHttpUrl, getLinkHost } from './ResourceCard.utils';
+import { getAlsoOnName, getAlsoOnNote, getHttpUrl, getLinkHost } from './ResourceCard.utils';
 
 /** One language edition of a service in Also on (`Wikipedia (de)`): its language code and entry. */
 export interface TAlsoOnEdition {
@@ -188,4 +188,15 @@ export function getLanguageName(lang: string): string {
 /** The `lang` attribute for a language's name: its BCP 47 tag (`gsw` for Wikipedia's `als`). */
 export function getLanguageTag(lang: string): string {
   return lang.toLowerCase() === SIMPLE_ENGLISH ? 'en' : toLanguageTag(lang);
+}
+
+/**
+ * What the resource page's row of editions says under its name: the language shown, then the
+ * entry's own note (`withSource: false` leaves out where it was found). The card's ⋯ menu rows
+ * have no note.
+ */
+export function getAlsoOnEditionNote(edition: TAlsoOnEdition, options?: { withSource?: boolean }): string {
+  const note = getAlsoOnNote(edition.entry, undefined, options);
+  const language = getLanguageName(edition.lang);
+  return note ? `${language} · ${note}` : language;
 }

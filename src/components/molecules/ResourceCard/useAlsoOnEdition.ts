@@ -14,8 +14,11 @@ function getLanguages(): string {
 }
 
 /**
- * None on the server: a list rendered there (the resource page) shows English, else the first
- * edition, and moves to the browser's language once it hydrates, without a mismatch.
+ * None on the server. Not reached today (the menu mounts on the client only, and the resource page
+ * reads Pinakes in the browser, so its list mounts after hydration); it keeps a list rendered on
+ * the server on English, else the first edition, until it hydrates, without a mismatch. Language
+ * names (`Intl.DisplayNames`) can differ between Node and the browser, so such a list would need
+ * the same care for them.
  */
 function getServerLanguages(): string {
   return '';
