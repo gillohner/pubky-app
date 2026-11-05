@@ -24,6 +24,8 @@ import {
   hasWideImage,
 } from './ResourceCard.utils';
 import { ResourceCardFrame, ResourceCardHeader } from './ResourceCardFrame';
+import { ResourceCredits } from './ResourceCredits';
+import { getShownCredits, isMusicResource } from './ResourceCredits.utils';
 
 /** What a card that is not `ok` says about itself. Only `missing` has a documented meaning (`/llms.txt`). */
 const STATUS_NOTES: Readonly<
@@ -49,6 +51,11 @@ const DETAIL_ICON_SIZE = 14;
  * The whole card is a click-through to the link, unless its actions' ⋯ menu lists other services
  * (`hasAlsoOn`: the same thing on other services too, `also_on`), where the viewer picks the
  * service; the source is its link either way.
+ *
+ * A text or image Pinakes enriched the card with comes with its credit (`credits`): the `large`
+ * card lists them under "Sources", the default card names the sources in one line; both close the
+ * card's body, above its actions.
+ * A value without a credit is the source page's own and shows as it is.
  *
  * The title opens the resource's page (`/resource?uri=<card.uri>`) and the source links out. Where
  * links may not navigate (the composer, a post quoted in a dialog) the title links out instead. The
@@ -83,6 +90,10 @@ export function ResourceCard({ card, href, actions, hasAlsoOn = false, size = 'd
   const point = family !== ResourceFamily.WEB && !venue && card.point ? formatResourcePoint(card.point) : null;
   const eventStatusNote = family === ResourceFamily.EVENT ? getEventStatusNote(card.event_status) : null;
   const statusNote = status === PinakesStatus.OK ? null : STATUS_NOTES[status];
+  const credits = getShownCredits(card, { imageShown: showImage });
+  // On its page a music card that was read says it has no description, rather than look
+  // unfinished. A card that was not read (`pending`, `error`, ...) says that instead.
+  const showNoDescription = isLarge && status === PinakesStatus.OK && !card.description && isMusicResource(card);
   // A `missing` card's own link is gone upstream: the page's heading and source do not send the
   // viewer there.
   const titleUrl = status === PinakesStatus.MISSING ? null : linkUrl;
@@ -162,6 +173,15 @@ export function ResourceCard({ card, href, actions, hasAlsoOn = false, size = 'd
                 {card.description}
               </Typography>
             )}
+            {showNoDescription && (
+              <Typography
+                size="sm"
+                data-testid="resource-card-no-description"
+                className="font-normal text-muted-foreground"
+              >
+                No description available
+              </Typography>
+            )}
 
             {dates && <ResourceDetail icon={CalendarDays} text={dates} testId="resource-card-dates" />}
             {venue && <ResourceDetail icon={MapPin} text={venue} testId="resource-card-venue" />}
@@ -183,6 +203,8 @@ export function ResourceCard({ card, href, actions, hasAlsoOn = false, size = 'd
             )}
           </Container>
         </Container>
+
+        <ResourceCredits credits={credits} variant={isLarge ? 'full' : 'compact'} />
       </Container>
 
       {actions}
