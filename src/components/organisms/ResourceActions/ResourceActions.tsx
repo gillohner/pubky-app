@@ -40,6 +40,11 @@ interface ResourceActionsProps {
    * resource page's second tag group.
    */
   otherTags?: ReactNode;
+  /**
+   * "Play on <service>" for a card with a service's player (`useCardPlayer`): first in the action
+   * row, before Tags.
+   */
+  playOn?: ReactNode;
   /** `large`: under the resource page's large card, with its wider padding, on the post card's surface. */
   size?: 'default' | 'large';
 }
@@ -50,7 +55,7 @@ interface ResourceActionsProps {
  * buttons: Tags (how many tags, showing all of them and the tag input, a second click shows a few
  * again), Reply (the post's reply dialog: a post whose `parent` is the resource's URI), Post about
  * this (the repost button), Save (bookmark and collections, with the public collections count) and
- * ⋯. Like the post's, the tags show only a few until expanded, and from md the buttons keep their one
+ * ⋯, after "Play on <service>" on a card with a player (`playOn`). Like the post's, the tags show only a few until expanded, and from md the buttons keep their one
  * row beside them while the tags wrap. On a phone the buttons go under the tags.
  * The pills stand out from the card's surface as a post's do from the post card: filled with the
  * card colour on a card in a post (`bg-muted`), the post's own on the page's large card (`bg-card`).
@@ -72,6 +77,7 @@ export function ResourceActions({
   title,
   extraMenuContent,
   otherTags,
+  playOn,
   size = 'default',
 }: ResourceActionsProps) {
   const { requireAuth } = useRequireAuth();
@@ -127,6 +133,7 @@ export function ResourceActions({
           data-testid="resource-action-row"
           className="flex flex-wrap gap-2 md:shrink-0 md:flex-nowrap @max-xl/grid:flex-wrap!"
         >
+          {playOn}
           <PostActionButton
             icon={Tag}
             surface={surface}

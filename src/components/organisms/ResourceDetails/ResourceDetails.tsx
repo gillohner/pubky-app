@@ -13,6 +13,7 @@ import { IllustratedEmptyState } from '@/molecules/IllustratedEmptyState/Illustr
 import { ResourceCard } from '@/molecules/ResourceCard/ResourceCard';
 import { getHttpUrl, getResourceLinks, getResourceTagsLabel } from '@/molecules/ResourceCard/ResourceCard.utils';
 import { ResourceCardSkeleton } from '@/molecules/ResourceCardSkeleton/ResourceCardSkeleton';
+import { useCardPlayer } from '@/molecules/ResourcePlayer/useCardPlayer';
 import { ResourceActions } from '@/organisms/ResourceActions/ResourceActions';
 import type { TPinakesResourceDetail } from '@/services/pinakes/pinakes.types';
 import { ResourceOtherTags } from './ResourceOtherTags';
@@ -122,6 +123,8 @@ function ResourceKnown({ card, uri }: { card: TPinakesResourceDetail; uri: strin
   const { data: group, isLoading: isGroupLoading } = usePinakesGroup(card.group?.id);
   const otherLinks =
     card.group && isGroupLoading ? [] : getOtherLinks(card, group?.members, getOwnLinkUris(card, uri, actionUri));
+  // The services that allow embedding play on the page too, as in a post (`useCardPlayer`).
+  const { playOn, renderBody } = useCardPlayer(card);
   const actions = (
     <ResourceActions
       uri={actionUri}
@@ -131,12 +134,13 @@ function ResourceKnown({ card, uri }: { card: TPinakesResourceDetail; uri: strin
       linkUrl={getResourceLinks(card, actionUri).linkUrl}
       title={card.name || null}
       otherTags={<ResourceOtherTags links={otherLinks} />}
+      playOn={playOn}
       size="large"
     />
   );
   return (
     <Container overrideDefaults data-testid="resource-details" className="min-w-0">
-      <ResourceCard card={card} size="large" actions={actions} />
+      <ResourceCard card={card} size="large" actions={actions} renderBody={renderBody} />
     </Container>
   );
 }

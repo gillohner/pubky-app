@@ -212,6 +212,21 @@ describe('ResourceActions', () => {
     ]);
   });
 
+  it('puts Play on first in the action row, before Tags, when the card has a player', () => {
+    render(
+      <ResourceActions
+        uri={URI}
+        tagsLabel="Tags on this song"
+        linkUrl={LINK}
+        playOn={<button type="button">Play on Spotify</button>}
+      />,
+    );
+
+    const row = screen.getByTestId('resource-action-row');
+    expect(row.firstElementChild).toHaveTextContent('Play on Spotify');
+    expect(row.children[1]).toBe(screen.getByTestId('resource-tags-button'));
+  });
+
   it('keeps the buttons on one row at their width beside the tags from md, like the post’s', () => {
     renderActions(8);
 

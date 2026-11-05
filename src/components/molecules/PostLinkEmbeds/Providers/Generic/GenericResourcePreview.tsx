@@ -17,6 +17,8 @@ import {
 } from '@/molecules/ResourceCard/ResourceCard.utils';
 import { ResourceLinkCard } from '@/molecules/ResourceCard/ResourceLinkCard';
 import { ResourceCardSkeleton } from '@/molecules/ResourceCardSkeleton/ResourceCardSkeleton';
+import { AnimatedHeight } from '@/molecules/ResourcePlayer/ResourcePlayerFrame';
+import { useCardPlayer } from '@/molecules/ResourcePlayer/useCardPlayer';
 import { ResourceActions } from '@/organisms/ResourceActions/ResourceActions';
 import { PinakesStatus, type TPinakesResourceDetail } from '@/services/pinakes/pinakes.types';
 import { GenericPreview } from './GenericPreview';
@@ -102,17 +104,29 @@ interface GenericResourcePreviewProps {
  * Without a Pinakes origin configured no request is made and the plain `GenericPreview` renders,
  * as before; a direct media file keeps it too, since it shows or plays the file inline.
  *
+ * A card on a service that allows embedding plays there in place (`useCardPlayer`: "Play on
+ * <service>" in the action row, a dock when it scrolls away); not in the composer or a quoted post.
+ *
  * A link Pinakes does not know yet (a post published seconds ago) is read again while the preview
  * is on screen (`usePinakesCard`'s `recheck`), and its card replaces the link's own preview in the
  * same box once Pinakes has read it, with no loading state in between. In the composer, Pinakes is
  * asked to read such a link right away (`resolve`) instead of re-reading it, so the published post
- * shows its card at once, and still has its own re-reads if Pinakes had not read it yet.
+ * shows its card at once, and still has its own re-reads if Pinakes had not read it yet. Outside
+ * the composer the box grows smoothly to the card (`AnimatedHeight`).
  */
 export function GenericResourcePreview(props: GenericResourcePreviewProps) {
   const { ref, isVisible } = useViewportObserver({ rootMargin: '0px' });
   return (
     <div ref={ref} className="min-w-0" data-testid="resource-preview">
-      <ResourcePreview {...props} isOnScreen={isVisible} />
+      {props.isComposing ? (
+        // The composer measures and snaps its own height as its content grows.
+        <ResourcePreview {...props} isOnScreen={isVisible} />
+      ) : (
+        // The box grows smoothly when the card replaces the link's own preview, or a player opens.
+        <AnimatedHeight>
+          <ResourcePreview {...props} isOnScreen={isVisible} />
+        </AnimatedHeight>
+      )}
     </div>
   );
 }
@@ -132,6 +146,8 @@ function ResourcePreview({
   });
   const isSlow = useSlowRead(lookupUrl, isLoading, PINAKES_SLOW_READ_MS);
   const withActions = !isComposing && !isNested;
+  // A card with an action row plays its services in place; not while composing or in a quoted post.
+  const { playOn, renderBody } = useCardPlayer(withActions && card && !hasNothingToShow(card) ? card : null, url);
 
   if (!lookupUrl) return <GenericPreview url={url} />;
   if (isLoading && !isSlow) return <ResourceCardSkeleton withActions={withActions} />;
@@ -150,6 +166,7 @@ function ResourcePreview({
       tagsLabel={getResourceTagsLabel(card)}
       linkUrl={linkUrl}
       title={shownCard?.name}
+      playOn={shownCard ? playOn : undefined}
       extraMenuContent={
         alsoOn
           ? ({ variant, closeMenu }) => <ResourceAlsoOn alsoOn={alsoOn} variant={variant} closeMenu={closeMenu} />
@@ -158,5 +175,7 @@ function ResourcePreview({
     />
   );
   if (!shownCard) return <ResourceLinkCard url={url} actions={actions} />;
-  return <ResourceCard card={shownCard} href={url} actions={actions} hasAlsoOn={alsoOn !== null} />;
+  return (
+    <ResourceCard card={shownCard} href={url} actions={actions} hasAlsoOn={alsoOn !== null} renderBody={renderBody} />
+  );
 }
