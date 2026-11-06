@@ -19,6 +19,12 @@ interface ResourcePlayerFrameProps {
   load: PlayerLoadState;
   onLoaded: () => void;
   className?: string;
+  /**
+   * An embed shown up front (a card without Also on, `GenericResourcePreview`), not opened by Play:
+   * no status line, since nothing was asked to start; loaded once near the screen, like a post's
+   * video embed.
+   */
+  quiet?: boolean;
 }
 
 /**
@@ -80,7 +86,14 @@ function useStartMessage(target: PlayerTarget, onLoaded: () => void) {
  * message (Spotify, TIDAL). A service that cannot start that way (Mixcloud, Deezer) says a press inside its
  * player is needed; the card never claims playback.
  */
-export function ResourcePlayerFrame({ target, title, load, onLoaded, className }: ResourcePlayerFrameProps) {
+export function ResourcePlayerFrame({
+  target,
+  title,
+  load,
+  onLoaded,
+  className,
+  quiet = false,
+}: ResourcePlayerFrameProps) {
   const { frameRef, onLoad } = useStartMessage(target, onLoaded);
   const label = `${target.name} player: ${title}`;
   const isVideo = target.layout.kind === 'video';
@@ -127,7 +140,7 @@ export function ResourcePlayerFrame({ target, title, load, onLoaded, className }
             sandbox={SANDBOX}
             referrerPolicy="strict-origin-when-cross-origin"
             allowFullScreen
-            loading="eager"
+            loading={quiet ? 'lazy' : 'eager'}
             onLoad={onLoad}
             data-testid="resource-player-frame"
             className={cn(
@@ -154,7 +167,7 @@ export function ResourcePlayerFrame({ target, title, load, onLoaded, className }
         size="xs"
         role="status"
         data-testid="resource-player-status"
-        className={cn('font-normal text-muted-foreground', load === 'loading' && 'sr-only')}
+        className={cn('font-normal text-muted-foreground', load === 'loading' && 'sr-only', quiet && 'hidden')}
       >
         {load === 'loading' && `Loading the ${target.name} player`}
         {load === 'ready' && !target.autoplay && `Press play in the ${target.name} player to start.`}

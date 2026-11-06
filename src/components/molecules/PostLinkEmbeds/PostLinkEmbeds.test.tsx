@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isPinakesConfigured } from '@/config/pinakes';
 import { usePinakesCard } from '@/hooks/usePinakesCard/usePinakesCard';
@@ -1006,6 +1006,57 @@ describe('PostLinkEmbeds', () => {
       render(<PostLinkEmbeds content="First https://example.com/first" url={null} />);
 
       expect(screen.getByTestId('generic-preview')).toHaveAttribute('data-url', 'https://example.com/first');
+    });
+  });
+
+  describe('a platform embed as the post’s embed', () => {
+    const VIDEO = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+
+    it('shows as the external resource when Pinakes is configured', () => {
+      vi.mocked(isPinakesConfigured).mockReturnValue(true);
+      render(<PostLinkEmbeds url={VIDEO} />);
+
+      const resource = screen.getByTestId('native-embed-resource');
+      expect(resource).toHaveAttribute('data-kind', 'video');
+      // No card: the platform's own embed in the resource frame.
+      expect(within(resource).getByTestId('resource-embed-frame')).toBeInTheDocument();
+      expect(within(resource).getByTestId('YouTube video player')).toBeInTheDocument();
+    });
+
+    it('previews it as the resource in the composer too, asking Pinakes to read it, without the footer', () => {
+      vi.mocked(isPinakesConfigured).mockReturnValue(true);
+      // The owner's link: a video in a mix, with list and radio parameters.
+      const MIX = 'https://www.youtube.com/watch?v=CMX2lPum_pg&list=RDCMX2lPum_pg&start_radio=1';
+      render(<PostLinkEmbeds url={MIX} isComposing />);
+
+      expect(vi.mocked(usePinakesCard)).toHaveBeenCalledWith(MIX, { resolve: true });
+      const resource = screen.getByTestId('native-embed-resource');
+      expect(within(resource).getByTestId('resource-embed-frame')).toBeInTheDocument();
+      expect(within(resource).getByTestId('YouTube video player')).toHaveAttribute(
+        'src',
+        expect.stringContaining('/embed/CMX2lPum_pg'),
+      );
+      expect(screen.queryByTestId('resource-actions')).not.toBeInTheDocument();
+    });
+
+    it('starts over for another link (state of the old embed does not carry over)', () => {
+      vi.mocked(isPinakesConfigured).mockReturnValue(true);
+      const { rerender } = render(<PostLinkEmbeds url={VIDEO} />);
+      const first = screen.getByTestId('native-embed-resource');
+      rerender(<PostLinkEmbeds url="https://www.youtube.com/watch?v=jNQXAC9IVRw" />);
+      expect(screen.getByTestId('native-embed-resource')).not.toBe(first);
+    });
+
+    it('keeps the plain embed for a link only in the text, and without Pinakes', () => {
+      vi.mocked(isPinakesConfigured).mockReturnValue(true);
+
+      const { unmount: unmountText } = render(<PostLinkEmbeds content={`see ${VIDEO}`} />);
+      expect(screen.queryByTestId('native-embed-resource')).not.toBeInTheDocument();
+      unmountText();
+
+      vi.mocked(isPinakesConfigured).mockReturnValue(false);
+      render(<PostLinkEmbeds url={VIDEO} />);
+      expect(screen.queryByTestId('native-embed-resource')).not.toBeInTheDocument();
     });
   });
 });
