@@ -14,6 +14,8 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { KEEP_PLAYING_ATTRIBUTE } from '@/hooks/usePauseMediaOutsideViewport/usePauseMediaOutsideViewport';
 import { cn } from '@/libs/utils/utils';
 import { ResourceSourceIcon } from '@/molecules/ResourceCard/ResourceSourceIcon';
+import { PostActionButton, type PostActionSurface } from '@/organisms/PostActionsBar/PostActionButton';
+import { postActionsButtonVariants } from '@/organisms/PostActionsBar/PostActionsBar.variants';
 import type { PlayerTarget } from './resourcePlayer.utils';
 import type { ResourcePlayerState } from './useResourcePlayer';
 
@@ -79,47 +81,54 @@ export function ProviderMenu({ targets, player, trigger, align = 'start' }: Prov
   );
 }
 
-const PILL_COMPACT = 'max-sm:gap-0.5 max-sm:px-2 max-sm:has-[>svg]:px-2';
-
 /**
- * "▶ Play on <service logo> ⌄", a split pill for the action row: the main part plays the first
- * service (or closes the open player), the chevron picks another. The service is named by its logo
- * (the name is in the accessible name), so the pill and "Open in <site>" fit one row of a post. On a
- * phone the words are hidden: play icon, logo and chevron.
+ * The card's player, on its own line above the footer, in the action row's pills (`PostActionButton`'s):
+ * ▶ and the service's logo play the first service; while it plays, the logo and ✕ close it. The service's
+ * name is in the accessible name. A chevron pill beside it picks another service, only when there
+ * is one.
  */
-export function PlayOnSplit({ targets, player }: { targets: PlayerTarget[]; player: ResourcePlayerState }) {
+export function PlayOnSplit({
+  targets,
+  player,
+  surface = 'muted',
+}: {
+  targets: PlayerTarget[];
+  player: ResourcePlayerState;
+  /** What the card's footer sits on (`PostActionButton`'s `surface`). */
+  surface?: PostActionSurface;
+}) {
   const shown = player.current ?? targets[0];
   if (!shown) return null;
   const isOpen = player.current !== null;
   const hasMenu = targets.length > 1;
+  const label = isOpen ? `Close the ${shown.name} player` : `Play on ${shown.name}`;
   return (
-    <Container overrideDefaults role="group" aria-label="Player" className="flex shrink-0 items-center">
+    <Container overrideDefaults role="group" aria-label="Player" className="flex shrink-0 items-center gap-px">
       <Button
-        variant="default"
+        variant="secondary"
         size="sm"
         data-testid="play-on-main"
-        aria-label={isOpen ? `Close the ${shown.name} player` : `Play on ${shown.name}`}
+        aria-label={label}
+        title={label}
         onClick={() => (isOpen ? player.close() : player.play(shown))}
-        className={cn(PILL_COMPACT, hasMenu && 'rounded-r-none border-r-0 pr-2.5 max-sm:pr-1.5')}
+        className={cn(postActionsButtonVariants({ surface }), hasMenu && 'rounded-r-none')}
       >
-        {isOpen ? <X aria-hidden="true" /> : <Play aria-hidden="true" className="fill-current" />}
-        <span className="max-sm:hidden">{isOpen ? 'Close' : 'Play on'}</span>
+        {!isOpen && <Play aria-hidden="true" className="fill-current" />}
         <ResourceSourceIcon uri={shown.link} />
+        {isOpen && <X aria-hidden="true" />}
       </Button>
       {hasMenu && (
         <ProviderMenu
           targets={targets}
           player={player}
           trigger={
-            <Button
-              variant="default"
-              size="sm"
+            <PostActionButton
+              icon={ChevronDown}
+              surface={surface}
+              ariaLabel="Play on another service"
               data-testid="play-on-trigger"
-              aria-label="Play on another service"
-              className="rounded-l-none border-l-brand/40 px-2 has-[>svg]:px-2 max-sm:px-1.5 max-sm:has-[>svg]:px-1.5"
-            >
-              <ChevronDown aria-hidden="true" className="max-sm:size-3" />
-            </Button>
+              className="rounded-l-none"
+            />
           }
         />
       )}

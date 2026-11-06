@@ -124,7 +124,7 @@ function ResourceKnown({ card, uri }: { card: TPinakesResourceDetail; uri: strin
   const otherLinks =
     card.group && isGroupLoading ? [] : getOtherLinks(card, group?.members, getOwnLinkUris(card, uri, actionUri));
   // The services that allow embedding play on the page too, as in a post (`useCardPlayer`).
-  const { playOn, renderBody } = useCardPlayer(card);
+  const { playOn, renderBody } = useCardPlayer(card, undefined, 'default');
   const actions = (
     <ResourceActions
       uri={actionUri}

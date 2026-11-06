@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getPlayerTarget } from './resourcePlayer.utils';
-import { PlayerDock } from './ResourcePlayerControls';
+import { PlayerDock, PlayOnSplit } from './ResourcePlayerControls';
+import type { ResourcePlayerState } from './useResourcePlayer';
 
 const SPOTIFY = getPlayerTarget('https://open.spotify.com/track/1YQWosTIljIvxAgHWTp7KP')!;
+const TIDAL = getPlayerTarget('https://tidal.com/browse/track/77646168')!;
 
 let report: ((entries: { isIntersecting: boolean }[]) => void) | null = null;
 
@@ -68,5 +70,51 @@ describe('PlayerDock', () => {
     expect(scrollIntoView).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Close the Spotify player' }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PlayOnSplit', () => {
+  const playerState = (current: ResourcePlayerState['current'] = null): ResourcePlayerState => ({
+    current,
+    load: 'ready',
+    play: vi.fn(),
+    close: vi.fn(),
+    onLoaded: vi.fn(),
+  });
+
+  it('is one icon pill, ▶ and the logo, with no chevron when there is no other service', () => {
+    const player = playerState();
+    render(<PlayOnSplit targets={[SPOTIFY]} player={player} />);
+
+    const main = screen.getByRole('button', { name: 'Play on Spotify' });
+    expect(main).toHaveAttribute('title', 'Play on Spotify');
+    expect(main.textContent?.trim()).toBe('');
+    expect(screen.queryByTestId('play-on-trigger')).toBeNull();
+    fireEvent.click(main);
+    expect(player.play).toHaveBeenCalledWith(SPOTIFY);
+  });
+
+  it('while playing, shows the logo and ✕ that closes, and a chevron when there is another service', () => {
+    const player = playerState(TIDAL);
+    render(<PlayOnSplit targets={[SPOTIFY, TIDAL]} player={player} />);
+
+    const main = screen.getByRole('button', { name: 'Close the TIDAL player' });
+    expect(main).toHaveAttribute('title', 'Close the TIDAL player');
+    expect(main.querySelector('.lucide-x')).not.toBeNull();
+    expect(main.querySelector('.lucide-play')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Play on another service' })).toBe(screen.getByTestId('play-on-trigger'));
+    fireEvent.click(main);
+    expect(player.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the action row’s pill style: filled with the card colour on a card, the post’s on the resource page', () => {
+    const { unmount } = render(<PlayOnSplit targets={[SPOTIFY, TIDAL]} player={playerState()} />);
+    expect(screen.getByTestId('play-on-main')).toHaveClass('bg-card');
+    expect(screen.getByTestId('play-on-trigger')).toHaveClass('bg-card');
+    unmount();
+
+    render(<PlayOnSplit targets={[SPOTIFY, TIDAL]} player={playerState()} surface="default" />);
+    expect(screen.getByTestId('play-on-main')).not.toHaveClass('bg-card');
+    expect(screen.getByTestId('play-on-trigger')).not.toHaveClass('bg-card');
   });
 });

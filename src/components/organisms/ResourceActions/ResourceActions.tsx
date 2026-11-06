@@ -41,8 +41,8 @@ interface ResourceActionsProps {
    */
   otherTags?: ReactNode;
   /**
-   * "Play on <service>" for a card with a service's player (`useCardPlayer`): first in the action
-   * row, before Tags.
+   * "Play on <service>" for a card with a service's player (`useCardPlayer`): on its own line above
+   * the footer, so the footer's tags and buttons are the post's, never squeezed by it.
    */
   playOn?: ReactNode;
   /** `large`: under the resource page's large card, with its wider padding, on the post card's surface. */
@@ -55,7 +55,7 @@ interface ResourceActionsProps {
  * buttons: Tags (how many tags, showing all of them and the tag input, a second click shows a few
  * again), Reply (the post's reply dialog: a post whose `parent` is the resource's URI), Post about
  * this (the repost button), Save (bookmark and collections, with the public collections count) and
- * ⋯, after "Play on <service>" on a card with a player (`playOn`). Like the post's, the tags show only a few until expanded, and from md the buttons keep their one
+ * ⋯; a card with a player has "Play on <service>" (`playOn`) on a line above. Like the post's, the tags show only a few until expanded, and from md the buttons keep their one
  * row beside them while the tags wrap. On a phone the buttons go under the tags.
  * The pills stand out from the card's surface as a post's do from the post card: filled with the
  * card colour on a card in a post (`bg-muted`), the post's own on the page's large card (`bg-card`).
@@ -103,6 +103,11 @@ export function ResourceActions({
       data-size={size}
       className={cn('flex min-w-0 flex-col gap-3', isLarge ? 'px-6 py-4' : 'px-4 py-3')}
     >
+      {playOn && (
+        <Container overrideDefaults data-testid="resource-player-row" className="flex">
+          {playOn}
+        </Container>
+      )}
       {/*
         The post footer's layout (`PostInlineTagsActions`), also staying stacked in a narrow grid cell.
         Beside the expanded tags the buttons sit at the bottom, next to the tag input.
@@ -133,7 +138,6 @@ export function ResourceActions({
           data-testid="resource-action-row"
           className="flex flex-wrap gap-2 md:shrink-0 md:flex-nowrap @max-xl/grid:flex-wrap!"
         >
-          {playOn}
           <PostActionButton
             icon={Tag}
             surface={surface}

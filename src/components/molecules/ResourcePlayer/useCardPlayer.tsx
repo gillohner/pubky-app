@@ -1,6 +1,7 @@
 'use client';
 
 import { type ReactNode, useId } from 'react';
+import type { PostActionSurface } from '@/organisms/PostActionsBar/PostActionButton';
 import type { TPinakesResourceDetail } from '@/services/pinakes/pinakes.types';
 import { getPlayerTargets } from './resourcePlayer.utils';
 import { PlayerDock, PlayOnSplit } from './ResourcePlayerControls';
@@ -26,8 +27,13 @@ export interface CardPlayer {
  *
  * @param card - The card shown, or `null` (nothing to play: a link's own preview, a pending card)
  * @param href - The link as written, played first when it is on such a service
+ * @param surface - What the action row sits on (`ResourceActions`' `surface`): `default` on the resource page
  */
-export function useCardPlayer(card: TPinakesResourceDetail | null, href?: string | null): CardPlayer {
+export function useCardPlayer(
+  card: TPinakesResourceDetail | null,
+  href?: string | null,
+  surface?: PostActionSurface,
+): CardPlayer {
   const owner = useId();
   const targets = card ? getPlayerTargets(card, { href }) : [];
   const player = useResourcePlayer(owner, targets);
@@ -36,7 +42,7 @@ export function useCardPlayer(card: TPinakesResourceDetail | null, href?: string
   const title = card.name?.trim() || href || card.uri;
   const current = player.current;
   return {
-    playOn: <PlayOnSplit targets={targets} player={player} />,
+    playOn: <PlayOnSplit targets={targets} player={player} surface={surface} />,
     renderBody: (body) => (
       <AnimatedHeight>
         {current ? (

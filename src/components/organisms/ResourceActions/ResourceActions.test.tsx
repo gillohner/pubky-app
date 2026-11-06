@@ -212,7 +212,7 @@ describe('ResourceActions', () => {
     ]);
   });
 
-  it('puts Play on first in the action row, before Tags, when the card has a player', () => {
+  it('puts Play on on its own line above the footer, leaving the post’s tags and buttons as they are', () => {
     render(
       <ResourceActions
         uri={URI}
@@ -222,9 +222,12 @@ describe('ResourceActions', () => {
       />,
     );
 
-    const row = screen.getByTestId('resource-action-row');
-    expect(row.firstElementChild).toHaveTextContent('Play on Spotify');
-    expect(row.children[1]).toBe(screen.getByTestId('resource-tags-button'));
+    const playerRow = screen.getByTestId('resource-player-row');
+    expect(playerRow).toHaveTextContent('Play on Spotify');
+    expect(playerRow.nextElementSibling).toBe(screen.getByTestId('resource-footer'));
+    expect(screen.getByTestId('resource-action-row').firstElementChild).toBe(
+      screen.getByTestId('resource-tags-button'),
+    );
   });
 
   it('keeps the buttons on one row at their width beside the tags from md, like the post’s', () => {
