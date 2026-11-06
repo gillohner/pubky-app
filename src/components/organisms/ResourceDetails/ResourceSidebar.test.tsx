@@ -9,6 +9,7 @@ import natureFixture from '@/services/pinakes/fixtures/by-uri.nature-article.jso
 import placeFixture from '@/services/pinakes/fixtures/by-uri.place.json';
 import videoFixture from '@/services/pinakes/fixtures/by-uri.video.json';
 import groupFixture from '@/services/pinakes/fixtures/group.video.json';
+import becauseFixture from '@/services/pinakes/fixtures/search.related.because.json';
 import relatedFixture from '@/services/pinakes/fixtures/search.related.json';
 import type { TPinakesCard, TPinakesGroupDetail, TPinakesResourceDetail } from '@/services/pinakes/pinakes.types';
 import { SHARED_ON_PUBKY_NOTE } from './ResourceAlsoOnList.utils';
@@ -17,6 +18,9 @@ import { ResourceSidebar } from './ResourceSidebar';
 vi.mock('@/config/pinakes', () => ({ isPinakesConfigured: () => true, PINAKES_RELATED_LIMIT: 5 }));
 vi.mock('@/hooks/usePinakesGroup/usePinakesGroup', () => ({ usePinakesGroup: vi.fn() }));
 vi.mock('@/hooks/usePinakesRelated/usePinakesRelated', () => ({ usePinakesRelated: vi.fn() }));
+vi.mock('./ResourceSimilarBecause', () => ({
+  ResourceSimilarBecause: ({ tagUri }: { tagUri: string }) => <span data-testid="because">{tagUri}</span>,
+}));
 
 const VIDEO: TPinakesResourceDetail = videoFixture;
 const GROUP: TPinakesGroupDetail = groupFixture;
@@ -293,6 +297,25 @@ describe('ResourceSidebar', () => {
       expect(within(screen.getByTestId('resource-similar-list')).getByRole('heading', { level: 2 }).textContent).toBe(
         'Similar',
       );
+    });
+
+    it('says why each similar row is suggested when Pinakes gives it, by its most referenced link', () => {
+      const [first, second] = becauseFixture.items;
+      const rows: TPinakesCard[] = [
+        // Tagged by another link than its card's URI (a typed card): its tags are that link's.
+        { ...first, refs: ['https://example.org/tagged-link', first.uri] },
+        second,
+        { ...RELATED[0], because: null },
+        { ...RELATED[1], because: { shared: 0, taggers: [] } },
+      ];
+      mockRelated.mockReturnValue(settled(rows));
+      render(<ResourceSidebar card={card} />);
+      const listed = screen.getAllByTestId('resource-similar-list-row');
+      expect(listed).toHaveLength(4);
+      expect(within(listed[0]).getByTestId('because')).toHaveTextContent('https://example.org/tagged-link');
+      expect(within(listed[1]).getByTestId('because')).toHaveTextContent(second.refs[0] ?? second.uri);
+      expect(within(listed[2]).queryByTestId('because')).not.toBeInTheDocument();
+      expect(within(listed[3]).queryByTestId('because')).not.toBeInTheDocument();
     });
 
     it('shows no Similar section when nothing similar is found', () => {
