@@ -367,7 +367,7 @@ describe('NexusResourceService batched tag reads (POST /v0/stream/resources/by_i
   // Shape captured from the dev Nexus fork (db54d411) `POST /v0/stream/resources/by_ids` on 2026-11-06.
   const OSM_VIEW = view(OSM, [tag('coffee', ['a', 'b', 'c']), tag('zurich', ['a'])]);
   const YOUTUBE_VIEW = view(YOUTUBE, [tag('video', ['k'])], '0f3820de1c3532e8805674cc996978f9');
-  const BY_IDS_URL = resourceApi.byIds({ uris: [] }).url;
+  const BY_IDS_URL = resourceApi.byIds({ uris: [], limit_tags: RESOURCE_TAGS_LIMIT }).url;
   const byIdsCalls = () => fetchSpy.mock.calls.filter(([url]) => String(url) === BY_IDS_URL);
   const byUriCalls = () => fetchSpy.mock.calls.filter(([url]) => String(url).includes('/v0/resource/by-uri'));
   const bodyOf = (call: unknown[]) => JSON.parse(String((call[1] as RequestInit).body));
@@ -432,22 +432,32 @@ describe('NexusResourceService batched tag reads (POST /v0/stream/resources/by_i
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('reads a link whose view is cut off by `by_ids`’ limits by `by-uri`, the others from the batch', async () => {
+  it('asks `by_ids` for the limits `by-uri` is asked for, and takes a view as full as `by-uri`’s', async () => {
     const manyTags = view(
       YOUTUBE,
-      ['a', 'b', 'c', 'd', 'e'].map((label) => tag(label, ['k'])),
+      ['a', 'b', 'c', 'd', 'e', 'f'].map((label) => tag(label, ['k', 'l', 'm', 'n', 'o'], 9)),
     );
-    const manyTaggers = view(UNKNOWN, [tag('busy', ['a', 'b', 'c'], 9)]);
+    fetchSpy.mockResolvedValue(jsonResponse([OSM_VIEW, manyTags]));
+
+    expect(await Promise.all([read(OSM), read(YOUTUBE)])).toEqual([OSM_VIEW.tags, manyTags.tags]);
+
+    expect(new URL(BY_IDS_URL).searchParams.get('limit_tags')).toBe(String(RESOURCE_TAGS_LIMIT));
+    expect(byIdsCalls()).toHaveLength(1);
+    expect(byUriCalls()).toHaveLength(0);
+  });
+
+  it('reads a link by `by-uri` when its view has fewer taggers than `by-uri` returns (a Nexus ignoring the limits)', async () => {
+    const cutOff = view(YOUTUBE, [tag('busy', ['a', 'b', 'c'], 9)]);
     fetchSpy.mockImplementation(async (url) =>
       String(url) === BY_IDS_URL
-        ? jsonResponse([OSM_VIEW, manyTags, manyTaggers])
-        : jsonResponse({ resource: manyTags.details, tags: [] }),
+        ? jsonResponse([OSM_VIEW, cutOff])
+        : jsonResponse({ resource: cutOff.details, tags: [] }),
     );
 
-    await Promise.all([read(OSM), read(YOUTUBE), read(UNKNOWN)]);
+    await Promise.all([read(OSM), read(YOUTUBE)]);
 
     expect(byIdsCalls()).toHaveLength(1);
-    expect(byUriCalls().map(([url]) => new URL(String(url)).searchParams.get('uri'))).toEqual([YOUTUBE, UNKNOWN]);
+    expect(byUriCalls().map(([url]) => new URL(String(url)).searchParams.get('uri'))).toEqual([YOUTUBE]);
   });
 
   it('reads link by link on a Nexus without `by_ids` (404), and does not ask it again', async () => {

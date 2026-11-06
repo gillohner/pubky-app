@@ -16,10 +16,10 @@ import {
   RESOURCE_BY_IDS_BATCH_MAX_MS,
   RESOURCE_BY_IDS_BATCH_MS,
   RESOURCE_BY_IDS_MAX,
-  RESOURCE_BY_IDS_TAGS,
   RESOURCE_BY_URI_READS_AT_ONCE,
   RESOURCE_READ_TIMEOUT_MS,
   RESOURCE_TAG_UNCONFIRMED_MS,
+  RESOURCE_TAGGERS_DEFAULT,
   RESOURCE_TAGS_LIMIT,
   RESOURCE_URI_MAX_BYTES,
 } from '@/services/nexus/resource/resource.constants';
@@ -410,7 +410,8 @@ async function readChunk(uris: string[], viewerId: string | undefined, links: Ma
  * never asked again), the body was refused (400/422) or the answer is not a list.
  */
 async function postByIds(uris: string[], viewerId: string | undefined): Promise<unknown[] | null> {
-  const { url: endpoint, body } = resourceApi.byIds({ uris, viewer_id: viewerId });
+  // The limits a card's `by-uri` read asks for, so a view is that read's answer.
+  const { url: endpoint, body } = resourceApi.byIds({ uris, viewer_id: viewerId, limit_tags: RESOURCE_TAGS_LIMIT });
   const response = await safeFetch(
     endpoint,
     // Bounded: while it probes for the route, every later batch waits for its answer.
@@ -441,7 +442,7 @@ async function postByIds(uris: string[], viewerId: string | undefined): Promise<
  * matched to the next asked link it names. When every view matched, an unmatched link is one Nexus
  * does not know (`null`, as `by-uri`'s 404); when a view matched none (a spelling the matching does
  * not fold) or is malformed, the unmatched links are left to `by-uri` (`undefined`). A view cut off
- * by `by_ids`' fixed limits is left to `by-uri` too.
+ * short of `by-uri`'s answer is left to `by-uri` too.
  */
 function matchViews(uris: string[], views: unknown[] | null): TBatchedResource[] {
   const answers: TBatchedResource[] = uris.map(() => undefined);
@@ -506,12 +507,12 @@ function uriKey(uri: string): string {
 }
 
 /**
- * Whether the view holds everything a `by-uri` read of the card shows: `by_ids` returns at most
- * `RESOURCE_BY_IDS_TAGS` tags with 3 taggers each, fewer than a card asks for, so a view with that
- * many tags, or with a tag whose taggers are cut off, may lack some.
+ * Whether the view holds everything a `by-uri` read of the card shows. `by_ids` is asked for the same
+ * limits; a Nexus that ignores them (our fork before it took them: 5 tags, 3 taggers) cuts the
+ * taggers short of `by-uri`'s default.
  */
 function isComplete(view: NexusResourceView): boolean {
-  return view.tags.length < RESOURCE_BY_IDS_TAGS && view.tags.every((tag) => tag.taggers.length >= tag.taggers_count);
+  return view.tags.every((tag) => tag.taggers.length >= Math.min(tag.taggers_count, RESOURCE_TAGGERS_DEFAULT));
 }
 
 /** A `by_ids` view in the shape of a `by-uri` answer. */

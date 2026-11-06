@@ -10,12 +10,14 @@ export type TResourceByUriParams = {
   limit_taggers?: number;
 };
 
-/** The body of `POST /v0/stream/resources/by_ids` by link (our Nexus fork). */
+/** `POST /v0/stream/resources/by_ids` by link (our Nexus fork): the body, and the tag limits in the query as on `by-uri`. */
 export type TResourceByIdsParams = {
   /** 1–100 links exactly as written: Nexus normalizes them as `by-uri` does. */
   uris: string[];
   /** Marks the viewer's own tags; omitted for a signed-out viewer. */
   viewer_id?: Pubky;
+  limit_tags?: number;
+  limit_taggers?: number;
 };
 
 /** `ResourceDetails` in the Nexus openapi: an external resource someone tagged. */

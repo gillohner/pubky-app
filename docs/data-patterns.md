@@ -372,7 +372,7 @@ holds web links):
   `putBlob`, or one DELETE of the viewer's own Nexus `tag_uri` (else the built file, whose id hashes link and
   label). Read: batched in `POST /v0/stream/resources/by_ids` on our Nexus fork (the links read around the
   same moment, 100 per request), else `GET /v0/resource/by-uri` per link, six at a time (a Nexus without by_ids,
-  or a view cut off by its 5-tag/3-tagger limits); both time out after 10 s (`NexusResourceService`, a 404 or a
+  or a view cut off short of by-uri's); both time out after 10 s (`NexusResourceService`, a 404 or a
   skipped link is "nobody tagged it"); an accepted write
   is applied to that shared Nexus answer, since Nexus indexes it with a delay, and every card of the link follows
   that answer (`subscribeResourceTags`).

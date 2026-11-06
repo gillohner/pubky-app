@@ -715,9 +715,9 @@ describe('Nexus resource tags transport expected-error policy', () => {
         if (!(error instanceof PipelineAppError)) return;
         expect(error).toMatchObject({ service: ErrorService.Nexus, operation: 'fetchResourceTagsByUri' });
         // What the rule keeps out of telemetry: the post's link and the viewer in the `by-uri` request
-        // (a `by_ids` request carries them in its body, not in the URL).
+        // (a `by_ids` request carries them in its body; its query holds only the tag limits).
         if (read === 'by-uri') expect(String(error.context?.url)).toContain(encodeURIComponent(LINK));
-        else expect(String(error.context?.url)).toMatch(/\/v0\/stream\/resources\/by_ids$/);
+        else expect(String(error.context?.url)).toMatch(/\/v0\/stream\/resources\/by_ids\?limit_tags=\d+$/);
         expect(fetchSpy.mock.calls.length).toBeGreaterThan(1);
         expect(captureException).not.toHaveBeenCalled();
         expect(shouldDropAppErrorFromSentry(error)).toBe(true);

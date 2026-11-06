@@ -23,8 +23,8 @@ export const resourceApi = {
    * The views of up to 100 resources by link in one POST (our Nexus fork; production and the hosted
    * staging Nexus answer 404). Returns the URL and the JSON body.
    */
-  byIds: ({ uris, viewer_id }: TResourceByIdsParams) => ({
-    url: buildNexusUrl('v0/stream/resources/by_ids'),
+  byIds: ({ uris, viewer_id, ...params }: TResourceByIdsParams) => ({
+    url: buildUrlWithQuery({ baseRoute: 'v0/stream/resources/by_ids', params }),
     body: viewer_id ? { uris, viewer_id } : { uris },
   }),
   /** The live posts whose `parent` is the resource, newest first (our Nexus fork). */

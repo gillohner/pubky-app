@@ -15,8 +15,11 @@ export const RESOURCE_TAG_UNCONFIRMED_MS = RESOURCE_TAG_REREADS_MS[RESOURCE_TAG_
 /** Links one `POST /v0/stream/resources/by_ids` request carries (the route's limit). */
 export const RESOURCE_BY_IDS_MAX = 100;
 
-/** Tags per resource a `by_ids` view carries (fixed by the route; `by-uri` is asked for `RESOURCE_TAGS_LIMIT`). */
-export const RESOURCE_BY_IDS_TAGS = 5;
+/**
+ * Taggers per tag Nexus returns when not asked for a number (`by-uri` and `by_ids` alike). A `by_ids`
+ * view showing fewer comes from a Nexus that ignores the limits it is sent.
+ */
+export const RESOURCE_TAGGERS_DEFAULT = 5;
 
 /**
  * Tag reads of links are collected into one `by_ids` request until none came for this long (ms): a
