@@ -74,15 +74,16 @@ describe('getFaviconOverride', () => {
 });
 
 describe('isDarkFavicon', () => {
-  it('marks the dark-on-clear icons (Discogs, GitHub) and their subdomains', () => {
+  it('marks the dark icons (Discogs, GitHub, TIDAL’s black tile) and their subdomains', () => {
     expect(isDarkFavicon('discogs.com')).toBe(true);
+    expect(isDarkFavicon('tidal.com')).toBe(true);
+    expect(isDarkFavicon('listen.tidal.com')).toBe(true);
     expect(isDarkFavicon('st.discogs.com')).toBe(true);
     expect(isDarkFavicon('github.com')).toBe(true);
     expect(isDarkFavicon('gist.github.com')).toBe(true);
   });
 
-  it('leaves icons on their own tile and other sites as they are', () => {
-    expect(isDarkFavicon('tidal.com')).toBe(false);
+  it('leaves icons on a light or coloured tile and other sites as they are', () => {
     expect(isDarkFavicon('x.com')).toBe(false);
     expect(isDarkFavicon('mydiscogs.com')).toBe(false);
     expect(isDarkFavicon(null)).toBe(false);

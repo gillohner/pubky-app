@@ -86,10 +86,11 @@ export function getFaviconOverride(host: string | null): string | null {
 /**
  * Sites whose favicon is a dark mark on a clear background, which the app's dark theme (its only
  * one) would hide: shown inverted. Measured as the mean luminance of the icon's opaque pixels
- * (0-255): Discogs 6, GitHub 22. Dark icons on their own light or coloured tile (TIDAL, X, Audius)
- * show as they are and are not listed.
+ * (0-255): Discogs 6, GitHub 22, TIDAL 25 (a black tile with a white mark, a dark square on the dark
+ * pills and menus; inverted it is a light tile). Icons on a light or coloured tile (X, Audius) or a
+ * coloured mark (Deezer's purple, 93) show as they are and are not listed.
  */
-const DARK_FAVICON_DOMAINS: readonly string[] = ['discogs.com', 'github.com'];
+const DARK_FAVICON_DOMAINS: readonly string[] = ['discogs.com', 'github.com', 'tidal.com'];
 
 /** Whether a host's favicon is drawn inverted on the dark theme (the domain and its subdomains). */
 export function isDarkFavicon(host: string | null): boolean {

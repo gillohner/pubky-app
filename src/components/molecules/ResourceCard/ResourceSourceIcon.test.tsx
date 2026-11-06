@@ -48,18 +48,20 @@ describe('ResourceSourceIcon', () => {
     expect(favicon).not.toHaveClass('invert');
   });
 
-  it('inverts GitHub’s black favicon and leaves other sites’ as they are', () => {
+  it('inverts GitHub’s and TIDAL’s black favicons and leaves other sites’ as they are', () => {
     render(
       <>
         <ResourceSourceIcon uri="https://github.com/pubky/pubky-app" />
         <ResourceSourceIcon uri="https://tidal.com/track/490851477" />
+        <ResourceSourceIcon uri="https://www.deezer.com/album/320429237" />
       </>,
     );
 
-    const [github, tidal] = screen.getAllByTestId('resource-source-favicon');
+    const [github, tidal, deezer] = screen.getAllByTestId('resource-source-favicon');
     expect(github).toHaveAttribute('src', 'https://github.com/favicon.ico');
     expect(github).toHaveClass('invert');
-    expect(tidal).not.toHaveClass('invert');
+    expect(tidal).toHaveClass('invert');
+    expect(deezer).not.toHaveClass('invert');
   });
 
   it.each([
