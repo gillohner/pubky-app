@@ -1,5 +1,10 @@
 import { getSafeExternalUrl } from '@/libs/utils/safeExternalUrl';
-import { PinakesStatus, type TPinakesCard, type TPinakesResourceDetail } from '@/services/pinakes/pinakes.types';
+import {
+  PinakesStatus,
+  type TPinakesAlsoOn,
+  type TPinakesCard,
+  type TPinakesResourceDetail,
+} from '@/services/pinakes/pinakes.types';
 import { ResourceFamily } from './ResourceCard.types';
 
 /**
@@ -143,14 +148,17 @@ export function getLinkHost(value: string | null | undefined): string | null {
   return url ? new URL(url).hostname.replace(/^www\./i, '') : null;
 }
 
-/** `https://<host>/favicon.ico` for an `http(s)` link, else `null` (non-web URIs have no site to ask). */
+/**
+ * `https://<host>/favicon.ico` for an `http(s)` link, else `null` (non-web URIs have no site to ask).
+ * Always `https:`: the app is served over `https:`, where an `http:` image is mixed content.
+ */
 export function getFaviconUrl(value: string | null | undefined): string | null {
   const url = getHttpUrl(value);
-  return url ? `${new URL(url).origin}/favicon.ico` : null;
+  return url ? `https://${new URL(url).hostname}/favicon.ico` : null;
 }
 
 /**
- * Where a card leads and whose site it names, shared by the card and its Open in menu:
+ * Where a card leads and whose site it names, shared by the card and its ⋯ menu:
  *
  * - `linkUrl`: the post's link first (what the author wrote), then the card's own link, then the
  *   address Pinakes gives for a Pubky app's object (`open_in`); never a non-web URI.
@@ -238,4 +246,58 @@ export function getEventStatusNote(eventStatus: string | null | undefined): stri
 /** A point as `lat, lon` in degrees, four decimals (about 10 m). */
 export function formatResourcePoint(point: { lat: number; lon: number }): string {
   return `${point.lat.toFixed(4)}, ${point.lon.toFixed(4)}`;
+}
+
+/** The `kind` of a derived link that is an archived copy; its `at` is the capture. */
+const ARCHIVED_KIND = 'archived';
+
+/** A documented `kind` whose plain wording is not its value with a capital: an acronym. */
+const KIND_LABELS: Readonly<Record<string, string>> = { pdf: 'PDF' };
+
+/** The name of an Also on entry: its service, else the link's host, else the link as written. */
+export function getAlsoOnName(entry: Pick<TPinakesAlsoOn, 'uri' | 'site'>): string {
+  return entry.site?.trim() || getLinkHost(entry.uri) || getDisplayLink(entry.uri);
+}
+
+/**
+ * What an Also on entry says under its name: the identifier of a URI that is not a web link and is
+ * named by its service (`doi:10.1038/nature12373` named "DOI"), an archived copy with its capture
+ * date, another qualifier (`kind`), and for a derived link (nobody tagged it) the source it was
+ * found through. `null` for a tagged web link without a qualifier.
+ *
+ * The capture date is read in UTC, the zone archives such as the Wayback Machine date captures in.
+ *
+ * @param locale - For tests; the viewer's locale when omitted
+ * @param options.withSource - `false` leaves out where a derived link was found (what a list shows;
+ *   the source stays for a row's accessible name or tooltip)
+ */
+export function getAlsoOnNote(
+  entry: Pick<TPinakesAlsoOn, 'uri' | 'site' | 'derived' | 'kind' | 'via' | 'at'>,
+  locale?: string,
+  { withSource = true }: { withSource?: boolean } = {},
+): string | null {
+  const parts: string[] = [];
+  const kind = entry.kind?.trim();
+  if (kind?.toLowerCase() === ARCHIVED_KIND) {
+    const at = parseDate(entry.at);
+    parts.push(
+      at ? `Archived ${createDateFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(at)}` : 'Archived',
+    );
+  } else if (kind) {
+    parts.push(KIND_LABELS[kind.toLowerCase()] ?? kind);
+  }
+  if (entry.derived && withSource) {
+    const via = entry.via?.trim();
+    parts.push(via ? `found via ${via}` : 'found automatically');
+  }
+  const qualifier = parts.length > 0 ? parts.join(' · ') : null;
+  const note = qualifier && qualifier.charAt(0).toUpperCase() + qualifier.slice(1);
+
+  // A non-web entry has no link to open: without its identifier, a row named "DOI" says nothing.
+  // Kept as written (no capital): an identifier's case can matter.
+  const identifier = getHttpUrl(entry.uri) ? null : getDisplayLink(entry.uri);
+  if (identifier && identifier !== getAlsoOnName(entry)) {
+    return note ? `${identifier} · ${note}` : identifier;
+  }
+  return note;
 }

@@ -45,3 +45,56 @@ export function getFaviconUrls(value: string | null | undefined): string[] {
   const parent = getParentDomain(hostname);
   return parent ? [own, `${protocol}//${parent}/favicon.ico`] : [own];
 }
+
+/** Whether `host` is `domain` or one of its subdomains (`tycho.bandcamp.com` is `bandcamp.com`'s). */
+function isOnDomain(host: string, domain: string): boolean {
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
+/**
+ * Sites whose icon is not at `/favicon.ico` for us, for the domain and its subdomains, at the
+ * address their own pages name: `www.discogs.com` answers an image request with 403, Bandcamp
+ * (`<artist>.bandcamp.com`) and Audius with a web page.
+ */
+const FAVICON_OVERRIDES: Readonly<Record<string, string>> = {
+  'discogs.com': 'https://st.discogs.com/favicon.ico',
+  'bandcamp.com': 'https://s4.bcbits.com/img/favicon/favicon-32x32.png',
+  'audius.co': 'https://audius.co/favicons/favicon-32x32.png',
+};
+
+/**
+ * Amazon Music on Amazon's country sites (`music.amazon.com`, `music.amazon.co.uk`, listed) has no
+ * `/favicon.ico` (404); its pages name Amazon Music's own icon. Without it the card would show the
+ * shop's icon (`amazon.fr`, the parent domain).
+ */
+const AMAZON_MUSIC_HOSTS: ReadonlySet<string> = new Set(
+  ['com', 'ca', 'com.mx', 'com.br', 'co.uk', 'de', 'fr', 'it', 'es', 'in', 'co.jp', 'com.au'].map(
+    (tld) => `music.amazon.${tld}`,
+  ),
+);
+const AMAZON_MUSIC_ICON = 'https://m.media-amazon.com/images/G/01/music/logo/1.0/smile_256x256.png';
+
+/** Where a host's icon is when it is not at its `/favicon.ico`, else `null`. */
+export function getFaviconOverride(host: string | null): string | null {
+  if (!host) return null;
+  const name = host.toLowerCase();
+  if (AMAZON_MUSIC_HOSTS.has(name)) return AMAZON_MUSIC_ICON;
+  const domain = Object.keys(FAVICON_OVERRIDES).find((key) => isOnDomain(name, key));
+  return domain ? FAVICON_OVERRIDES[domain] : null;
+}
+
+/**
+ * Sites whose favicon is a dark mark on a clear background, which the app's dark theme (its only
+ * one) would hide: shown inverted. Measured as the mean luminance of the icon's opaque pixels
+ * (0-255): Discogs 6, GitHub 22, TIDAL 25 (a black tile with a white mark, a dark square on the dark
+ * pills and menus; inverted it is a light tile). Icons on a light or coloured tile (X, Audius) or a
+ * coloured mark (Deezer's purple, 93) show as they are and are not listed.
+ */
+const DARK_FAVICON_DOMAINS: readonly string[] = ['discogs.com', 'github.com', 'tidal.com'];
+
+/** Whether a host's favicon is drawn inverted on the dark theme (the domain and its subdomains). */
+export function isDarkFavicon(host: string | null): boolean {
+  if (!host) return false;
+  const name = host.toLowerCase();
+  return DARK_FAVICON_DOMAINS.some((domain) => isOnDomain(name, domain));
+}

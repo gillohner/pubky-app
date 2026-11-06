@@ -112,8 +112,8 @@ describe('ResourceCard', () => {
     it('shows the pointer over its header and body only, not over its actions', () => {
       render(
         <ResourceCard
-          card={ARTICLE}
-          href={ARTICLE.uri}
+          card={eventFixture}
+          href={eventFixture.uri}
           actions={<div data-resource-controls data-testid="actions" />}
         />,
       );
@@ -131,6 +131,51 @@ describe('ResourceCard', () => {
       // Header and body, then the bottom zone: one divider between them.
       expect(card()).toHaveClass('divide-y');
       expect(card().children).toHaveLength(2);
+    });
+
+    it('leaves the link to the ⋯ menu when it lists other services under Also on', () => {
+      const open = vi.spyOn(window, 'open').mockReturnValue(null);
+      render(
+        <ResourceCard
+          card={videoFixture}
+          href={videoFixture.uri}
+          actions={<div data-resource-controls data-testid="actions" />}
+          hasAlsoOn
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('resource-card-description'));
+
+      expect(open).not.toHaveBeenCalled();
+      expect(card()).not.toHaveAttribute('data-click-through');
+      expect(card().firstElementChild).not.toHaveClass('cursor-pointer');
+      expect(title()).toHaveAttribute('href', videoFixture.uri);
+      expect(source()).toHaveAttribute('href', videoFixture.uri);
+    });
+
+    it('stays a click-through on other services too while its ⋯ menu lists no Also on', () => {
+      const open = vi.spyOn(window, 'open').mockReturnValue(null);
+      render(
+        <ResourceCard
+          card={videoFixture}
+          href={videoFixture.uri}
+          actions={<div data-resource-controls data-testid="actions" />}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('resource-card-description'));
+
+      expect(open).toHaveBeenCalledWith(videoFixture.uri, '_blank', 'noopener,noreferrer');
+      expect(card()).toHaveAttribute('data-click-through', 'true');
+    });
+
+    it('stays a click-through on other services too while it has no actions (composing)', () => {
+      const open = vi.spyOn(window, 'open').mockReturnValue(null);
+      render(<ResourceCard card={videoFixture} href={videoFixture.uri} />);
+
+      fireEvent.click(screen.getByTestId('resource-card-description'));
+
+      expect(open).toHaveBeenCalledWith(videoFixture.uri, '_blank', 'noopener,noreferrer');
     });
 
     it('has no click-through without a web link', () => {
