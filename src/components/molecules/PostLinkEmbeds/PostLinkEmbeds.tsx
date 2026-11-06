@@ -2,12 +2,14 @@
 
 import { useMemo } from 'react';
 import { Container } from '@/atoms/Container/Container';
+import { isPinakesConfigured } from '@/config/pinakes';
 import { usePauseMediaOutsideViewport } from '@/hooks/usePauseMediaOutsideViewport/usePauseMediaOutsideViewport';
 import { getFirstLinkUrl } from '@/libs/post/postLinkUrl';
 import { useIsNestedPostPreview } from '@/molecules/PostPreviewCard/PostPreviewNestingContext';
 import type { ParseUrlForLinkEmbedResult, PostLinkEmbedsProps } from './PostLinkEmbeds.types';
 import { Generic } from './Providers/Generic/ProviderGeneric';
 import { InApp } from './Providers/InApp/ProviderInApp';
+import { NativeEmbedResource } from './Providers/Native/NativeEmbedResource';
 import type { EmbedProvider } from './Providers/Provider.types';
 import { Twitter } from './Providers/Twitter/ProviderTwitter';
 import { Vimeo } from './Providers/Vimeo/ProviderVimeo';
@@ -85,6 +87,12 @@ const parseUrlForLinkEmbed = (url: string | null, allowInApp: boolean): ParseUrl
  * Embeds `url` when given, else the first link of `content`. Only `url`, the link the post embeds, is
  * the post's embed: a generic link there shows as the external resource card. A link that is only in
  * the text keeps its own website preview, since the post does not reference that resource.
+ *
+ * A post's embed that the platform has its own embed for (an X post, a YouTube or Vimeo video:
+ * `resourceKind`) shows as that resource too (`NativeEmbedResource`): the platform's embed in the
+ * resource frame, or our card with Play on when Pinakes knows it on other services; in the composer
+ * the same, without the footer, and Pinakes reads the link at once. Not in a quoted post, nor
+ * without Pinakes: the plain embed, as before.
  */
 export const PostLinkEmbeds = ({ content = '', url, isComposing = false }: PostLinkEmbedsProps) => {
   const isNested = useIsNestedPostPreview();
@@ -96,9 +104,23 @@ export const PostLinkEmbeds = ({ content = '', url, isComposing = false }: PostL
 
   if (!embed || !provider) return null;
 
+  const isPostEmbed = Boolean(url);
+  const resourceKind = url && !isNested && isPinakesConfigured() ? provider.resourceKind : undefined;
+
   return (
     <Container ref={mediaContainerRef} className="w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
-      {provider.renderEmbed(embed, { isComposing, isPostEmbed: Boolean(url) })}
+      {url && resourceKind ? (
+        <NativeEmbedResource
+          // A new link starts over (a failed or played embed belongs to the old one).
+          key={url}
+          url={url}
+          kind={resourceKind}
+          isComposing={isComposing}
+          renderEmbed={({ onError }) => provider.renderEmbed(embed, { isPostEmbed, onEmbedError: onError })}
+        />
+      ) : (
+        provider.renderEmbed(embed, { isComposing, isPostEmbed })
+      )}
     </Container>
   );
 };

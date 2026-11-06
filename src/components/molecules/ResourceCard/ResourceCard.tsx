@@ -36,7 +36,7 @@ import {
   getResourceTypeLabel,
   hasWideImage,
 } from './ResourceCard.utils';
-import { ResourceCardFrame, ResourceCardHeader } from './ResourceCardFrame';
+import { CARD_MUTED_TEXT, ResourceCardFrame, ResourceCardHeader } from './ResourceCardFrame';
 import { ResourceCardMedia } from './ResourceCardMedia';
 import { ResourceCredits, type TResourceBorrowedNote } from './ResourceCredits';
 import { getShownCredits } from './ResourceCredits.utils';
@@ -65,12 +65,6 @@ const ATTENDANCE_LABELS: Readonly<Record<string, string>> = {
 const LONG_DESCRIPTION_CHARS = 280;
 
 const DETAIL_ICON_SIZE = 14;
-
-/**
- * Inside the card's frame (`bg-muted`) the app's muted grey is 3.8:1; this tone, between the text
- * colour and the frame's, keeps grey text above 4.5:1 there and on the large card's surface.
- */
-const CARD_MUTED_TEXT = '[--color-muted-foreground:color-mix(in_oklab,var(--foreground)_58%,var(--muted))]';
 
 /**
  * One card for every external resource Pinakes knows, whatever its type, shown the way the app
@@ -131,7 +125,10 @@ export function ResourceCard({
   // link). The large card heads the resource's own page: its header's "Open in <site>" links out,
   // the card itself does not; nor does a card whose body may turn into a player (`renderBody`).
   const clickThroughUrl = hasAlsoOn || isLarge || renderBody ? null : titleUrl;
-  const smallTitleUrl = navigable ? getResourceRoute(card.uri) : titleUrl;
+  // The title always opens the resource's page, as on the page itself; where links may not navigate
+  // (the composer, a quoted post in a dialog) in a new tab, so the draft or dialog stays.
+  const smallTitleUrl = getResourceRoute(card.uri);
+  const titleTarget = navigable ? undefined : '_blank';
   const descriptionId = useId();
 
   const imageUrl = getHttpUrl(card.image);
@@ -265,9 +262,11 @@ export function ResourceCard({
                   {/* Not a link: the header's "Open in <site>" is the one way to the same place. */}
                   <span data-testid="resource-card-title">{title}</span>
                 </Typography>
-              ) : smallTitleUrl ? (
+              ) : (
                 <Link
                   href={smallTitleUrl}
+                  target={titleTarget}
+                  rel={titleTarget ? 'noopener noreferrer' : undefined}
                   overrideDefaults
                   dir="auto"
                   title={title}
@@ -276,15 +275,6 @@ export function ResourceCard({
                 >
                   {title}
                 </Link>
-              ) : (
-                <Typography
-                  dir="auto"
-                  title={title}
-                  data-testid="resource-card-title"
-                  className="line-clamp-3 font-bold wrap-anywhere"
-                >
-                  {title}
-                </Typography>
               )}
 
               {summary && (

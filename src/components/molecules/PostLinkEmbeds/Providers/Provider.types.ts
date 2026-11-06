@@ -22,7 +22,15 @@ export interface EmbedRenderOptions {
    * preview, since the post does not reference that resource.
    */
   isPostEmbed?: boolean;
+  /**
+   * Called when the platform says it cannot show the embed (a deleted X post): the resource's card
+   * takes its place (`NativeEmbedResource`). Providers whose embed is an iframe cannot tell.
+   */
+  onEmbedError?: () => void;
 }
+
+/** What a platform embed is: a video plays in the card player, a post (an X post) shows in place. */
+export type EmbedResourceKind = 'video' | 'post';
 
 /**
  * Standard interface that all embed providers must implement
@@ -51,4 +59,11 @@ export interface EmbedProvider {
    * @returns ReactNode to render, or null if data type doesn't match
    */
   renderEmbed: (embedData: EmbedData, options?: EmbedRenderOptions) => ReactNode;
+
+  /**
+   * The platform's own embed of an external resource (`video`: YouTube, Vimeo; `post`: an X post):
+   * as a post's embed it shows as that resource (`NativeEmbedResource`), the embed in the resource
+   * frame or the resource's card. Absent for providers that are no platform embed.
+   */
+  resourceKind?: EmbedResourceKind;
 }

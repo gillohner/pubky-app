@@ -12,6 +12,7 @@ import articleFixture from '@/services/pinakes/fixtures/by-uri.article.json';
 import eventFixture from '@/services/pinakes/fixtures/by-uri.event.json';
 import mbGroupEnrichedFixture from '@/services/pinakes/fixtures/by-uri.mb-group.enriched.json';
 import missingFixture from '@/services/pinakes/fixtures/by-uri.missing.json';
+import musicFixture from '@/services/pinakes/fixtures/by-uri.music-recording.json';
 import unreachableFixture from '@/services/pinakes/fixtures/by-uri.unreachable.json';
 import videoFixture from '@/services/pinakes/fixtures/by-uri.video.json';
 import { PinakesStatus } from '@/services/pinakes/pinakes.types';
@@ -470,5 +471,51 @@ describe('GenericResourcePreview', () => {
 
     expect(screen.getByTestId('resource-link-card')).toBeInTheDocument();
     expect(screen.queryByTestId('resource-card')).not.toBeInTheDocument();
+  });
+
+  describe('a link on a service with an embed', () => {
+    const SPOTIFY = musicFixture.uri;
+
+    it('shows the service’s own embed up front in the resource frame when the card has no Also on', () => {
+      mockUsePinakesCard.mockReturnValue({ data: { ...musicFixture, also_on: [] }, isLoading: false, isError: false });
+      render(<GenericResourcePreview url={SPOTIFY} />);
+
+      const frame = screen.getByTestId('resource-embed-frame');
+      const player = within(frame).getByTestId('resource-player-frame');
+      expect(player.getAttribute('src')).toMatch(/^https:\/\/open\.spotify\.com\/embed\/track\//);
+      expect(within(frame).getByTestId('resource-player-status')).toHaveClass('hidden');
+      expect(within(frame).getByTestId('resource-actions')).toHaveAttribute('data-uri', SPOTIFY);
+      expect(screen.queryByTestId('resource-card')).not.toBeInTheDocument();
+    });
+
+    it('keeps our card and loads nothing when the card is on other services too', () => {
+      mockUsePinakesCard.mockReturnValue({ data: videoFixture, isLoading: false, isError: false });
+      render(<GenericResourcePreview url="https://www.youtube.com/playlist?list=PLabcdefghij" />);
+
+      expect(screen.getByTestId('resource-card')).toBeInTheDocument();
+      expect(screen.queryByTestId('resource-embed-frame')).not.toBeInTheDocument();
+      expect(document.querySelector('iframe')).toBeNull();
+    });
+
+    it('previews the same embed in the composer, without the footer', () => {
+      mockUsePinakesCard.mockReturnValue({ data: { ...musicFixture, also_on: [] }, isLoading: false, isError: false });
+      render(<GenericResourcePreview url={SPOTIFY} isComposing />);
+
+      expect(screen.getByTestId('resource-embed-frame')).toBeInTheDocument();
+      expect(screen.getByTestId('resource-player-frame')).toBeInTheDocument();
+      expect(screen.queryByTestId('resource-actions')).not.toBeInTheDocument();
+    });
+
+    it('keeps the card in a quoted post', () => {
+      mockUsePinakesCard.mockReturnValue({ data: { ...musicFixture, also_on: [] }, isLoading: false, isError: false });
+      render(
+        <PostPreviewNestingProvider>
+          <GenericResourcePreview url={SPOTIFY} />
+        </PostPreviewNestingProvider>,
+      );
+
+      expect(screen.getByTestId('resource-card')).toBeInTheDocument();
+      expect(document.querySelector('iframe')).toBeNull();
+    });
   });
 });
