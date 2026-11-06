@@ -319,6 +319,8 @@ describe('GenericResourcePreview', () => {
       expect(rows[0]).toHaveAttribute('href', 'https://tidal.com/track/490851477');
       // The card's own link is not a row: the card's header opens it.
       expect(rows.map((row) => row.getAttribute('href'))).not.toContain(videoFixture.uri);
+      // The card's menu lists only where the resource is: Also on, no Similar.
+      expect(within(menu).queryByText(/similar/i)).not.toBeInTheDocument();
     });
 
     it('adds nothing to the ⋯ menu, and stays a click-through, when Also on lists only its own service', () => {
