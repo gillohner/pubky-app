@@ -31,29 +31,29 @@ export interface TMergedTag {
 }
 
 /**
- * The URIs that are the page's link itself: its tags are the "Tags on this …" bar, so they are not
- * read again as another link's. The page's link, the link acted on, the card's canonical link, the
- * links people wrote for it (`refs`) and its other spellings (`aliases`).
+ * The URIs whose tags are the "Tags on this …" bar, so they are not read again as another link's:
+ * the link acted on only. Nexus keeps every spelling of a link apart (`http://` and `https://`,
+ * `www.` or not, a trailing `/`), so the card's other spellings (its canonical link, the other links
+ * people wrote for it, its aliases) carry tags of their own, read by `getOtherLinks`.
  */
-export function getOwnLinkUris(
-  card: Pick<TPinakesResourceDetail, 'uri' | 'refs' | 'aliases'>,
-  pageUri: string,
-  actionUri: string,
-): Set<string> {
-  return new Set([pageUri, actionUri, card.uri, ...card.refs, ...(card.aliases ?? [])]);
+export function getOwnLinkUris(actionUri: string): Set<string> {
+  return new Set([actionUri]);
 }
 
 /**
- * The other links of the same thing whose tags are read, by URI: every other member of the card's
- * group (the links people wrote for it first, then its canonical link), then the card's Also on
- * entries. A derived Also on entry is left out: Pinakes found it through a source and nobody has
- * tagged it. Own URIs and repeats are skipped; at most `MAX_OTHER_LINKS`.
+ * The other links of the same thing whose tags are read, by URI: first the card's own other
+ * spellings (its canonical link, the links people wrote for it, its aliases: Nexus counts each
+ * apart), named by the card's service, then every other member of the card's group (the links
+ * people wrote for it first, then its canonical link), then the card's Also on entries. A derived
+ * Also on entry is left out: Pinakes found it through a source and nobody has tagged it. Own URIs
+ * and repeats are skipped; at most `MAX_OTHER_LINKS`.
  *
  * @param members - The group's members (`GET /v1/groups/{id}`), the card itself among them; absent
  *   while read or for a card outside a group
  */
 export function getOtherLinks(
-  card: Pick<TPinakesResourceDetail, 'id' | 'also_on'>,
+  card: Pick<TPinakesResourceDetail, 'id' | 'also_on'> &
+    Partial<Pick<TPinakesResourceDetail, 'uri' | 'refs' | 'aliases' | 'site'>>,
   members: Pick<TPinakesCard, 'id' | 'uri' | 'refs' | 'site'>[] | null | undefined,
   ownUris: ReadonlySet<string>,
 ): TOtherLink[] {
@@ -62,6 +62,9 @@ export function getOtherLinks(
     if (!uri || ownUris.has(uri) || links.has(uri) || links.size >= MAX_OTHER_LINKS) return;
     links.set(uri, { uri, name: getAlsoOnName({ uri, site }) });
   };
+  for (const spelling of [...(card.refs ?? []), card.uri, ...(card.aliases ?? [])]) {
+    if (spelling) add(spelling, card.site);
+  }
   for (const member of members ?? []) {
     if (member.id === card.id) continue;
     for (const ref of member.refs ?? []) add(ref, member.site);
@@ -109,4 +112,34 @@ export function mergeOtherLinkTags(reads: TOtherLinkTags[]): TMergedTag[] {
     }))
     .sort((a, b) => b.count - a.count || b.sources.length - a.sources.length || a.label.localeCompare(b.label))
     .slice(0, MAX_OTHER_TAGS);
+}
+
+/**
+ * The link the card's tags, bookmark and collections are on: one people wrote (`refs`, most
+ * referenced first), which is what a post's card acts on. The canonical `uri` often is not one
+ * (Apple Music's `music.apple.com/song/…` for the `/gb/song/…` people wrote), and Nexus has no tags
+ * on it. The page's own link when it is a ref, else `uri` when it is, else the most referenced one;
+ * `uri` only for a card with no refs.
+ */
+export function getActionUri(card: TPinakesResourceDetail, pageUri: string): string {
+  if (card.refs.includes(pageUri)) return pageUri;
+  if (card.refs.includes(card.uri)) return card.uri;
+  return card.refs[0] ?? card.uri;
+}
+
+/**
+ * The link the resource page's thread is on (the replies read, the composer's `parent`, the
+ * Participants): the acted-on link once the card is read (`getActionUri`), the page's own link when
+ * Pinakes has no card for it, is not configured or failed; `null` while the card is read or without
+ * a link, so the thread is not read twice for two links.
+ */
+export function getThreadUri(
+  pageUri: string | null,
+  read: { data: TPinakesResourceDetail | null | undefined; isLoading: boolean },
+  isPinakesConfigured: boolean,
+): string | null {
+  if (!pageUri) return null;
+  if (!isPinakesConfigured) return pageUri;
+  if (read.data) return getActionUri(read.data, pageUri);
+  return read.isLoading ? null : pageUri;
 }

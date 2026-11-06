@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { NexusTag } from '@/services/nexus/nexus.types';
-import type { TPinakesAlsoOn } from '@/services/pinakes/pinakes.types';
+import videoFixture from '@/services/pinakes/fixtures/by-uri.video.json';
+import type { TPinakesAlsoOn, TPinakesResourceDetail } from '@/services/pinakes/pinakes.types';
 import {
+  getActionUri,
   getOtherLinks,
   getOwnLinkUris,
+  getThreadUri,
   MAX_OTHER_LINKS,
   MAX_OTHER_TAGS,
   mergeOtherLinkTags,
@@ -23,24 +26,8 @@ const tag = (label: string, taggers: string[], count = taggers.length): NexusTag
 });
 
 describe('getOwnLinkUris', () => {
-  it('is the page link, the acted-on link, the canonical link, its refs and its aliases', () => {
-    const own = getOwnLinkUris(
-      {
-        uri: LETTERBOXD,
-        refs: [LETTERBOXD, 'https://boxd.it/29Lu'],
-        aliases: ['http://letterboxd.com/film/the-matrix'],
-      },
-      'https://letterboxd.com/film/the-matrix',
-      LETTERBOXD,
-    );
-    expect([...own].sort()).toEqual(
-      [
-        LETTERBOXD,
-        'https://boxd.it/29Lu',
-        'http://letterboxd.com/film/the-matrix',
-        'https://letterboxd.com/film/the-matrix',
-      ].sort(),
-    );
+  it('is the acted-on link only: Nexus keeps the card’s other spellings apart', () => {
+    expect([...getOwnLinkUris(LETTERBOXD)]).toEqual([LETTERBOXD]);
   });
 });
 
@@ -69,6 +56,26 @@ describe('getOtherLinks', () => {
       { uri: 'https://themoviedb.org/movie/603', name: 'TMDB' },
       { uri: TMDB, name: 'TMDB' },
       { uri: IMDB, name: 'IMDb' },
+    ]);
+  });
+
+  it('reads the card’s other spellings first, named by its service: Nexus tags each apart', () => {
+    const links = getOtherLinks(
+      {
+        ...card,
+        uri: LETTERBOXD,
+        refs: [LETTERBOXD, 'https://boxd.it/29Lu'],
+        aliases: ['http://letterboxd.com/film/the-matrix'],
+        site: 'Letterboxd',
+        also_on: [{ uri: NETFLIX, site: 'Netflix' }],
+      },
+      null,
+      own,
+    );
+    expect(links).toEqual([
+      { uri: 'https://boxd.it/29Lu', name: 'Letterboxd' },
+      { uri: 'http://letterboxd.com/film/the-matrix', name: 'Letterboxd' },
+      { uri: NETFLIX, name: 'Netflix' },
     ]);
   });
 
@@ -181,5 +188,28 @@ describe('mergeOtherLinkTags', () => {
   it('is empty when no other link has tags', () => {
     expect(mergeOtherLinkTags([])).toEqual([]);
     expect(mergeOtherLinkTags([{ link: netflix, tags: [] }])).toEqual([]);
+  });
+});
+
+describe('getThreadUri', () => {
+  const card: TPinakesResourceDetail = { ...(videoFixture as TPinakesResourceDetail), refs: ['https://youtu.be/x'] };
+
+  it('is the acted-on link once the card is read', () => {
+    expect(getThreadUri(card.uri, { data: card, isLoading: false }, true)).toBe(getActionUri(card, card.uri));
+  });
+
+  it('is nothing while the card is read, so the thread is read once', () => {
+    expect(getThreadUri(card.uri, { data: undefined, isLoading: true }, true)).toBeNull();
+  });
+
+  it.each([
+    ['without a card', { data: null, isLoading: false }, true],
+    ['when Pinakes is not configured', { data: undefined, isLoading: true }, false],
+  ])('is the page’s link %s', (_name, read, configured) => {
+    expect(getThreadUri('https://example.com/a', read, configured)).toBe('https://example.com/a');
+  });
+
+  it('is nothing without a link', () => {
+    expect(getThreadUri(null, { data: null, isLoading: false }, true)).toBeNull();
   });
 });

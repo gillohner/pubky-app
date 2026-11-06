@@ -112,8 +112,21 @@ export class TagApplication {
   }
 
   /** The tags on an external resource (a web link), `[]` when nobody tagged it. Network only. */
-  static fetchResourceTags({ uri, viewerId }: { uri: string; viewerId?: string | null }): Promise<NexusTag[]> {
-    return NexusResourceService.fetchTagsByUri({ uri, viewerId });
+  static fetchResourceTags({
+    uri,
+    viewerId,
+    fresh,
+  }: {
+    uri: string;
+    viewerId?: string | null;
+    fresh?: boolean;
+  }): Promise<NexusTag[]> {
+    return NexusResourceService.fetchTagsByUri({ uri, viewerId, ...(fresh ? { fresh } : {}) });
+  }
+
+  /** Whether a tag write of the viewer's on the link is still missing from Nexus' answers. */
+  static hasUnconfirmedResourceTags({ uri, viewerId }: { uri: string; viewerId?: string | null }): boolean {
+    return NexusResourceService.hasUnconfirmedTags({ uri, viewerId });
   }
 
   /** Every later change of the shared answer `fetchResourceTags` reads; returns the unsubscribe. */
@@ -143,20 +156,26 @@ export class TagApplication {
    * already absent file is the state a delete wants), then the shared Nexus answer drops it.
    */
   static async commitDeleteResource(
-    { tagUri, isCurrent, canWrite }: TDeleteResourceTagInput,
+    { tagUri, alsoTagUri, isCurrent, canWrite }: TDeleteResourceTagInput,
     viewerTag: TResourceViewerTag & { uri: string },
   ) {
     if (isCurrent && !isCurrent()) return;
-    if (canWrite && !canWrite(tagUri)) {
+    // The second file first (usually already absent): a failure on the file Nexus reports then leaves
+    // the tag as it was, which the caller's rollback shows.
+    const files = alsoTagUri && alsoTagUri !== tagUri ? [alsoTagUri, tagUri] : [tagUri];
+    if (canWrite && !files.every((file) => canWrite(file))) {
       throw Err.auth(AuthErrorCode.FORBIDDEN, 'The session cannot write the app folder of this tag', {
         service: ErrorService.Local,
         operation: 'commitDeleteResource',
         context: { taggerId: viewerTag.viewerId },
       });
     }
-    await HomeserverService.request({ method: HttpMethod.DELETE, url: tagUri }).catch((error: unknown) => {
-      if (!(error instanceof AppError && error.code === ClientErrorCode.NOT_FOUND)) throw error;
-    });
+    for (const file of files) {
+      // An absent file is already deleted (the second one usually is).
+      await HomeserverService.request({ method: HttpMethod.DELETE, url: file }).catch((error: unknown) => {
+        if (!(error instanceof AppError && error.code === ClientErrorCode.NOT_FOUND)) throw error;
+      });
+    }
     NexusResourceService.applyViewerTag(viewerTag, false);
   }
 

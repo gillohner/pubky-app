@@ -1,6 +1,7 @@
 'use client';
 
 import { type ReactNode, useId } from 'react';
+import { getResourceRoute } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import {
@@ -41,9 +42,11 @@ interface ResourceAlsoOnProps {
  * is one row with a language switcher (`ResourceAlsoOnLanguages`). Nothing when the card is on one
  * site only. The card's own site is not listed: its header links it.
  *
- * A link's note (an archived copy's date, the source a derived link was found through) is in its
- * accessible name only. Menu items in the dropdown; in the sheet, plain links that close it once
- * followed. Only `http(s)` entries become links; any other URI is listed as text.
+ * Every row opens that link's page on Pubky (its tags, replies and player), not the service:
+ * leaving for the service happens there ("Open in"). A link that is not a web link (`isbn:`, a DOI)
+ * keeps its identifier after the service's name. A link's note (an archived copy's date, the source
+ * a derived link was found through) is in its accessible name only. Menu items in the dropdown; in
+ * the sheet, plain links that close it once followed.
  */
 export function ResourceAlsoOn({ alsoOn, variant, closeMenu }: ResourceAlsoOnProps) {
   const labelId = useId();
@@ -101,14 +104,15 @@ interface AlsoOnRowProps {
 }
 
 function AlsoOnRow({ entry, variant, onFollow }: AlsoOnRowProps) {
-  const href = getHttpUrl(entry.uri);
+  const isWebLink = getHttpUrl(entry.uri) !== null;
+  const href = getResourceRoute(entry.uri);
   const name = getAlsoOnName(entry);
-  const note = href ? getAlsoOnNote(entry) : null;
+  const note = isWebLink ? getAlsoOnNote(entry) : null;
   // The note follows the visible name, so the row is still found by what it shows.
   const label = note ? `${name}, ${note}` : undefined;
-  // A URI that is not a web link (`isbn:`, `pubky://`) has nowhere to open: its identifier is what it
-  // tells, so it shows after the service's name (a row named "DOI" alone says nothing).
-  const identifier = href ? null : getDisplayLink(entry.uri);
+  // A URI that is not a web link (`isbn:`, `pubky://`) is told by its identifier, after the
+  // service's name (a row named "DOI" alone says nothing).
+  const identifier = isWebLink ? null : getDisplayLink(entry.uri);
   const content: ReactNode = (
     <>
       <ResourceSourceIcon uri={entry.uri} />
@@ -118,19 +122,7 @@ function AlsoOnRow({ entry, variant, onFollow }: AlsoOnRowProps) {
     </>
   );
 
-  // Listed, not linked (in the sheet plain dimmed text, with no role a disabled state could be announced on).
   if (variant === MENU_VARIANT.SHEET) {
-    if (!href) {
-      return (
-        <Container
-          overrideDefaults
-          data-testid="resource-also-on-row"
-          className="flex h-10 items-center gap-2 overflow-hidden px-4 opacity-50"
-        >
-          {content}
-        </Container>
-      );
-    }
     return (
       <Button
         variant="ghost"
@@ -146,13 +138,6 @@ function AlsoOnRow({ entry, variant, onFollow }: AlsoOnRowProps) {
     );
   }
 
-  if (!href) {
-    return (
-      <DropdownMenuItem disabled data-testid="resource-also-on-row" className="group gap-2 p-0">
-        {content}
-      </DropdownMenuItem>
-    );
-  }
   return (
     <DropdownMenuItem asChild aria-label={label} data-testid="resource-also-on-row" className="group gap-2 p-0">
       <Link href={href} overrideDefaults>
