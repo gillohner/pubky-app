@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { NexusTag } from '@/services/nexus/nexus.types';
-import type { TPinakesAlsoOn } from '@/services/pinakes/pinakes.types';
+import videoFixture from '@/services/pinakes/fixtures/by-uri.video.json';
+import type { TPinakesAlsoOn, TPinakesResourceDetail } from '@/services/pinakes/pinakes.types';
 import {
+  getActionUri,
   getOtherLinks,
   getOwnLinkUris,
+  getThreadUri,
   MAX_OTHER_LINKS,
   MAX_OTHER_TAGS,
   mergeOtherLinkTags,
@@ -181,5 +184,28 @@ describe('mergeOtherLinkTags', () => {
   it('is empty when no other link has tags', () => {
     expect(mergeOtherLinkTags([])).toEqual([]);
     expect(mergeOtherLinkTags([{ link: netflix, tags: [] }])).toEqual([]);
+  });
+});
+
+describe('getThreadUri', () => {
+  const card: TPinakesResourceDetail = { ...(videoFixture as TPinakesResourceDetail), refs: ['https://youtu.be/x'] };
+
+  it('is the acted-on link once the card is read', () => {
+    expect(getThreadUri(card.uri, { data: card, isLoading: false }, true)).toBe(getActionUri(card, card.uri));
+  });
+
+  it('is nothing while the card is read, so the thread is read once', () => {
+    expect(getThreadUri(card.uri, { data: undefined, isLoading: true }, true)).toBeNull();
+  });
+
+  it.each([
+    ['without a card', { data: null, isLoading: false }, true],
+    ['when Pinakes is not configured', { data: undefined, isLoading: true }, false],
+  ])('is the page’s link %s', (_name, read, configured) => {
+    expect(getThreadUri('https://example.com/a', read, configured)).toBe('https://example.com/a');
+  });
+
+  it('is nothing without a link', () => {
+    expect(getThreadUri(null, { data: null, isLoading: false }, true)).toBeNull();
   });
 });

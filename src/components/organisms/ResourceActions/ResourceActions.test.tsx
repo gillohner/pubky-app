@@ -41,6 +41,9 @@ const mocks = vi.hoisted(() => ({
   shareUrl: vi.fn(),
   copyToClipboard: vi.fn(),
   copyTitles: [] as (string | undefined)[],
+  counts: undefined as
+    undefined | null | { resourceId: string; replies?: number; embeds?: number; collections?: number },
+  countsUri: null as string | null,
 }));
 
 vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
@@ -59,6 +62,14 @@ vi.mock('@/hooks/useResourceTags/useResourceTags', () => ({
   useResourceTags: (uri: string) => {
     mocks.tagsUri = uri;
     return mocks.tags;
+  },
+}));
+vi.mock('@/hooks/useResourceCounts/useResourceCounts', () => ({
+  useResourceCounts: (uri: string, options?: { fetch?: boolean }) => {
+    mocks.countsUri = uri;
+    // A card reads no counts of its own: they come with its tags.
+    if (options?.fetch) throw new Error('ResourceActions must not fetch the counts itself');
+    return mocks.counts;
   },
 }));
 vi.mock('@/hooks/useShareUrl/useShareUrl', () => ({ useShareUrl: () => ({ shareUrl: mocks.shareUrl }) }));
@@ -86,12 +97,20 @@ vi.mock('@/organisms/DialogNewPost/DialogNewPost', () => ({
   },
 }));
 vi.mock('@/organisms/DialogReply/DialogReply', () => ({
-  DialogReply: (props: { open: boolean; resourceUri?: string; onOpenChangeAction: (open: boolean) => void }) => {
+  DialogReply: (props: {
+    open: boolean;
+    resourceUri?: string;
+    onOpenChangeAction: (open: boolean) => void;
+    onReplySubmitted?: (replyId: string) => void;
+  }) => {
     mocks.replyDialog(props);
     return props.open ? (
       <div data-testid="reply-dialog" data-resource-uri={props.resourceUri}>
         <button type="button" onClick={() => props.onOpenChangeAction(false)}>
           Close reply
+        </button>
+        <button type="button" onClick={() => props.onReplySubmitted?.('me:reply1')}>
+          Send reply
         </button>
       </div>
     ) : null;
@@ -171,6 +190,8 @@ describe('ResourceActions', () => {
     mocks.shareUrl.mockResolvedValue(true);
     mocks.copyToClipboard.mockResolvedValue(true);
     mocks.copyTitles = [];
+    mocks.counts = undefined;
+    mocks.countsUri = null;
   });
 
   it.each([
@@ -404,6 +425,48 @@ describe('ResourceActions', () => {
       expect(screen.queryByTestId('reply-dialog')).not.toBeInTheDocument();
     });
 
+    it('shows how many posts reply to the link, as Nexus counts them with its tags', () => {
+      mocks.counts = { resourceId: 'r1', replies: 4, embeds: 2, collections: 1 };
+      renderActions();
+
+      expect(mocks.countsUri).toBe(URI);
+      const button = screen.getByRole('button', { name: 'Reply to this external resource (4 replies)' });
+      expect(button).toHaveTextContent('4');
+    });
+
+    it.each([
+      ['Nexus has no record of the link', null],
+      ['Nexus does not count them', { resourceId: 'r1' }],
+      ['Nexus counts none', { resourceId: 'r1', replies: 0, embeds: 0 }],
+    ])('shows 0 replies and 0 posts about it when %s, as a post shows its 0s', (_name, counts) => {
+      mocks.counts = counts;
+      renderActions();
+
+      expect(screen.getByRole('button', { name: 'Reply to this external resource (0 replies)' })).toHaveTextContent(
+        '0',
+      );
+      expect(screen.getByRole('button', { name: /^Post about this \(0 posts embed it\)/ })).toHaveTextContent('0');
+    });
+
+    it('takes the page thread’s count over Nexus’ and tells it the reply the dialog wrote', () => {
+      mocks.counts = { resourceId: 'r1', replies: 4 };
+      const onReplySubmitted = vi.fn();
+      render(
+        <ResourceActions
+          uri={URI}
+          tagsLabel="Tags on this song"
+          size="large"
+          replyCount={5}
+          onReplySubmitted={onReplySubmitted}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reply to this external resource (5 replies)' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Send reply' }));
+
+      expect(onReplySubmitted).toHaveBeenCalledWith('me:reply1');
+    });
+
     it('is disabled for a URI a reply cannot name as its parent (a pubky:// resource)', () => {
       render(<ResourceActions uri={PUBKY_URI} tagsLabel="Tags on this deck" />);
 
@@ -449,6 +512,13 @@ describe('ResourceActions', () => {
         expect(button).toHaveAccessibleName('Save link');
         expect(button).toHaveClass('w-10');
       }
+    });
+
+    it('shows Nexus’ count of the collections holding the link over Pinakes’', () => {
+      mocks.counts = { resourceId: 'r1', collections: 2 };
+      renderActions(8);
+
+      expect(screen.getByTestId('resource-collections-count')).toHaveTextContent('2');
     });
 
     it.each([
@@ -531,6 +601,13 @@ describe('ResourceActions', () => {
       expect(mocks.dialog).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, initialContent: URI }));
     });
 
+    it('shows how many posts embed the link when Nexus counts them', () => {
+      mocks.counts = { resourceId: 'r1', embeds: 3 };
+      renderActions();
+
+      expect(screen.getByRole('button', { name: 'Post about this (3 posts embed it)' })).toHaveTextContent('3');
+    });
+
     it('is disabled for a resource with no web link', () => {
       render(<ResourceActions uri="isbn:9780140328721" postUri={null} tagsLabel="Tags on this book" />);
 
@@ -560,7 +637,7 @@ describe('ResourceActions', () => {
 
       openMenu('More options');
 
-      await waitFor(() => expect(menuLabels()).toEqual(['Copy link', 'Copy title']));
+      await waitFor(() => expect(menuLabels()).toEqual(['Copy link', 'Copy Pubky link', 'Copy title']));
       expect(mocks.signInRequests).toBe(0);
     });
 
@@ -577,12 +654,25 @@ describe('ResourceActions', () => {
       expect(mocks.copyTitles).toContain('Title copied');
     });
 
+    it('copies the link to the resource’s page on Pubky, as a post’s menu copies the post’s', async () => {
+      renderActions();
+
+      openMenu('More options');
+      fireEvent.click(await screen.findByText('Copy Pubky link'));
+
+      await waitFor(() =>
+        expect(mocks.shareUrl).toHaveBeenCalledWith(
+          `${window.location.origin}/resource?${new URLSearchParams({ uri: URI }).toString()}`,
+        ),
+      );
+    });
+
     it('offers only what applies: no title item without a title, the URI as written without a web link', async () => {
       render(<ResourceActions uri="isbn:9780140328721" tagsLabel="Tags on this book" linkUrl={null} />);
 
       openMenu('More options');
 
-      await waitFor(() => expect(menuLabels()).toEqual(['Copy link']));
+      await waitFor(() => expect(menuLabels()).toEqual(['Copy link', 'Copy Pubky link']));
       fireEvent.click(screen.getByText('Copy link'));
       await waitFor(() => expect(mocks.shareUrl).toHaveBeenCalledWith('isbn:9780140328721'));
     });
@@ -593,7 +683,9 @@ describe('ResourceActions', () => {
 
       openMenu('More options');
 
-      await waitFor(() => expect(menuLabels()).toEqual(['Copy link', `Also on (${MENU_VARIANT.DROPDOWN})`]));
+      await waitFor(() =>
+        expect(menuLabels()).toEqual(['Copy link', 'Copy Pubky link', `Also on (${MENU_VARIANT.DROPDOWN})`]),
+      );
     });
 
     it('lists the other services last, one row per service under "Also on", in a menu that scrolls', async () => {
@@ -614,6 +706,7 @@ describe('ResourceActions', () => {
       const menu = await screen.findByRole('menu');
       expect(menuLabels()).toEqual([
         'Copy link',
+        'Copy Pubky link',
         'Copy title',
         'TIDAL',
         'Apple Music',

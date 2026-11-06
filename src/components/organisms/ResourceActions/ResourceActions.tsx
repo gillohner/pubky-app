@@ -4,6 +4,7 @@ import { type ReactNode, useId, useState } from 'react';
 import { MessageCircle, Tag } from 'lucide-react';
 import { Container } from '@/atoms/Container/Container';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
+import { useResourceCounts } from '@/hooks/useResourceCounts/useResourceCounts';
 import { useResourceTags } from '@/hooks/useResourceTags/useResourceTags';
 import { isExternalParentUri } from '@/libs/post/externalParent';
 import { cn } from '@/libs/utils/utils';
@@ -25,8 +26,18 @@ interface ResourceActionsProps {
    * resource has none (the button is disabled). Defaults to `uri`.
    */
   postUri?: string | null;
-  /** How many public collections hold the link (Pinakes); absent for a link Pinakes has no card for. */
+  /**
+   * How many public collections hold the link (Pinakes), when Nexus does not count them; absent for a
+   * link Pinakes has no card for.
+   */
   collectionsCount?: number | null;
+  /**
+   * How many posts reply to the link, from the page's thread (`useResourceReplies`: Nexus' count and
+   * the viewer's replies it does not list yet); else Nexus' count read with the link's tags.
+   */
+  replyCount?: number;
+  /** Called with a reply's id once the Reply dialog wrote it: the page's thread shows it at once. */
+  onReplySubmitted?: (replyId: string) => void;
   /** Names what is tagged ("Tags on this video"): the tag list's name and the Tags button's tooltip. */
   tagsLabel: string;
   /** The link's web address (`getResourceLinks().linkUrl`) for the ⋯ menu; `null` for a non-web URI. */
@@ -60,9 +71,11 @@ interface ResourceActionsProps {
  * The pills stand out from the card's surface as a post's do from the post card: filled with the
  * card colour on a card in a post (`bg-muted`), the post's own on the page's large card (`bg-card`).
  *
- * Only real counts show: the tag labels Nexus returned (`20+` when it returned as many as it is
- * asked for) and the public collections from Pinakes. Nexus counts neither the replies to a link nor
- * the posts that embed it, so Reply and Post about this have no number.
+ * The counts show as a post's do, 0 included, once the link's tags are read (owner 2026-11-06:
+ * "also show 0"): the tag labels Nexus returned (`20+` when it returned as many as it is asked for);
+ * the replies and the posts that embed the link as our Nexus fork counts them (read with the tags,
+ * no request of their own), 0 for a link Nexus has no record of yet or a Nexus without the counts;
+ * the public collections holding it, else Pinakes' count. No number shows while they are read.
  *
  * On the resource page, the tags on the same thing's other links go under the footer (`otherTags`).
  *
@@ -79,9 +92,17 @@ export function ResourceActions({
   otherTags,
   playOn,
   size = 'default',
+  replyCount,
+  onReplySubmitted,
 }: ResourceActionsProps) {
   const { requireAuth } = useRequireAuth();
   const resourceTags = useResourceTags(uri);
+  // Read with the tags (one answer): no request of its own.
+  const counts = useResourceCounts(uri);
+  // `undefined` while the link is read; then a number, 0 when Nexus has none.
+  const replies = replyCount ?? (counts === undefined ? undefined : (counts?.replies ?? 0));
+  const embeds = counts === undefined ? undefined : (counts?.embeds ?? 0);
+  const collections = counts?.collections ?? collectionsCount;
   const [isTagsExpanded, setIsTagsExpanded] = useState(false);
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [isReplying, setIsReplying] = useState(false);
@@ -156,14 +177,19 @@ export function ResourceActions({
           <PostActionButton
             icon={MessageCircle}
             surface={surface}
-            ariaLabel={replyLabel}
+            count={canReply ? replies : undefined}
+            ariaLabel={
+              canReply && replies !== undefined
+                ? `${replyLabel} (${replies} ${replies === 1 ? 'reply' : 'replies'})`
+                : replyLabel
+            }
             title={replyLabel}
             disabled={!canReply}
             onClick={() => requireAuth(() => setIsReplying(true))}
             data-testid="resource-reply-button"
           />
-          <ResourcePostButton uri={postUri} surface={surface} />
-          <ResourceSavePicker uri={uri} collectionsCount={collectionsCount} surface={surface} />
+          <ResourcePostButton uri={postUri} count={embeds} surface={surface} />
+          <ResourceSavePicker uri={uri} collectionsCount={collections} surface={surface} />
           <ResourceMoreMenu
             uri={uri}
             linkUrl={linkUrl}
@@ -174,7 +200,14 @@ export function ResourceActions({
         </Container>
       </Container>
       {otherTags}
-      {isReplying && <DialogReply resourceUri={uri} open={isReplying} onOpenChangeAction={setIsReplying} />}
+      {isReplying && (
+        <DialogReply
+          resourceUri={uri}
+          open={isReplying}
+          onOpenChangeAction={setIsReplying}
+          onReplySubmitted={onReplySubmitted}
+        />
+      )}
     </Container>
   );
 }

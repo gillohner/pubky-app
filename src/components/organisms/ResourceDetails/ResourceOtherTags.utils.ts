@@ -110,3 +110,33 @@ export function mergeOtherLinkTags(reads: TOtherLinkTags[]): TMergedTag[] {
     .sort((a, b) => b.count - a.count || b.sources.length - a.sources.length || a.label.localeCompare(b.label))
     .slice(0, MAX_OTHER_TAGS);
 }
+
+/**
+ * The link the card's tags, bookmark and collections are on: one people wrote (`refs`, most
+ * referenced first), which is what a post's card acts on. The canonical `uri` often is not one
+ * (Apple Music's `music.apple.com/song/…` for the `/gb/song/…` people wrote), and Nexus has no tags
+ * on it. The page's own link when it is a ref, else `uri` when it is, else the most referenced one;
+ * `uri` only for a card with no refs.
+ */
+export function getActionUri(card: TPinakesResourceDetail, pageUri: string): string {
+  if (card.refs.includes(pageUri)) return pageUri;
+  if (card.refs.includes(card.uri)) return card.uri;
+  return card.refs[0] ?? card.uri;
+}
+
+/**
+ * The link the resource page's thread is on (the replies read, the composer's `parent`, the
+ * Participants): the acted-on link once the card is read (`getActionUri`), the page's own link when
+ * Pinakes has no card for it, is not configured or failed; `null` while the card is read or without
+ * a link, so the thread is not read twice for two links.
+ */
+export function getThreadUri(
+  pageUri: string | null,
+  read: { data: TPinakesResourceDetail | null | undefined; isLoading: boolean },
+  isPinakesConfigured: boolean,
+): string | null {
+  if (!pageUri) return null;
+  if (!isPinakesConfigured) return pageUri;
+  if (read.data) return getActionUri(read.data, pageUri);
+  return read.isLoading ? null : pageUri;
+}

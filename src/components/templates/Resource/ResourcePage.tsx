@@ -3,9 +3,12 @@
 import { useEffect, useState } from 'react';
 import { Container } from '@/atoms/Container/Container';
 import { MOBILE_FAB_CLEARANCE_CLASS } from '@/config/layoutClasses';
+import { isPinakesConfigured } from '@/config/pinakes';
 import { usePinakesCard } from '@/hooks/usePinakesCard/usePinakesCard';
+import { useResourceReplies } from '@/hooks/useResourceReplies/useResourceReplies';
 import { PostPageLayout } from '@/organisms/PostPageShell/PostPageLayout';
 import { ResourceDetails } from '@/organisms/ResourceDetails/ResourceDetails';
+import { getThreadUri } from '@/organisms/ResourceDetails/ResourceOtherTags.utils';
 import { ResourceSidebar } from '@/organisms/ResourceDetails/ResourceSidebar';
 
 interface ResourcePageProps {
@@ -16,12 +19,13 @@ interface ResourcePageProps {
 /**
  * Template for an external resource's page (`/resource?uri=…`), laid out as a single post's page
  * ({@link PostPageLayout}): the post filters on the left, the resource's card where the post stands,
- * and its sidebar cards (Also on, Similar) where the post's participants are.
+ * and its sidebar cards (Also on, Similar) above the post page's Participants and Feedback.
  *
  * Below `lg` the sidebar cards follow the card instead of sitting in the right drawer: the mobile
  * header's right button is "Join Pubky" for a visitor who is not signed in, and they are the
- * page's main content after the card, not the post's participants. In the wide shell (`lg+`) they
- * are in the right drawer, as the post's are. Until a card is known there is nothing to show there.
+ * page's main content after the card. In the wide shell (`lg+`) they are in the right drawer, as
+ * the post's are. While the card is read nothing shows there; without a card only the people
+ * sections (Participants).
  */
 export function ResourcePage({ uri }: ResourcePageProps) {
   // A failed read is not cached: a new attempt remounts the read and asks again.
@@ -35,18 +39,24 @@ function ResourcePageRead({ uri, onRetry }: ResourcePageProps & { onRetry: () =>
   const read = usePinakesCard(uri);
   const card = read.data;
   useResourceTitle(card?.name);
+  // One read of the replies for the thread under the card and the Participants panel.
+  const threadUri = getThreadUri(uri, read, isPinakesConfigured());
+  const replies = useResourceReplies(threadUri);
+  const sidebar = (showFeedback: boolean) => (
+    <ResourceSidebar card={card} uri={threadUri} replyIds={replies.replyIds} showFeedback={showFeedback} />
+  );
 
   return (
     <PostPageLayout
-      rightSidebarContent={<ResourceSidebar card={card} />}
-      rightDrawerContent={card ? <ResourceSidebar card={card} /> : null}
+      rightSidebarContent={sidebar(true)}
+      rightDrawerContent={card || threadUri ? sidebar(false) : null}
       showRightMobileButton={false}
       className={`${MOBILE_FAB_CLEARANCE_CLASS} lg:pb-12`}
     >
-      <ResourceDetails uri={uri} read={read} onRetry={onRetry} />
-      {card && (
+      <ResourceDetails uri={uri} read={read} onRetry={onRetry} replies={replies} />
+      {(card || threadUri) && (
         <Container overrideDefaults data-testid="resource-sidebar-inline" className="mt-6 lg:hidden">
-          <ResourceSidebar card={card} />
+          {sidebar(false)}
         </Container>
       )}
     </PostPageLayout>
