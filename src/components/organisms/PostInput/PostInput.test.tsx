@@ -569,9 +569,12 @@ function createUsePostInputReturn(options: UsePostInputOptions, overrides: Recor
     setExistingAttachments: vi.fn(),
     removeExistingAttachment: vi.fn(),
     embedUrl: null,
+    embedChoice: null,
     isEmbedRemoved: false,
     removeEmbed: vi.fn(),
     restoreEmbed: vi.fn(),
+    pickPreviousEmbed: vi.fn(),
+    pickNextEmbed: vi.fn(),
     isArticle: mockUsePostReturn.isArticle,
     setIsArticle: mockSetIsArticle,
     handleArticleClick: vi.fn(),
@@ -1122,6 +1125,28 @@ describe('PostInput', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Remove embedded link' }));
       expect(removeEmbed).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows which of several links is embedded, and embeds another from its arrows', () => {
+      const pickNextEmbed = vi.fn();
+      const pickPreviousEmbed = vi.fn();
+      mockUsePostInput.mockImplementation((options: UsePostInputOptions) =>
+        createUsePostInputReturn(options, {
+          embedUrl: LINK,
+          embedChoice: { index: 0, count: 3 },
+          pickNextEmbed,
+          pickPreviousEmbed,
+        }),
+      );
+
+      render(<PostInput variant={POST_INPUT_VARIANT.POST} />);
+
+      const choice = screen.getByRole('group', { name: 'Link 1 of 3' });
+      expect(choice).toHaveTextContent('1 / 3');
+      fireEvent.click(within(choice).getByRole('button', { name: 'Embed the next link' }));
+      fireEvent.click(within(choice).getByRole('button', { name: 'Embed the previous link' }));
+      expect(pickNextEmbed).toHaveBeenCalledTimes(1);
+      expect(pickPreviousEmbed).toHaveBeenCalledTimes(1);
     });
 
     it('shows the plain link preview readers still get once its embed is removed', () => {

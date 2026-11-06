@@ -71,6 +71,55 @@ describe('PostInputLinkEmbed', () => {
     expect(onRemove).not.toHaveBeenCalled();
   });
 
+  describe('with several links in the text', () => {
+    it('shows which link is embedded, with no switcher for a single link', () => {
+      const { rerender } = render(<PostInputLinkEmbed url={URL} onRemove={vi.fn()} />);
+      expect(screen.queryByTestId('post-input-link-embed-choice')).not.toBeInTheDocument();
+
+      rerender(<PostInputLinkEmbed url={URL} onRemove={vi.fn()} choice={{ index: 1, count: 3 }} />);
+      expect(screen.getByRole('group', { name: 'Link 2 of 3' })).toHaveTextContent('2 / 3');
+    });
+
+    it('announces the embedded link after an arrow press', () => {
+      const { rerender } = render(<PostInputLinkEmbed url={URL} onRemove={vi.fn()} choice={{ index: 0, count: 3 }} />);
+      const position = screen.getByTestId('post-input-link-embed-position');
+      expect(position).toHaveAttribute('aria-live', 'polite');
+      expect(position).toHaveTextContent('1 / 3');
+
+      rerender(<PostInputLinkEmbed url={URL} onRemove={vi.fn()} choice={{ index: 1, count: 3 }} />);
+      expect(screen.getByTestId('post-input-link-embed-position')).toBe(position);
+      expect(position).toHaveTextContent('2 / 3');
+      expect(screen.getByRole('group', { name: 'Link 2 of 3' })).toBeInTheDocument();
+    });
+
+    it('embeds the previous and next link from its arrows', () => {
+      const onPrevious = vi.fn();
+      const onNext = vi.fn();
+      render(
+        <PostInputLinkEmbed
+          url={URL}
+          onRemove={vi.fn()}
+          choice={{ index: 0, count: 3 }}
+          onPrevious={onPrevious}
+          onNext={onNext}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Embed the next link' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Embed the previous link' }));
+
+      expect(onNext).toHaveBeenCalledTimes(1);
+      expect(onPrevious).toHaveBeenCalledTimes(1);
+    });
+
+    it('disables the arrows while the post is published', () => {
+      render(<PostInputLinkEmbed url={URL} onRemove={vi.fn()} choice={{ index: 0, count: 2 }} disabled />);
+
+      expect(screen.getByRole('button', { name: 'Embed the next link' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Embed the previous link' })).toBeDisabled();
+    });
+  });
+
   describe('once removed', () => {
     it('says the link is not embedded, with no preview of its own', () => {
       render(<PostInputLinkEmbed isRemoved onRestore={vi.fn()} />);

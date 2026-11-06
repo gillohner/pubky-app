@@ -260,6 +260,11 @@ export type NexusPostRelationships = {
   replied: string | null;
   /** URI of the post this is reposting, if any */
   reposted: string | null;
+  /**
+   * The web link the post embeds, if any, normalized by Nexus (match it to a text link with
+   * `normalizeEmbedUrl`). Only our Nexus fork serves it; other Nexus versions leave it out.
+   */
+  embedded?: string | null;
   /** Users mentioned in this post */
   mentioned: Pubky[];
 };

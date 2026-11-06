@@ -126,6 +126,33 @@ describe('useRepostInfo', () => {
     expect(mockBuildCompositeIdFromPubkyUri).not.toHaveBeenCalled();
   });
 
+  it('returns the web link Nexus serves as embedded, not as a repost', () => {
+    const link = 'https://en.wikipedia.org/wiki/Bitcoin';
+    setMockRelationships({ id: mockPostId, reposted: null, embedded: link, replied: null, mentioned: [] });
+
+    const { result } = renderHook(() => useRepostInfo(mockPostId));
+
+    expect(result.current.embedUrl).toBe(link);
+    expect(result.current.isRepost).toBe(false);
+    expect(result.current.originalPostId).toBe(null);
+  });
+
+  it('keeps a repost a repost when the post also names an embedded link', () => {
+    setMockRelationships({
+      id: mockPostId,
+      reposted: mockRepostedUri,
+      embedded: 'https://en.wikipedia.org/wiki/Bitcoin',
+      replied: null,
+      mentioned: [],
+    });
+
+    const { result } = renderHook(() => useRepostInfo(mockPostId));
+
+    expect(result.current.isRepost).toBe(true);
+    expect(result.current.originalPostId).toBe('original-author:original-post');
+    expect(result.current.embedUrl).toBe(null);
+  });
+
   it('keeps the header of a web link embed without text by the current user', () => {
     const currentUserPostId = `${mockCurrentUserPubky}:post-123`;
     setMockRelationships({

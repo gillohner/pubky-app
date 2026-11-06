@@ -2402,6 +2402,120 @@ describe('usePostInput', () => {
       expect(result.current.embedUrl).toBe('https://luma.com/376whqyw');
       expect(result.current.isEmbedRemoved).toBe(false);
     });
+
+    describe('with several links', () => {
+      const LUMA = 'https://luma.com/376whqyw';
+      const OSM = 'https://www.openstreetmap.org/node/240109189';
+
+      it('starts at the first link when the text writes it with trailing punctuation', () => {
+        mockContent = `(what about https://a.example/x?) or ${LUMA}`;
+
+        const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+        expect(result.current.embedChoice).toEqual({ index: 0, count: 2 });
+      });
+
+      it('offers no choice for a single link', () => {
+        mockContent = `Read ${LINK}`;
+
+        const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+        expect(result.current.embedChoice).toBeNull();
+      });
+
+      it('starts at the first link and counts every link that can be embedded', () => {
+        mockContent = `Read ${LINK}, example.org/plain, ${LUMA} and ${OSM}`;
+
+        const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+        expect(result.current.embedUrl).toBe(LINK);
+        expect(result.current.embedChoice).toEqual({ index: 0, count: 3 });
+      });
+
+      it('embeds the next and previous link, going round', () => {
+        mockContent = `Read ${LINK}, ${LUMA} and ${OSM}`;
+
+        const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+        act(() => result.current.pickNextEmbed());
+        expect(result.current.embedUrl).toBe(LUMA);
+        expect(result.current.embedChoice).toEqual({ index: 1, count: 3 });
+
+        act(() => result.current.pickNextEmbed());
+        act(() => result.current.pickNextEmbed());
+        expect(result.current.embedUrl).toBe(LINK);
+
+        act(() => result.current.pickPreviousEmbed());
+        expect(result.current.embedUrl).toBe(OSM);
+      });
+
+      it('publishes the picked link as the embed', async () => {
+        mockContent = `Read ${LINK} and ${LUMA}`;
+
+        const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+        act(() => result.current.pickNextEmbed());
+        await act(async () => {
+          await result.current.handleSubmit();
+        });
+
+        expect(mockPost).toHaveBeenCalledWith({ embedUrl: LUMA, onSuccess: expect.any(Function) });
+      });
+
+      it('keeps the pick while the text holds it, and falls back to the first link once it is gone', () => {
+        mockContent = `Read ${LINK} and ${LUMA}`;
+
+        const { result, rerender } = renderHook(() => usePostInput({ variant: 'post' }));
+
+        act(() => result.current.pickNextEmbed());
+        mockContent = `Now read ${LINK}, ${OSM} and ${LUMA}`;
+        rerender();
+        expect(result.current.embedUrl).toBe(LUMA);
+        expect(result.current.embedChoice).toEqual({ index: 2, count: 3 });
+
+        mockContent = `Now read ${LINK} and ${OSM}`;
+        rerender();
+        expect(result.current.embedUrl).toBe(LINK);
+
+        // A link typed again later is not picked again: the pick went with it
+        mockContent = `Now read ${LINK}, ${OSM} and ${LUMA}`;
+        rerender();
+        expect(result.current.embedUrl).toBe(LINK);
+      });
+
+      it('counts two spellings of one link once', () => {
+        mockContent = `Read ${LUMA}#one and ${LUMA}#two`;
+
+        const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+        expect(result.current.embedUrl).toBe(`${LUMA}#one`);
+        expect(result.current.embedChoice).toBeNull();
+      });
+
+      it('removes and restores the picked link', () => {
+        mockContent = `Read ${LINK} and ${LUMA}`;
+
+        const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+        act(() => result.current.pickNextEmbed());
+        act(() => result.current.removeEmbed());
+        expect(result.current.embedUrl).toBeNull();
+        expect(result.current.embedChoice).toBeNull();
+        expect(result.current.isEmbedRemoved).toBe(true);
+
+        act(() => result.current.restoreEmbed());
+        expect(result.current.embedUrl).toBe(LUMA);
+      });
+
+      it('offers no other link when the first one cannot be embedded', () => {
+        mockContent = `Read example.org/plain then ${LINK} and ${LUMA}`;
+
+        const { result } = renderHook(() => usePostInput({ variant: 'post' }));
+
+        expect(result.current.embedUrl).toBeNull();
+        expect(result.current.embedChoice).toBeNull();
+      });
+    });
   });
 
   describe('removeExistingAttachment', () => {

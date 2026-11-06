@@ -9,6 +9,15 @@ export interface PostInputLinkEmbedEmbeddedProps extends PostInputLinkEmbedBaseP
   isRemoved?: false;
   /** Removes the embed; the link stays in the text. */
   onRemove: () => void;
+  /**
+   * Where `url` is among the text's links that can be embedded, while there are several: the line
+   * then shows "1 / 3" with ‹ › to embed another one. Null or left out for a single link.
+   */
+  choice?: { index: number; count: number } | null;
+  /** Embeds the previous link of the text. */
+  onPrevious?: () => void;
+  /** Embeds the next link of the text. */
+  onNext?: () => void;
 }
 
 export interface PostInputLinkEmbedRemovedProps extends PostInputLinkEmbedBaseProps {

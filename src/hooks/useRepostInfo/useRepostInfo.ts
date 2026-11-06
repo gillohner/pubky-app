@@ -55,9 +55,11 @@ export function useRepostInfo(postId: string): UseRepostInfoResult {
     enabled: !!postId,
   });
 
-  // `reposted` holds the post's `embed`: a web link there is an external resource, not a repost
-  const embedUrl = getWebEmbedUrl(relationships?.reposted);
-  const isRepost = !!relationships?.reposted && embedUrl === null;
+  // A web link the post embeds is an external resource, not a repost. Nexus serves it as `embedded`;
+  // a row written before that field holds it in `reposted`.
+  const repostedLink = getWebEmbedUrl(relationships?.reposted);
+  const isRepost = !!relationships?.reposted && repostedLink === null;
+  const embedUrl = isRepost ? null : (getWebEmbedUrl(relationships?.embedded) ?? repostedLink);
   const hasError = !!postId && relationships === null && !isLoading;
 
   // Extract original post ID from reposted URI

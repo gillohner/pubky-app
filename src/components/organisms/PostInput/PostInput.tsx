@@ -166,9 +166,12 @@ export function PostInput({
     serializeArticleForLock,
     getLatestArticle,
     embedUrl,
+    embedChoice,
     isEmbedRemoved,
     removeEmbed,
     restoreEmbed,
+    pickPreviousEmbed,
+    pickNextEmbed,
     // Mention autocomplete
     mentionUsers,
     mentionIsOpen,
@@ -780,6 +783,9 @@ export function PostInput({
                 {showsEmbed && embedUrl && (
                   <PostInputLinkEmbed
                     url={embedUrl}
+                    choice={embedChoice}
+                    onPrevious={pickPreviousEmbed}
+                    onNext={pickNextEmbed}
                     onRemove={() => {
                       removeEmbed();
                       // The remove button unmounts with the embed: keep focus in the composer

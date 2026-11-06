@@ -52,6 +52,15 @@ export function getFirstLinkMatch(content: string): LinkMatch | null {
   return match ? { url: match.url, schema: match.schema } : null;
 }
 
+/** Every bare link in the content, in order, as `getFirstLinkMatch` finds the first. */
+export function getLinkMatches(content: string): LinkMatch[] {
+  return (
+    getLinkify()
+      .match(stripMarkdownLinks(content))
+      ?.map(({ url, schema }) => ({ url, schema })) ?? []
+  );
+}
+
 /** First bare URL in the content, or null when there is none (see `getFirstLinkMatch`). */
 export function getFirstLinkUrl(content: string): string | null {
   return getFirstLinkMatch(content)?.url ?? null;

@@ -327,7 +327,7 @@ notifications      — Notification records
 ```
 post_details       — Post content, kind, attachments, timestamps
 post_counts        — Reply/repost/tag counts, plus `collections` (how many collections curate the post; bumped locally when the viewer's own collections change)
-post_relationships — Author, parent, repost relationships (`replied` names a parent post only: the app writes `null` for an external resource parent, as Nexus serves it; `reposted` holds the post's `embed`: a post, or an http(s) link)
+post_relationships — Author, parent, repost relationships (`replied` names a parent post only: the app writes `null` for an external resource parent, as Nexus serves it; `reposted` holds the post's `embed`: a post, or an http(s) link; `embedded` is the web link Nexus serves for a post's `embed`, normalized)
 post_tags          — Tag collections per post
 post_ttl           — Cache staleness (id, lastUpdatedAt)
 ```
