@@ -18,13 +18,8 @@ export const CREDIT_FIELD_LABELS: Readonly<Record<string, string>> = {
 const PROVIDER_NAMES: Readonly<Record<string, string>> = {
   [PinakesCreditProvider.WIKIPEDIA]: 'Wikipedia',
   [PinakesCreditProvider.WIKIMEDIA_COMMONS]: 'Wikimedia Commons',
+  [PinakesCreditProvider.WIKIDATA]: 'Wikidata',
 };
-
-/** schema.org music types: their cards say when they have no description. */
-const MUSIC_TYPES: readonly string[] = ['MusicGroup', 'MusicAlbum', 'MusicRecording'];
-
-/** A person's card from this site is an artist's. */
-const MUSIC_PERSON_SITE = 'MusicBrainz';
 
 /** `CC-BY-SA-4.0` → `BY-SA`, `4.0`. */
 const CREATIVE_COMMONS_LICENSE = /^CC-([A-Z]+(?:-[A-Z]+)*)-(\d+(?:\.\d+)?)$/i;
@@ -83,14 +78,4 @@ export function getCreditSubjectLabel(subject: string | null | undefined): strin
   const entity = pathname.split('/')[1];
   if (host === 'musicbrainz.org' && entity) return `its MusicBrainz ${entity.replaceAll('-', ' ')}`;
   return `a related page on ${host}`;
-}
-
-/**
- * A card for music: a music group, album or recording, or a person from MusicBrainz (an artist).
- * Such a card says when it has no description, instead of leaving it out.
- */
-export function isMusicResource(card: Pick<TPinakesCard, 'type' | 'type_path' | 'site'>): boolean {
-  const types = card.type ? [...card.type_path, card.type] : card.type_path;
-  if (types.some((type) => MUSIC_TYPES.includes(type))) return true;
-  return types.includes('Person') && card.site?.trim() === MUSIC_PERSON_SITE;
 }

@@ -1,15 +1,28 @@
 'use client';
 
-import { useState } from 'react';
-import { CalendarDays, CircleAlert, CircleOff, Clock, CloudOff, type LucideProps, MapPin } from 'lucide-react';
+import { useId, useState } from 'react';
+import {
+  CalendarDays,
+  CircleAlert,
+  CircleOff,
+  Clock,
+  CloudOff,
+  Globe,
+  type LucideProps,
+  MapPin,
+  Users,
+} from 'lucide-react';
 import { getResourceRoute } from '@/app/routes';
+import { Audio } from '@/atoms/Audio/Audio';
+import { Badge } from '@/atoms/Badge/Badge';
+import { Button, ButtonVariant } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
-import { Image } from '@/atoms/Image/Image';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { useOgMetadata } from '@/hooks/useOgMetadata/useOgMetadata';
 import { cn } from '@/libs/utils/utils';
 import { useIsPostPreviewNavigable } from '@/molecules/PostPreviewCard/PostPreviewNestingContext';
-import { PinakesStatus } from '@/services/pinakes/pinakes.types';
+import { PinakesCreditField, PinakesStatus, type TPinakesCredit } from '@/services/pinakes/pinakes.types';
 import { type ResourceCardProps, ResourceFamily } from './ResourceCard.types';
 import {
   formatResourceDates,
@@ -24,86 +37,178 @@ import {
   hasWideImage,
 } from './ResourceCard.utils';
 import { ResourceCardFrame, ResourceCardHeader } from './ResourceCardFrame';
-import { ResourceCredits } from './ResourceCredits';
-import { getShownCredits, isMusicResource } from './ResourceCredits.utils';
+import { ResourceCardMedia } from './ResourceCardMedia';
+import { ResourceCredits, type TResourceBorrowedNote } from './ResourceCredits';
+import { getShownCredits } from './ResourceCredits.utils';
+import { ResourceFactList } from './ResourceFactList';
+import { getResourceDetailRows, getResourceSummary } from './ResourceFacts.utils';
+import { getResourceTypeIcon } from './ResourceTypeIcon';
+import { useResourceFallback } from './useResourceFallback';
 
 /** What a card that is not `ok` says about itself. Only `missing` has a documented meaning (`/llms.txt`). */
 const STATUS_NOTES: Readonly<
   Record<Exclude<PinakesStatus, PinakesStatus.OK>, { text: string; icon: React.ComponentType<LucideProps> }>
 > = {
-  [PinakesStatus.PENDING]: { text: 'Details not read yet', icon: Clock },
+  [PinakesStatus.PENDING]: { text: 'Details are still being read', icon: Clock },
   [PinakesStatus.MISSING]: { text: 'No longer available at the source', icon: CircleOff },
   [PinakesStatus.UNREACHABLE]: { text: 'The source could not be reached', icon: CloudOff },
   [PinakesStatus.ERROR]: { text: 'Details could not be read', icon: CircleAlert },
 };
 
+/** How an event is attended, when not only in person (`attendance`). */
+const ATTENDANCE_LABELS: Readonly<Record<string, string>> = {
+  online: 'Online',
+  mixed: 'Online and in person',
+};
+
+/** A large card's description longer than this is clamped on a phone, with "More". */
+const LONG_DESCRIPTION_CHARS = 280;
+
 const DETAIL_ICON_SIZE = 14;
+
+/**
+ * Inside the card's frame (`bg-muted`) the app's muted grey is 3.8:1; this tone, between the text
+ * colour and the frame's, keeps grey text above 4.5:1 there and on the large card's surface.
+ */
+const CARD_MUTED_TEXT = '[--color-muted-foreground:color-mix(in_oklab,var(--foreground)_58%,var(--muted))]';
 
 /**
  * One card for every external resource Pinakes knows, whatever its type, shown the way the app
  * shows an embedded post: inside the post's frame, the type in plain words on the left and the
- * source (site icon and name, never the full link) on the right, then image, title, description
- * and the details of the type's family (when an event happens, where a place is) when the card
- * carries them. A video's, movie's or series' image is a 16:9 thumbnail, every other a square. A card
- * that is not `ok` says so and shows what it still has. `actions` (the bottom zone: action row and
- * tags) close the card.
+ * source (site icon and name, never the full link) on the right, then the image (or the type's
+ * icon), the title, one summary line of the facts that matter for the type (`getResourceSummary`:
+ * a song's artist, length and album; a place's address; a job's employer, location and date), and
+ * the description. An event leads with its dates, venue, organizer and whether it is online. A
+ * podcast episode plays its audio (`stream`).
+ *
+ * A sparse card borrows a description or an image from another member of its group, with an
+ * "Image: <site>" note (`useResourceFallback`). A Wikimedia Commons file shows with its credit
+ * when Pinakes sends one, and without it otherwise. The card never shows less than the link's own
+ * preview: a title or image it still lacks comes from the link's OpenGraph data, as the plain
+ * preview shows it.
  *
  * The whole card is a click-through to the link, unless its actions' ⋯ menu lists other services
  * (`hasAlsoOn`: the same thing on other services too, `also_on`), where the viewer picks the
- * service; the source is its link either way.
+ * service, or its object is gone (`missing`); the source is its link either way, except for a
+ * `missing` card, whose link is dead.
  *
  * A text or image Pinakes enriched the card with comes with its credit (`credits`): the `large`
- * card lists them under "Sources", the default card names the sources in one line; both close the
- * card's body, above its actions.
- * A value without a credit is the source page's own and shows as it is.
+ * card lists them under "Sources", the default card in one line (author, source and licence); both
+ * close the card's body, above its actions.
  *
  * The title opens the resource's page (`/resource?uri=<card.uri>`) and the source links out. Where
  * links may not navigate (the composer, a post quoted in a dialog) the title links out instead. The
- * `large` card heads that page, where a post stands on a post's page and on the post card's surface
- * and padding: its title is a heading (under the page's) and no link, the header's "Open in <site>"
- * being the one way out; its description is not clamped, its image is bigger and it is no
- * click-through.
+ * `large` card heads that page: its title is a heading and no link (the header's "Open in <site>" is
+ * the one way out), its description is clamped only on a phone (with "More"), every fact is listed
+ * under "Details", and it is no click-through.
  *
- * Only `http(s)` values become external links or images; every text field is rendered as text.
+ * Only `http(s)` values become external links, images or audio; every text field is rendered as text.
  */
 export function ResourceCard({ card, href, actions, hasAlsoOn = false, size = 'default' }: ResourceCardProps) {
-  const [failedImage, setFailedImage] = useState<string | null>(null);
   const navigable = useIsPostPreviewNavigable();
+  const [expanded, setExpanded] = useState(false);
+  const [failedImages, setFailedImages] = useState<string[]>([]);
 
   const status = getResourceStatus(card.status);
+  const isMissing = status === PinakesStatus.MISSING;
   const family = getResourceFamily(card);
+  const isEvent = family === ResourceFamily.EVENT;
   const typeLabel = getResourceTypeLabel(card);
   const { linkUrl, sourceUri, siteName } = getResourceLinks(card, href);
   const isLarge = size === 'large';
+  // A `missing` card's own link is gone upstream: neither the card, its heading nor its source
+  // send the viewer there.
+  const titleUrl = isMissing ? null : linkUrl;
   // With other services to pick from, the viewer picks one in the actions' ⋯ menu (or the header's
   // link). The large card heads the resource's own page: its header's "Open in <site>" links out,
   // the card itself does not.
-  const clickThroughUrl = hasAlsoOn || isLarge ? null : linkUrl;
-  const title = card.name || getDisplayLink(href || card.uri);
-  const imageUrl = getHttpUrl(card.image);
-  const showImage = imageUrl !== null && failedImage !== imageUrl;
-  const isWideImage = hasWideImage(card);
+  const clickThroughUrl = hasAlsoOn || isLarge ? null : titleUrl;
+  const smallTitleUrl = navigable ? getResourceRoute(card.uri) : titleUrl;
+  const descriptionId = useId();
 
-  const dates = family === ResourceFamily.EVENT ? formatResourceDates(card) : null;
-  const venue = family === ResourceFamily.EVENT ? card.venue?.name?.trim() || null : null;
-  // An event's venue by name when the card has one, its point otherwise.
-  const point = family !== ResourceFamily.WEB && !venue && card.point ? formatResourcePoint(card.point) : null;
-  const eventStatusNote = family === ResourceFamily.EVENT ? getEventStatusNote(card.event_status) : null;
+  const imageUrl = getHttpUrl(card.image);
+  const description = card.description?.trim() || null;
+  // An own image that failed to load leaves the slot to a group member's, like no image at all.
+  const ownImageShown = imageUrl !== null && !failedImages.includes(imageUrl);
+  const fallback = useResourceFallback(card, {
+    description: !description,
+    image: !ownImageShown,
+    skipImages: failedImages,
+  });
+  const cardImage = ownImageShown ? imageUrl : (fallback.image?.value ?? null);
+  const usableCardImage = cardImage && !failedImages.includes(cardImage) ? cardImage : null;
+  // The least a card shows is what the link's own preview shows (its OpenGraph title and image, the
+  // same `/api/og-metadata` read): a title or image the card still lacks comes from there. A gone
+  // link (`missing`) is not asked.
+  // Asked once the group has answered, so a group image is never first replaced by the OG one.
+  const needsOg = titleUrl !== null && !fallback.pending && (!card.name?.trim() || usableCardImage === null);
+  const { metadata: og } = useOgMetadata(needsOg ? titleUrl : null);
+  const ogImage = getHttpUrl(og?.image);
+  const shownImage = usableCardImage ?? (ogImage && !failedImages.includes(ogImage) ? ogImage : null);
+  const title = card.name?.trim() || og?.title?.trim() || getDisplayLink(href || card.uri);
+  const shownDescription = description ?? fallback.description?.value ?? null;
+
+  const summary = getResourceSummary(card);
+  const dates = isEvent ? formatResourceDates(card) : null;
+  const venue = isEvent ? card.venue?.name?.trim() || null : null;
+  const organizer = isEvent ? getOrganizer(card, venue) : null;
+  const attendance = isEvent ? (ATTENDANCE_LABELS[card.attendance?.trim().toLowerCase() ?? ''] ?? null) : null;
+  // Coordinates only for a place or event that has nothing better to say where it is.
+  const point =
+    family !== ResourceFamily.WEB && !venue && !summary && card.point ? formatResourcePoint(card.point) : null;
+  const eventStatusNote = isEvent ? getEventStatusNote(card.event_status) : null;
   const statusNote = status === PinakesStatus.OK ? null : STATUS_NOTES[status];
-  const credits = getShownCredits(card, { imageShown: showImage });
-  // On its page a music card that was read says it has no description, rather than look
-  // unfinished. A card that was not read (`pending`, `error`, ...) says that instead.
-  const showNoDescription = isLarge && status === PinakesStatus.OK && !card.description && isMusicResource(card);
-  // A `missing` card's own link is gone upstream: the page's heading and source do not send the
-  // viewer there.
-  const titleUrl = status === PinakesStatus.MISSING ? null : linkUrl;
-  const smallTitleUrl = navigable ? getResourceRoute(card.uri) : linkUrl;
+  const streamUrl = card.stream && card.stream.type?.startsWith('audio/') ? getHttpUrl(card.stream.url) : null;
+
+  const credits = [
+    ...getShownCredits(card, { imageShown: ownImageShown }),
+    ...[fallback.description?.credit, usableCardImage && !ownImageShown ? fallback.image?.credit : null].filter(
+      (credit): credit is TPinakesCredit => credit != null,
+    ),
+  ];
+  const borrowedNotes: (TResourceBorrowedNote | null)[] = [
+    fallback.description && !description && !fallback.description.credit
+      ? { field: PinakesCreditField.DESCRIPTION, site: fallback.description.site, href: fallback.description.href }
+      : null,
+    fallback.image && !ownImageShown && usableCardImage && !fallback.image.credit
+      ? { field: PinakesCreditField.IMAGE, site: fallback.image.site, href: fallback.image.href }
+      : null,
+  ];
+  const borrowed = borrowedNotes.filter((note): note is TResourceBorrowedNote => note !== null);
+  const detailRows = isLarge ? getResourceDetailRows(card, { withDates: !isEvent }) : [];
+  const isLongDescription = isLarge && (shownDescription?.length ?? 0) > LONG_DESCRIPTION_CHARS;
+  const clampOnPhone = isLongDescription && !expanded;
+
+  const eventDetails = (dates || venue || organizer || attendance) && (
+    <>
+      {dates && <ResourceDetail icon={CalendarDays} text={dates} testId="resource-card-dates" />}
+      {venue && <ResourceDetail icon={MapPin} text={venue} testId="resource-card-venue" />}
+      {organizer && (
+        <ResourceDetail icon={Users} testId="resource-card-organizer">
+          by{' '}
+          {organizer.href ? (
+            <Link href={organizer.href} overrideDefaults className="hover:text-brand hover:underline">
+              {organizer.name}
+            </Link>
+          ) : (
+            organizer.name
+          )}
+        </ResourceDetail>
+      )}
+      {attendance && (
+        <Badge variant="secondary" data-testid="resource-card-attendance">
+          <Globe aria-hidden="true" />
+          {attendance}
+        </Badge>
+      )}
+    </>
+  );
 
   return (
     <ResourceCardFrame
       clickThroughUrl={clickThroughUrl}
       // The large card stands where a post stands on its page, on the post card's surface.
-      className={cn(isLarge && 'divide-border bg-card text-card-foreground shadow-sm')}
+      className={cn(CARD_MUTED_TEXT, isLarge && 'divide-border bg-card text-card-foreground shadow-sm')}
       data-testid="resource-card"
       data-status={status}
       data-family={family}
@@ -116,35 +221,37 @@ export function ResourceCard({ card, href, actions, hasAlsoOn = false, size = 'd
         <ResourceCardHeader
           typeLabel={typeLabel}
           sourceUri={sourceUri}
-          href={isLarge ? titleUrl : linkUrl}
+          href={titleUrl}
           siteName={siteName}
           openIn={isLarge}
         />
 
         <Container overrideDefaults className="flex min-w-0 gap-4">
-          {showImage && (
-            <Image
-              src={imageUrl}
-              alt=""
-              width={isWideImage ? (isLarge ? 256 : 160) : isLarge ? 160 : 96}
-              height={isWideImage ? (isLarge ? 144 : 90) : isLarge ? 160 : 96}
-              data-testid="resource-card-image"
-              data-shape={isWideImage ? 'wide' : 'square'}
-              onError={() => setFailedImage(imageUrl)}
-              className={cn(
-                'shrink-0 rounded-md object-cover object-center',
-                isWideImage && (isLarge ? 'aspect-video w-40 sm:w-64' : 'aspect-video w-28 sm:w-40'),
-                !isWideImage && (isLarge ? 'size-24 sm:size-40' : 'size-20 sm:size-24'),
-              )}
-            />
-          )}
+          <ResourceCardMedia
+            imageUrl={shownImage}
+            typeIcon={getResourceTypeIcon(card)}
+            wideByType={hasWideImage(card)}
+            isLarge={isLarge}
+            dimmed={isMissing}
+            onImageError={(url) => setFailedImages((urls) => [...urls, url])}
+          />
 
           <Container className="min-w-0 flex-1 gap-1.5">
+            {statusNote && (
+              <Badge variant="secondary" data-testid="resource-card-status" className="max-w-full whitespace-normal">
+                <statusNote.icon aria-hidden="true" />
+                {statusNote.text}
+              </Badge>
+            )}
             {isLarge ? (
               <Typography
                 as="h2"
                 overrideDefaults
-                className="text-xl font-bold wrap-anywhere text-foreground sm:text-2xl"
+                dir="auto"
+                className={cn(
+                  'text-xl font-bold wrap-anywhere text-foreground sm:text-2xl',
+                  isMissing && 'text-foreground/70',
+                )}
               >
                 {/* Not a link: the header's "Open in <site>" is the one way to the same place. */}
                 <span data-testid="resource-card-title">{title}</span>
@@ -153,38 +260,69 @@ export function ResourceCard({ card, href, actions, hasAlsoOn = false, size = 'd
               <Link
                 href={smallTitleUrl}
                 overrideDefaults
+                dir="auto"
+                title={title}
                 data-testid="resource-card-title"
-                className="text-base font-bold wrap-anywhere text-foreground hover:text-brand"
+                className="line-clamp-3 text-base font-bold wrap-anywhere text-foreground hover:text-brand"
               >
                 {title}
               </Link>
             ) : (
-              <Typography data-testid="resource-card-title" className="font-bold wrap-anywhere">
+              <Typography
+                dir="auto"
+                title={title}
+                data-testid="resource-card-title"
+                className="line-clamp-3 font-bold wrap-anywhere"
+              >
                 {title}
               </Typography>
             )}
 
-            {card.description && (
+            {summary && (
               <Typography
                 size="sm"
-                data-testid="resource-card-description"
-                className={cn('font-normal wrap-anywhere text-muted-foreground', !isLarge && 'line-clamp-2')}
+                dir="auto"
+                data-testid="resource-card-summary"
+                title={summary}
+                className="line-clamp-2 font-medium wrap-anywhere text-foreground/90"
               >
-                {card.description}
-              </Typography>
-            )}
-            {showNoDescription && (
-              <Typography
-                size="sm"
-                data-testid="resource-card-no-description"
-                className="font-normal text-muted-foreground"
-              >
-                No description available
+                {summary}
               </Typography>
             )}
 
-            {dates && <ResourceDetail icon={CalendarDays} text={dates} testId="resource-card-dates" />}
-            {venue && <ResourceDetail icon={MapPin} text={venue} testId="resource-card-venue" />}
+            {/* An event leads with when and where. */}
+            {eventDetails}
+
+            {shownDescription && (
+              <Typography
+                size="sm"
+                dir="auto"
+                id={descriptionId}
+                data-testid="resource-card-description"
+                data-borrowed={description ? undefined : 'true'}
+                className={cn(
+                  'font-normal wrap-anywhere text-muted-foreground',
+                  !isLarge && 'line-clamp-2',
+                  clampOnPhone && 'max-sm:line-clamp-6',
+                )}
+              >
+                {shownDescription}
+              </Typography>
+            )}
+            {isLongDescription && (
+              <Button
+                type="button"
+                variant={ButtonVariant.GHOST}
+                data-testid="resource-card-more"
+                aria-expanded={expanded}
+                aria-controls={descriptionId}
+                onClick={() => setExpanded((value) => !value)}
+                className="h-auto w-fit p-0 text-sm font-medium text-foreground hover:bg-transparent hover:text-brand sm:hidden"
+              >
+                {expanded ? 'Less' : 'More'}
+              </Button>
+            )}
+
             {point && <ResourceDetail icon={MapPin} text={point} testId="resource-card-point" />}
             {eventStatusNote && (
               <ResourceDetail icon={CircleAlert} text={eventStatusNote} testId="resource-card-event-status" />
@@ -198,13 +336,23 @@ export function ResourceCard({ card, href, actions, hasAlsoOn = false, size = 'd
                 {card.attribution}
               </Typography>
             )}
-            {statusNote && (
-              <ResourceDetail icon={statusNote.icon} text={statusNote.text} testId="resource-card-status" />
-            )}
           </Container>
         </Container>
 
-        <ResourceCredits credits={credits} variant={isLarge ? 'full' : 'compact'} />
+        {streamUrl && (
+          <Container overrideDefaults data-resource-controls className="flex flex-col gap-1">
+            <Audio src={streamUrl} preload="none" data-testid="resource-card-audio" aria-label={`Play ${title}`} />
+            {card.stream?.preview && (
+              <Typography size="xs" className="font-normal text-muted-foreground">
+                Preview
+              </Typography>
+            )}
+          </Container>
+        )}
+
+        {isLarge && <ResourceFactList rows={detailRows} />}
+
+        <ResourceCredits credits={credits} borrowed={borrowed} variant={isLarge ? 'full' : 'compact'} />
       </Container>
 
       {actions}
@@ -212,20 +360,37 @@ export function ResourceCard({ card, href, actions, hasAlsoOn = false, size = 'd
   );
 }
 
+/**
+ * Who runs an event, linked when `http(s)`. Left out when it only repeats the venue or the
+ * performer (a concert page names the artist as its organizer).
+ */
+function getOrganizer(
+  card: ResourceCardProps['card'],
+  venue: string | null,
+): { name: string; href: string | null } | null {
+  const name = card.organizer?.name?.trim();
+  if (!name) return null;
+  const performer = card.facts?.performer?.trim().toLowerCase();
+  if (name.toLowerCase() === performer || name.toLowerCase() === venue?.toLowerCase()) return null;
+  return { name, href: getHttpUrl(card.organizer?.url) };
+}
+
 function ResourceDetail({
   icon: Icon,
   text,
   testId,
+  children,
 }: {
   icon: React.ComponentType<LucideProps>;
-  text: string;
+  text?: string;
   testId: string;
+  children?: React.ReactNode;
 }) {
   return (
-    <Container data-testid={testId} className="flex-row items-center gap-1.5 text-muted-foreground">
-      <Icon size={DETAIL_ICON_SIZE} aria-hidden="true" className="shrink-0" />
-      <Typography as="span" size="sm" className="font-normal wrap-anywhere text-muted-foreground">
-        {text}
+    <Container data-testid={testId} className="flex-row items-start gap-1.5 text-muted-foreground">
+      <Icon size={DETAIL_ICON_SIZE} aria-hidden="true" className="mt-0.5 shrink-0" />
+      <Typography as="span" size="sm" dir="auto" className="font-normal wrap-anywhere text-muted-foreground">
+        {children ?? text}
       </Typography>
     </Container>
   );

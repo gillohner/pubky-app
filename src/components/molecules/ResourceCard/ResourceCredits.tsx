@@ -1,4 +1,4 @@
-import { Fragment, useId } from 'react';
+import { Fragment, type ReactNode, useId } from 'react';
 import { Container } from '@/atoms/Container/Container';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
@@ -15,6 +15,16 @@ import {
 const FULL_LINK_CLASS_NAME = 'underline underline-offset-2 hover:text-brand';
 const COMPACT_LINK_CLASS_NAME = 'hover:text-brand hover:underline';
 
+/** A value the card borrowed from another member of its group, named by that member's service. */
+export interface TResourceBorrowedNote {
+  /** `image` or `description`. */
+  field: string;
+  /** The member's service (`TIDAL`). */
+  site: string;
+  /** The member's own link; `null` names the site as text. */
+  href: string | null;
+}
+
 interface ResourceCreditsProps {
   /**
    * The credits of the values the card shows (`getShownCredits`); renders nothing when empty. A
@@ -27,23 +37,38 @@ interface ResourceCreditsProps {
    * post); the licenses are in the links' accessible names and titles.
    */
   variant: 'full' | 'compact';
+  /** Values borrowed from a group member without a credit of their own: "Image: TIDAL". */
+  borrowed?: TResourceBorrowedNote[];
 }
 
 /**
  * Where a card's enriched text and image come from (Wikipedia, Wikimedia Commons, ...) and under
  * which license. Only `http(s)` URLs become links; every other value is text.
  */
-export function ResourceCredits({ credits, variant }: ResourceCreditsProps) {
+export function ResourceCredits({ credits, variant, borrowed = [] }: ResourceCreditsProps) {
   const labelled = credits.filter((credit) => Object.hasOwn(CREDIT_FIELD_LABELS, credit.field));
-  if (labelled.length === 0) return null;
+  const notes = borrowed.filter((note) => Object.hasOwn(CREDIT_FIELD_LABELS, note.field));
+  if (labelled.length === 0 && notes.length === 0) return null;
   return variant === 'full' ? (
-    <ResourceCreditsFull credits={labelled} />
+    <ResourceCreditsFull credits={labelled} borrowed={notes} />
   ) : (
-    <ResourceCreditsCompact credits={labelled} />
+    <ResourceCreditsCompact credits={labelled} borrowed={notes} />
   );
 }
 
-function ResourceCreditsFull({ credits }: { credits: TPinakesCredit[] }) {
+/** `Image: TIDAL`, the site linking to the member the value is from. */
+function BorrowedLine({ note, linkClassName }: { note: TResourceBorrowedNote; linkClassName: string }) {
+  return (
+    <>
+      {CREDIT_FIELD_LABELS[note.field]}:{' '}
+      <MaybeLink href={note.href} testId="resource-credit-borrowed" className={linkClassName}>
+        {note.site}
+      </MaybeLink>
+    </>
+  );
+}
+
+function ResourceCreditsFull({ credits, borrowed }: { credits: TPinakesCredit[]; borrowed: TResourceBorrowedNote[] }) {
   const headingId = useId();
   return (
     <Container
@@ -65,6 +90,16 @@ function ResourceCreditsFull({ credits }: { credits: TPinakesCredit[] }) {
             className="text-xs font-normal wrap-anywhere text-muted-foreground"
           >
             <CreditLine credit={credit} />
+          </li>
+        ))}
+        {borrowed.map((note) => (
+          <li
+            key={`borrowed:${note.field}`}
+            data-testid="resource-credit"
+            data-field={note.field}
+            className="text-xs font-normal wrap-anywhere text-muted-foreground"
+          >
+            <BorrowedLine note={note} linkClassName={FULL_LINK_CLASS_NAME} />
           </li>
         ))}
       </ul>
@@ -113,38 +148,64 @@ function CreditLine({ credit }: { credit: TPinakesCredit }) {
   );
 }
 
-/** One source per name and page: a text and an image from one page are one link. */
-function ResourceCreditsCompact({ credits }: { credits: TPinakesCredit[] }) {
-  const sources = new Map<string, { name: string; href: string | null; notes: string[] }>();
-  for (const credit of credits) {
-    const name = getCreditProviderName(credit);
-    const key = `${name}\n${credit.source_url}`;
-    const source = sources.get(key) ?? { name, href: getHttpUrl(credit.source_url), notes: [] };
-    const license = getLicenseLabel(credit.license);
-    const field = CREDIT_FIELD_LABELS[credit.field].toLowerCase();
-    source.notes.push(license ? `${field}, ${license}` : field);
-    sources.set(key, source);
-  }
+/**
+ * One line: `Text: Wikidata, CC0 1.0 · Image: SjakePaak, Wikimedia Commons, CC BY-SA 4.0`. Each value
+ * names its author first for an image, then its source (linked to its page) and its licence, so a
+ * card in a post carries the credit its licence asks for; the licence links to its text. Wraps.
+ */
+function ResourceCreditsCompact({
+  credits,
+  borrowed,
+}: {
+  credits: TPinakesCredit[];
+  borrowed: TResourceBorrowedNote[];
+}) {
+  const segments: ReactNode[] = [
+    ...credits.map((credit, index) => {
+      const isText = credit.field === PinakesCreditField.DESCRIPTION;
+      const license = getLicenseLabel(credit.license);
+      return (
+        <Fragment key={`${credit.field}:${credit.source_url}:${index}`}>
+          {CREDIT_FIELD_LABELS[credit.field]}: {!isText && credit.author && <>{credit.author}, </>}
+          <MaybeLink
+            href={getHttpUrl(credit.source_url)}
+            testId="resource-credit-source"
+            className={COMPACT_LINK_CLASS_NAME}
+          >
+            {getCreditProviderName(credit)}
+          </MaybeLink>
+          {license && (
+            <>
+              ,{' '}
+              <MaybeLink
+                href={getHttpUrl(credit.license_url)}
+                testId="resource-credit-license"
+                className={COMPACT_LINK_CLASS_NAME}
+              >
+                {license}
+              </MaybeLink>
+            </>
+          )}
+        </Fragment>
+      );
+    }),
+    ...borrowed.map((note) => (
+      <BorrowedLine key={`borrowed:${note.field}`} note={note} linkClassName={COMPACT_LINK_CLASS_NAME} />
+    )),
+  ];
 
   return (
     <Typography
       size="xs"
       data-testid="resource-credits"
       data-variant="compact"
-      className="truncate font-normal text-muted-foreground"
+      className="font-normal wrap-anywhere text-muted-foreground"
     >
       <span className="sr-only">Sources: </span>
-      {[...sources.values()].map((source, index) => (
-        <Fragment key={`${source.name}:${index}`}>
+      {segments.map((segment, index) => (
+        <Fragment key={index}>
           {index > 0 && ' · '}
-          <MaybeLink
-            href={source.href}
-            notes={source.notes.join('; ')}
-            testId="resource-credit-source"
-            className={COMPACT_LINK_CLASS_NAME}
-          >
-            {source.name}
-          </MaybeLink>
+          {segment}
         </Fragment>
       ))}
     </Typography>
@@ -154,30 +215,18 @@ function ResourceCreditsCompact({ credits }: { credits: TPinakesCredit[] }) {
 /** A link out when `href` is `http(s)` (new tab), else the same text. */
 function MaybeLink({
   href,
-  notes,
   testId,
   className,
   children,
 }: {
   href: string | null;
-  /** Said in brackets after the visible text, in the accessible name and the title. */
-  notes?: string;
   testId: string;
   className: string;
   children: string;
 }) {
-  const label = notes ? `${children} (${notes})` : undefined;
-  if (!href) {
-    // Not a link, so no accessible name: the notes are read as text, `title` alone is not.
-    return (
-      <span data-testid={testId} title={label}>
-        {children}
-        {notes && <span className="sr-only"> ({notes})</span>}
-      </span>
-    );
-  }
+  if (!href) return <span data-testid={testId}>{children}</span>;
   return (
-    <Link href={href} overrideDefaults aria-label={label} title={label} data-testid={testId} className={className}>
+    <Link href={href} overrideDefaults data-testid={testId} className={className}>
       {children}
     </Link>
   );
