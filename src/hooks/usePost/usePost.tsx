@@ -312,7 +312,7 @@ export function usePost({ keepInlineMedia = false, active = true }: UsePostOptio
     body: article?.body ?? content,
   });
 
-  const post = async ({ article, onSuccess }: UsePostPostOptions) => {
+  const post = async ({ article, embedUrl, onSuccess }: UsePostPostOptions) => {
     const { title: latestTitle, body: latestBody } = latestOf(article);
     const hasBody = Boolean(latestBody.trim());
     // allow empty content and attachments if not article
@@ -342,6 +342,7 @@ export function usePost({ keepInlineMedia = false, active = true }: UsePostOptio
         attachments: uploads.length > 0 ? uploads : undefined,
         coverImage: coverFile,
         isArticle,
+        embedUrl: article ? undefined : embedUrl,
       });
 
       if (article) {

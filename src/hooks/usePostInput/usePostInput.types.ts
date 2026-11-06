@@ -104,6 +104,15 @@ export interface UsePostInputReturn {
   serializeArticleForLock: UsePostReturn['serializeArticleForLock'];
   /** The article as the inputs hold it now. `articleTitle` and `content` trail them by the debounce. */
   getLatestArticle: () => { title: string; body: string };
+  /**
+   * The web link a new post embeds: the first link of its text, or the one the author picked, unless
+   * removed; null for none.
+   */
+  embedUrl: string | null;
+  /** Where `embedUrl` is among the text's links that can be embedded, while there are several; else null. */
+  embedChoice: { index: number; count: number } | null;
+  /** True when a link of the text could be embedded and the author removed it. */
+  isEmbedRemoved: boolean;
 
   // Mention autocomplete state
   mentionUsers: AutocompleteUserData[];
@@ -128,6 +137,14 @@ export interface UsePostInputReturn {
   handleFilesAdded: (files: File[]) => void;
   handleFileClick: () => void;
   removeExistingAttachment: (uri: string) => void;
+  /** Removes the embed; the link stays in the text. */
+  removeEmbed: () => void;
+  /** Embeds the removed link again. */
+  restoreEmbed: () => void;
+  /** Embeds the text's previous link that can be embedded (the last one before the first). */
+  pickPreviousEmbed: () => void;
+  /** Embeds the text's next link that can be embedded (the first one after the last). */
+  pickNextEmbed: () => void;
   handleDragEnter: (e: React.DragEvent) => void;
   handleDragLeave: (e: React.DragEvent) => void;
   handleDragOver: (e: React.DragEvent) => void;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getFirstLinkUrl } from './postLinkUrl';
+import { getFirstLinkMatch, getFirstLinkUrl, getLinkUrls } from './postLinkUrl';
 
 describe('getFirstLinkUrl', () => {
   it('returns the first URL when the content has several', () => {
@@ -38,5 +38,33 @@ describe('getFirstLinkUrl', () => {
   it('returns null for content without a link', () => {
     expect(getFirstLinkUrl('just some words')).toBeNull();
     expect(getFirstLinkUrl('')).toBeNull();
+  });
+});
+
+describe('getFirstLinkMatch', () => {
+  it('returns the scheme the link was written with', () => {
+    expect(getFirstLinkMatch('see https://example.com/a')).toEqual({ url: 'https://example.com/a', schema: 'https:' });
+  });
+
+  it('returns an empty scheme for a link written without one', () => {
+    expect(getFirstLinkMatch('see example.com/a')).toEqual({ url: 'http://example.com/a', schema: '' });
+  });
+
+  it('returns null for content without a link', () => {
+    expect(getFirstLinkMatch('just some words')).toBeNull();
+  });
+});
+
+describe('getLinkUrls', () => {
+  it('returns every link in order, Markdown link targets included', () => {
+    expect(getLinkUrls('a https://a.example then [b](https://b.example) and c.com')).toEqual([
+      'https://a.example',
+      'https://b.example',
+      'http://c.com',
+    ]);
+  });
+
+  it('returns an empty list without links', () => {
+    expect(getLinkUrls('just some words')).toEqual([]);
   });
 });

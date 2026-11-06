@@ -11,6 +11,7 @@ import { db } from '@/database/franky/franky';
 import { AuthErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { getComposerEmbedUrl } from '@/libs/post/postEmbedUrl';
 import type { Pubky } from '@/models/models.types';
 import { buildCompositeId } from '@/models/models.utils';
 import { PostCountsModel } from '@/models/post/counts/postCounts';
@@ -573,6 +574,71 @@ describe('PostController', () => {
         url: expect.stringContaining(`/pub/social/v1/posts/`),
         blob: expect.anything(),
       });
+    });
+
+    it('stores a web link as the post embed, kept in the text as written', async () => {
+      const { PostController } = await import('./post');
+      const link = 'https://en.wikipedia.org/wiki/Bitcoin';
+
+      const createdId = await PostController.commitCreate({
+        content: `Read ${link}`,
+        authorId: testData.authorPubky,
+        embedUrl: link,
+      });
+
+      expect(lastPutPost()).toMatchObject({ content: `Read ${link}`, embed: link, parent: null });
+      const relationships = await PostRelationshipsModel.table.get(createdId);
+      expect(relationships?.reposted).toBe(link);
+    });
+
+    // Whatever the composer picks must pass the data model's own reference check, or the post fails
+    it.each([
+      ['a port', 'https://example.com:8443/a', 'https://example.com:8443/a'],
+      // linkify stops before userinfo; the link it finds is still a valid embed
+      ['userinfo', 'https://reader@example.com/a', 'https://reader'],
+      ['an IDN host', 'https://bücher.example/katalog', 'https://bücher.example/katalog'],
+      ['a query and fragment', 'https://example.com/s?q=a+b&l=en#top', 'https://example.com/s?q=a+b&l=en#top'],
+      [
+        'parentheses',
+        'https://en.wikipedia.org/wiki/Bitcoin_(currency)',
+        'https://en.wikipedia.org/wiki/Bitcoin_(currency)',
+      ],
+      ['http', 'http://example.com/plain', 'http://example.com/plain'],
+    ])('stores a composer embed link with %s as the post embed', async (_, link, expected) => {
+      const { PostController } = await import('./post');
+      const content = `See ${link} now`;
+      const embedUrl = getComposerEmbedUrl(content);
+      expect(embedUrl).toBe(expected);
+
+      await PostController.commitCreate({ content, authorId: testData.authorPubky, embedUrl: embedUrl ?? undefined });
+
+      expect(lastPutPost().embed).toBe(expected);
+    });
+
+    it('stores no embed without an embed link', async () => {
+      const { PostController } = await import('./post');
+
+      await PostController.commitCreate({
+        content: 'Read https://en.wikipedia.org/wiki/Bitcoin',
+        authorId: testData.authorPubky,
+      });
+
+      expect(lastPutPost().embed).toBeNull();
+    });
+
+    it('refuses a web link embed beside a repost', async () => {
+      await setupExistingPost();
+      const { PostController } = await import('./post');
+
+      await expect(
+        PostController.commitCreate({
+          content: 'Both',
+          authorId: testData.authorPubky,
+          originalPostId: testData.fullPostId,
+          embedUrl: 'https://example.com',
+        }),
+      ).rejects.toThrow('A post embeds either a post or a link');
+      expect(HomeserverService.putBlob).not.toHaveBeenCalled();
     });
 
     it('should apply tags to the original post for a simple repost', async () => {

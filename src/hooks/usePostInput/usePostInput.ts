@@ -30,6 +30,7 @@ import { Logger } from '@/libs/logger/logger';
 import { parseArticleContent } from '@/libs/post/articleContent';
 import { resolveArticleCover } from '@/libs/post/articleCover';
 import { collectAttachmentRefIndexes } from '@/libs/post/articleInlineMedia';
+import { getComposerEmbedUrl, getComposerEmbedUrls } from '@/libs/post/postEmbedUrl';
 import { isViewerExcludedWotStream } from '@/models/stream/post/postStream.types';
 import { toast } from '@/molecules/Toaster/toast';
 import { POST_INPUT_PLACEHOLDER, POST_INPUT_VARIANT } from '@/organisms/PostInput/PostInput.constants';
@@ -161,6 +162,34 @@ export function usePostInput({
   } = usePost({ keepInlineMedia, active });
   const timelineFeed = useTimelineFeedContext();
   const { undoRepost } = useUndoRepost(isCollectionShare, { outlivesOwner: true });
+
+  // A new post embeds one link of its text: the first, or the one the author picks with the card's
+  // ‹ › while the text holds several. The pick holds while the text still has that link, so typing
+  // elsewhere does not move the card; once it is no longer among the links that can be embedded, the
+  // pick is forgotten. The other links are offered only when the first one can be embedded: a text
+  // that opens with a link that can't keeps its plain preview. The author may remove the embed; the
+  // link stays in the text. The removal is kept per link, so a different link is embedded again.
+  const [pickedEmbedUrl, setPickedEmbedUrl] = useState<string | null>(null);
+  const [removedEmbedUrl, setRemovedEmbedUrl] = useState<string | null>(null);
+  const firstEmbedUrl = variant === POST_INPUT_VARIANT.POST && !isArticle ? getComposerEmbedUrl(content) : null;
+  const embedUrls = firstEmbedUrl ? getComposerEmbedUrls(content) : [];
+  const isPickInText = pickedEmbedUrl !== null && embedUrls.includes(pickedEmbedUrl);
+  // Forget a pick the text no longer holds (state adjusted while rendering, not in an effect)
+  if (pickedEmbedUrl !== null && !isPickInText) setPickedEmbedUrl(null);
+  const selectedEmbedUrl = isPickInText ? pickedEmbedUrl : firstEmbedUrl;
+  const isEmbedRemoved = selectedEmbedUrl !== null && selectedEmbedUrl === removedEmbedUrl;
+  const embedUrl = isEmbedRemoved ? null : selectedEmbedUrl;
+  const embedChoice =
+    embedUrl !== null && embedUrls.length > 1 ? { index: embedUrls.indexOf(embedUrl), count: embedUrls.length } : null;
+  // ‹ › go round: the last link is followed by the first.
+  const pickEmbed = (step: number) => {
+    if (!embedChoice) return;
+    setPickedEmbedUrl(embedUrls[(embedChoice.index + step + embedChoice.count) % embedChoice.count]);
+  };
+  const pickPreviousEmbed = () => pickEmbed(-1);
+  const pickNextEmbed = () => pickEmbed(1);
+  const removeEmbed = () => setRemovedEmbedUrl(selectedEmbedUrl);
+  const restoreEmbed = () => setRemovedEmbedUrl(null);
 
   // Article edits show only the cover in the attachment strip — inline media
   // lives in the body. Where the cover is and what each `attachment:{n}` names
@@ -438,6 +467,9 @@ export function usePostInput({
         return;
       }
 
+      setRemovedEmbedUrl(null);
+      setPickedEmbedUrl(null);
+
       if (!isArticle && attachments.length) {
         useLocalFilesStore.getState().setPostAttachments(createdPostId, attachments.map(newFileToLocalAttachment));
       }
@@ -530,7 +562,7 @@ export function usePostInput({
         break;
       case POST_INPUT_VARIANT.POST:
       default:
-        await post({ article: latestArticle, onSuccess: handleSuccess });
+        await post({ article: latestArticle, embedUrl: embedUrl ?? undefined, onSuccess: handleSuccess });
         break;
     }
   }, [
@@ -544,6 +576,7 @@ export function usePostInput({
     parentUri,
     originalPostId,
     successToastTitle,
+    embedUrl,
     reply,
     post,
     repost,
@@ -876,6 +909,9 @@ export function usePostInput({
     isEditInlineMediaLoading,
     serializeArticleForLock,
     getLatestArticle,
+    embedUrl,
+    embedChoice,
+    isEmbedRemoved,
 
     // Mention autocomplete state
     mentionUsers,
@@ -900,6 +936,10 @@ export function usePostInput({
     handleFilesAdded,
     handleFileClick,
     removeExistingAttachment,
+    removeEmbed,
+    restoreEmbed,
+    pickPreviousEmbed,
+    pickNextEmbed,
     handleDragEnter,
     handleDragLeave,
     handleDragOver,

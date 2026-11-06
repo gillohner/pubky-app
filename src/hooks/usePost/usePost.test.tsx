@@ -765,6 +765,25 @@ describe('usePost', () => {
       expect(result.current.isSubmitting).toBe(false);
     });
 
+    it('passes the embed link to the controller', async () => {
+      const { result } = renderHook(() => usePost());
+
+      act(() => {
+        result.current.setContent('Read https://en.wikipedia.org/wiki/Bitcoin');
+      });
+
+      await act(async () => {
+        await result.current.post({ embedUrl: 'https://en.wikipedia.org/wiki/Bitcoin', onSuccess: vi.fn() });
+      });
+
+      expect(mockPostControllerCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: 'Read https://en.wikipedia.org/wiki/Bitcoin',
+          embedUrl: 'https://en.wikipedia.org/wiki/Bitcoin',
+        }),
+      );
+    });
+
     it('should handle post with empty tags array', async () => {
       const { result } = renderHook(() => usePost());
 

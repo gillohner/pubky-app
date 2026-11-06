@@ -185,6 +185,7 @@ export class PostController {
    * @param params.parentPostId - ID of the post being replied to (optional for root posts)
    * @param params.parentUri - URI of the external resource being replied to (optional, never with `parentPostId`)
    * @param params.originalPostId - ID of the post being reposted (optional for reposts)
+   * @param params.embedUrl - A web link the post embeds (optional, never with `originalPostId`)
    * @returns The composite post ID of the created post
    */
   static async commitCreate({
@@ -197,6 +198,7 @@ export class PostController {
     parentPostId,
     parentUri: externalParentUri,
     originalPostId,
+    embedUrl,
     lock,
   }: TCreatePostParams): Promise<string> {
     const isCurrent = captureViewerSession();
@@ -224,6 +226,13 @@ export class PostController {
     if (originalPostId) {
       repostedUri = await PostValidators.validatePostId({ postId: originalPostId, message: 'Original post' });
     }
+    // The data model has one `embed`: a repost's original or a web link, never both.
+    if (repostedUri && embedUrl) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'A post embeds either a post or a link', {
+        service: ErrorService.Local,
+        operation: 'commitCreate',
+      });
+    }
 
     // A `lock` marks this post as the public announcement of locked content, which may never be a
     // `long` or `collection` post — the locked content behind it still may.
@@ -243,7 +252,7 @@ export class PostController {
         content: content.trim(),
         kind: postKind,
         parentUri,
-        embed: repostedUri,
+        embed: repostedUri ?? embedUrl,
         attachments: fileAttachments,
         coverImage: coverAttachment,
         lock,
