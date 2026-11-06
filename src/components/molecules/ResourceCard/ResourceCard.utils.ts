@@ -301,3 +301,12 @@ export function getAlsoOnNote(
   }
   return note;
 }
+
+/**
+ * The note under another resource in a list: its type in plain words and its site, else the host of
+ * its own web link. `null` when it has neither.
+ */
+export function getResourceListNote(card: Pick<TPinakesCard, 'uri' | 'type' | 'type_path' | 'site'>): string | null {
+  const parts = [getResourceTypeLabel(card), card.site?.trim() || getLinkHost(getHttpUrl(card.uri))].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
