@@ -683,11 +683,23 @@ describe('Nexus resource tags transport expected-error policy', () => {
   const VIEWER = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
 
   it.each([
-    { name: 'connection failure', rejection: () => new TypeError('Failed to fetch') },
-    { name: 'transport timeout', rejection: () => new DOMException('signal timed out', 'TimeoutError') },
-  ])('rejects a tag read without capturing a $name, retries included', async ({ rejection }) => {
+    { name: 'connection failure', rejection: () => new TypeError('Failed to fetch'), read: 'by-uri' },
+    {
+      name: 'transport timeout',
+      rejection: () => new DOMException('signal timed out', 'TimeoutError'),
+      read: 'by-uri',
+    },
+    { name: 'connection failure', rejection: () => new TypeError('Failed to fetch'), read: 'by_ids' },
+    {
+      name: 'transport timeout',
+      rejection: () => new DOMException('signal timed out', 'TimeoutError'),
+      read: 'by_ids',
+    },
+  ])('rejects a $read tag read without capturing a $name, retries included', async ({ rejection, read }) => {
     await withEnabledSentryCapture(async ({ captureException }) => {
       const { NexusResourceService } = await import('@/services/nexus/resource/resource');
+      // `by-uri`: a Nexus without `by_ids` (production, hosted staging); `by_ids`: our Nexus fork.
+      NexusResourceService.clearBatch({ byIdsMissing: read === 'by-uri' });
       const { AppError: PipelineAppError } = await import('@/libs/error/error');
       const { getSentryInitBase: initBase } = await import('./sentry');
       vi.useFakeTimers();
@@ -702,8 +714,10 @@ describe('Nexus resource tags transport expected-error policy', () => {
         expect(error).toBeInstanceOf(PipelineAppError);
         if (!(error instanceof PipelineAppError)) return;
         expect(error).toMatchObject({ service: ErrorService.Nexus, operation: 'fetchResourceTagsByUri' });
-        // What the rule keeps out of telemetry: the post's link and the viewer in the request.
-        expect(String(error.context?.url)).toContain(encodeURIComponent(LINK));
+        // What the rule keeps out of telemetry: the post's link and the viewer in the `by-uri` request
+        // (a `by_ids` request carries them in its body; its query holds only the tag limits).
+        if (read === 'by-uri') expect(String(error.context?.url)).toContain(encodeURIComponent(LINK));
+        else expect(String(error.context?.url)).toMatch(/\/v0\/stream\/resources\/by_ids\?limit_tags=\d+$/);
         expect(fetchSpy.mock.calls.length).toBeGreaterThan(1);
         expect(captureException).not.toHaveBeenCalled();
         expect(shouldDropAppErrorFromSentry(error)).toBe(true);
