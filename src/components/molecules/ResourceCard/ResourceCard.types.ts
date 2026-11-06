@@ -54,4 +54,10 @@ export interface ResourceCardProps {
    * opens the resource); the page lists Also on in full, so its ⋯ menu has no Also on section.
    */
   size?: 'default' | 'large';
+  /**
+   * Wraps the card's image and text, e.g. to put a service's player in their place
+   * (`useCardPlayer`); the header, details, credits and `actions` stay. A card given one is no
+   * click-through: its body may turn into a player.
+   */
+  renderBody?: (body: ReactNode) => ReactNode;
 }
