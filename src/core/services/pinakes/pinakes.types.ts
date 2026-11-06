@@ -63,6 +63,17 @@ export interface TPinakesOpenIn {
   url: string;
 }
 
+/**
+ * `Because`: why a `related` search row is listed: the resource's taggers who also referenced the
+ * row, as Pinakes ranked it.
+ */
+export interface TPinakesBecause {
+  /** How many of them (the count the row is ranked by). */
+  shared: number;
+  /** Up to three of them (Pubky public keys), those who tagged the resource most recently first. */
+  taggers: string[];
+}
+
 /** `Card`: the one card every route returns for a resource. */
 export interface TPinakesCard {
   /** Pinakes's own resource ID (32 lowercase hex). Join with Nexus by URI, never by this ID. */
@@ -93,6 +104,8 @@ export interface TPinakesCard {
   group?: TPinakesGroupRef | null;
   also_on: TPinakesAlsoOn[];
   open_in: TPinakesOpenIn[];
+  /** On a `related` search row only (absent elsewhere and on older instances): why it is listed. */
+  because?: TPinakesBecause | null;
   /** The referenced links that resolve to this card, most referenced first (at most 5). */
   refs: string[];
   /** How many public collection posts hold the card's link. */
