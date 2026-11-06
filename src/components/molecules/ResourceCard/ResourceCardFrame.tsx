@@ -66,10 +66,15 @@ interface ResourceCardHeaderProps {
   href: string | null;
   /** The site's name (`card.site`, else the host without `www.`); never the full link. */
   siteName: string | null;
+  /**
+   * Says what the source link does, "Open in <site>": on the resource page's card it is the one way
+   * to open the resource (the title there is no second link to the same place).
+   */
+  openIn?: boolean;
 }
 
 /** The type line on the left and the source on the right: the site's icon and name, linking out. */
-export function ResourceCardHeader({ typeLabel, sourceUri, href, siteName }: ResourceCardHeaderProps) {
+export function ResourceCardHeader({ typeLabel, sourceUri, href, siteName, openIn = false }: ResourceCardHeaderProps) {
   return (
     <Container overrideDefaults className="flex min-w-0 items-center justify-between gap-3">
       {typeLabel && (
@@ -82,16 +87,26 @@ export function ResourceCardHeader({ typeLabel, sourceUri, href, siteName }: Res
           {typeLabel}
         </Typography>
       )}
-      <ResourceSource uri={sourceUri} href={href} name={siteName} />
+      <ResourceSource uri={sourceUri} href={href} name={siteName} openIn={openIn} />
     </Container>
   );
 }
 
 /** The site the card's link goes to: favicon, name and ↗, linking out when the link is web. */
-function ResourceSource({ uri, href, name }: { uri: string; href: string | null; name: string | null }) {
+function ResourceSource({
+  uri,
+  href,
+  name,
+  openIn,
+}: {
+  uri: string;
+  href: string | null;
+  name: string | null;
+  openIn: boolean;
+}) {
   const className = 'ml-auto flex min-w-0 shrink items-center gap-1.5 text-xs font-medium text-muted-foreground';
 
-  // Without a name the icon alone would be an unlabelled link: the title already links out.
+  // Without a name the icon alone would be an unlabelled link: the title opens the resource instead.
   if (!href || !name) {
     return (
       <Typography as="span" overrideDefaults data-testid="resource-card-source" className={className}>
@@ -103,7 +118,7 @@ function ResourceSource({ uri, href, name }: { uri: string; href: string | null;
   return (
     <Link href={href} overrideDefaults data-testid="resource-card-source" className={cn(className, 'hover:text-brand')}>
       <ResourceSourceIcon uri={uri} />
-      <span className="truncate">{name}</span>
+      <span className="truncate">{openIn ? `Open in ${name}` : name}</span>
       <ArrowUpRight aria-hidden="true" className="size-3 shrink-0" />
     </Link>
   );

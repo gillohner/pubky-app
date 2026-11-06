@@ -7,6 +7,9 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { cn } from '@/libs/utils/utils';
 import { postActionsButtonVariants, postActionsCountVariants } from './PostActionsBar.variants';
 
+/** What a row of action buttons sits on (see `postActionsButtonVariants`). */
+export type PostActionSurface = 'default' | 'muted';
+
 type PostActionButtonProps = Omit<ComponentProps<typeof Button>, 'variant' | 'size' | 'children' | 'aria-label'> & {
   icon: ComponentType<{ className?: string; strokeWidth?: number; fill?: string }>;
   /** Shown after the icon; nothing shows when absent (a count nobody has is never shown as 0). */
@@ -14,7 +17,7 @@ type PostActionButtonProps = Omit<ComponentProps<typeof Button>, 'variant' | 'si
   ariaLabel: string;
   variant?: 'default' | 'visual';
   /** What the row sits on: `muted` on an external resource card, so the pill stays visible there. */
-  surface?: 'default' | 'muted';
+  surface?: PostActionSurface;
   iconProps?: { fill?: string; className?: string };
   /** Makes the button a link to this in-app route; a disabled button never links. */
   href?: string;
