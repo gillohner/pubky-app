@@ -133,8 +133,7 @@ function ResourceKnown({
 }) {
   const actionUri = getActionUri(card, uri);
   const { data: group, isLoading: isGroupLoading } = usePinakesGroup(card.group?.id);
-  const otherLinks =
-    card.group && isGroupLoading ? [] : getOtherLinks(card, group?.members, getOwnLinkUris(card, uri, actionUri));
+  const otherLinks = card.group && isGroupLoading ? [] : getOtherLinks(card, group?.members, getOwnLinkUris(actionUri));
   // The services that allow embedding play on the page too, as in a post (`useCardPlayer`).
   const { playOn, renderBody } = useCardPlayer(card, undefined, 'default');
   const actions = (

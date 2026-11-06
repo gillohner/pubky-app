@@ -26,24 +26,8 @@ const tag = (label: string, taggers: string[], count = taggers.length): NexusTag
 });
 
 describe('getOwnLinkUris', () => {
-  it('is the page link, the acted-on link, the canonical link, its refs and its aliases', () => {
-    const own = getOwnLinkUris(
-      {
-        uri: LETTERBOXD,
-        refs: [LETTERBOXD, 'https://boxd.it/29Lu'],
-        aliases: ['http://letterboxd.com/film/the-matrix'],
-      },
-      'https://letterboxd.com/film/the-matrix',
-      LETTERBOXD,
-    );
-    expect([...own].sort()).toEqual(
-      [
-        LETTERBOXD,
-        'https://boxd.it/29Lu',
-        'http://letterboxd.com/film/the-matrix',
-        'https://letterboxd.com/film/the-matrix',
-      ].sort(),
-    );
+  it('is the acted-on link only: Nexus keeps the card’s other spellings apart', () => {
+    expect([...getOwnLinkUris(LETTERBOXD)]).toEqual([LETTERBOXD]);
   });
 });
 
@@ -72,6 +56,26 @@ describe('getOtherLinks', () => {
       { uri: 'https://themoviedb.org/movie/603', name: 'TMDB' },
       { uri: TMDB, name: 'TMDB' },
       { uri: IMDB, name: 'IMDb' },
+    ]);
+  });
+
+  it('reads the card’s other spellings first, named by its service: Nexus tags each apart', () => {
+    const links = getOtherLinks(
+      {
+        ...card,
+        uri: LETTERBOXD,
+        refs: [LETTERBOXD, 'https://boxd.it/29Lu'],
+        aliases: ['http://letterboxd.com/film/the-matrix'],
+        site: 'Letterboxd',
+        also_on: [{ uri: NETFLIX, site: 'Netflix' }],
+      },
+      null,
+      own,
+    );
+    expect(links).toEqual([
+      { uri: 'https://boxd.it/29Lu', name: 'Letterboxd' },
+      { uri: 'http://letterboxd.com/film/the-matrix', name: 'Letterboxd' },
+      { uri: NETFLIX, name: 'Netflix' },
     ]);
   });
 

@@ -266,7 +266,7 @@ describe('ResourceDetails', () => {
       expect(uris).not.toContain('https://open.spotify.com/track/6JEK0CvvjDjjMUBFoXShNZ');
     });
 
-    it('reads the Also on links’ tags when the group read failed, never the page link’s own spellings', () => {
+    it('reads the card’s other spellings and the Also on links when the group read failed, never the acted-on link', () => {
       const alias = 'https://youtu.be/dQw4w9WgXcQ';
       read = settled({
         ...VIDEO,
@@ -280,7 +280,12 @@ describe('ResourceDetails', () => {
       mockGroup.mockReturnValue(FAILED);
       renderDetails(alias);
 
-      expect(otherLinks()).toEqual([{ uri: 'https://tidal.com/track/490851477', name: 'TIDAL' }]);
+      // Nexus keeps every spelling apart: the canonical link and the mobile alias carry tags of their own.
+      expect(otherLinks()).toEqual([
+        { uri: VIDEO.uri, name: 'YouTube' },
+        { uri: 'https://m.youtube.com/watch?v=dQw4w9WgXcQ', name: 'YouTube' },
+        { uri: 'https://tidal.com/track/490851477', name: 'TIDAL' },
+      ]);
     });
 
     it('reads no other link while the group is read, so the chips do not reorder when it arrives', () => {
