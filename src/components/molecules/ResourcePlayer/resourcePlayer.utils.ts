@@ -10,6 +10,7 @@ export enum PlayerProvider {
   SOUNDCLOUD = 'soundcloud',
   MIXCLOUD = 'mixcloud',
   TIDAL = 'tidal',
+  DEEZER = 'deezer',
   AUDIO_FILE = 'audio-file',
 }
 
@@ -20,6 +21,7 @@ const PROVIDER_NAMES: Record<Exclude<PlayerProvider, PlayerProvider.AUDIO_FILE>,
   [PlayerProvider.SOUNDCLOUD]: 'SoundCloud',
   [PlayerProvider.MIXCLOUD]: 'Mixcloud',
   [PlayerProvider.TIDAL]: 'TIDAL',
+  [PlayerProvider.DEEZER]: 'Deezer',
 };
 
 /**
@@ -43,7 +45,8 @@ export interface PlayerTarget {
   /**
    * The player starts on the viewer's press on our Play: by a `src` parameter (YouTube, Vimeo,
    * SoundCloud) or by its `start` message. Else a press inside the player is needed (Mixcloud, whose
-   * `autoplay=1` and widget API leave it paused), and the frame says so.
+   * `autoplay=1` and widget API leave it paused; Deezer's widget, which takes no start command), and
+   * the frame says so.
    */
   autoplay: boolean;
   /** How a player without an autoplay parameter is told to start, through its embed's own messages. */
@@ -79,6 +82,11 @@ function parseHttps(value: string, hosts: readonly string[]): URL | null {
 
 const YOUTUBE_HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'];
 const YOUTUBE_LIST = /^[A-Za-z0-9_-]{10,64}$/;
+/**
+ * A channel by its id (`/channel/UC…`, also its videos or home tab); a `/@handle` or `/c/name` has
+ * no id in the link. An auto-generated "<artist> - Topic" channel has an uploads list too.
+ */
+const YOUTUBE_CHANNEL = /^\/channel\/UC([A-Za-z0-9_-]{22})(?:\/(?:videos|featured))?\/?$/;
 
 function youtube(value: string): PlayerTarget | null {
   const url = parseHttps(value, YOUTUBE_HOSTS);
@@ -92,6 +100,16 @@ function youtube(value: string): PlayerTarget | null {
       ...common,
       link: `https://www.youtube.com/playlist?list=${list}`,
       src: `https://www.youtube-nocookie.com/embed/videoseries?list=${list}&enablejsapi=1&autoplay=1&rel=0`,
+    };
+  }
+  // A channel (an artist's, from MusicBrainz) plays its uploads: YouTube's playlist `UU` + the id.
+  const channel = YOUTUBE_CHANNEL.exec(url.pathname);
+  if (channel) {
+    return {
+      ...base,
+      ...common,
+      link: `https://www.youtube.com/channel/UC${channel[1]}`,
+      src: `https://www.youtube-nocookie.com/embed/videoseries?list=UU${channel[1]}&enablejsapi=1&autoplay=1&rel=0`,
     };
   }
   const id = extractYouTubeVideoId(url.href);
@@ -156,6 +174,23 @@ const SOUNDCLOUD_RESERVED = new Set([
   'pages',
   'stations',
   'mobile',
+  // Top-level pages that are no profile (`soundcloud.com/<user>` plays the user's tracks).
+  'settings',
+  'notifications',
+  'messages',
+  'feed',
+  'signin',
+  'signup',
+  'logout',
+  'terms-of-use',
+  'popular',
+  'people',
+  'pro',
+  'jobs',
+  'imprint',
+  'premium',
+  'artists',
+  'creators',
 ]);
 const SOUNDCLOUD_SUB = new Set([
   'tracks',
@@ -169,21 +204,25 @@ const SOUNDCLOUD_SUB = new Set([
   'comments',
 ]);
 const SOUNDCLOUD_PATH = /^\/([a-z0-9_-]{2,64})\/(?:(sets)\/)?([a-z0-9_-]{1,128})\/?$/i;
+/** A profile (`soundcloud.com/<user>`): the widget plays its tracks as a list. */
+const SOUNDCLOUD_PROFILE = /^\/([a-z0-9_-]{2,64})\/?$/i;
 
 function soundcloud(value: string): PlayerTarget | null {
   const url = parseHttps(value, ['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com']);
-  const match = url ? SOUNDCLOUD_PATH.exec(url.pathname) : null;
+  const match = url ? (SOUNDCLOUD_PATH.exec(url.pathname) ?? SOUNDCLOUD_PROFILE.exec(url.pathname)) : null;
   if (!match) return null;
   const [, user, sets, slug] = match;
-  if (SOUNDCLOUD_RESERVED.has(user.toLowerCase()) || (!sets && SOUNDCLOUD_SUB.has(slug.toLowerCase()))) return null;
-  const link = `https://soundcloud.com/${user}/${sets ? 'sets/' : ''}${slug}`;
+  if (SOUNDCLOUD_RESERVED.has(user.toLowerCase()) || (slug && !sets && SOUNDCLOUD_SUB.has(slug.toLowerCase()))) {
+    return null;
+  }
+  const link = slug ? `https://soundcloud.com/${user}/${sets ? 'sets/' : ''}${slug}` : `https://soundcloud.com/${user}`;
   return {
     provider: PlayerProvider.SOUNDCLOUD,
     name: PROVIDER_NAMES.soundcloud,
     link,
     src: `https://w.soundcloud.com/player/?url=${encodeURIComponent(link)}&auto_play=true&visual=false&show_teaser=false`,
     element: 'iframe',
-    layout: { kind: 'audio', height: sets ? 450 : 166 },
+    layout: { kind: 'audio', height: sets || !slug ? 450 : 166 },
     allow: IFRAME_ALLOW,
     autoplay: true,
   };
@@ -244,6 +283,31 @@ function tidal(value: string): PlayerTarget | null {
   };
 }
 
+const DEEZER_PATH = /^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(track|album|playlist|artist)\/([0-9]{1,15})\/?$/i;
+
+/**
+ * Deezer's widget: a track, album or playlist, an artist as its top tracks. It has no start command
+ * we can send, so the viewer presses play inside it (the frame says so).
+ */
+function deezer(value: string): PlayerTarget | null {
+  const url = parseHttps(value, ['www.deezer.com', 'deezer.com']);
+  const match = url ? DEEZER_PATH.exec(url.pathname) : null;
+  if (!match) return null;
+  const kind = match[1].toLowerCase();
+  const id = match[2];
+  return {
+    provider: PlayerProvider.DEEZER,
+    name: PROVIDER_NAMES.deezer,
+    link: `https://www.deezer.com/${kind}/${id}`,
+    src: `https://widget.deezer.com/widget/dark/${kind}/${id}${kind === 'artist' ? '/top_tracks' : ''}`,
+    element: 'iframe',
+    // The widget's own sizes: one track compact, a list at its default height.
+    layout: { kind: 'audio', height: kind === 'track' ? 150 : 300, dockHeight: 150 },
+    allow: 'encrypted-media; clipboard-write',
+    autoplay: false,
+  };
+}
+
 /** A plain audio file (a homeserver file, a podcast enclosure): the browser's own `<audio>` player. */
 function audioFile(value: string): PlayerTarget | null {
   let url: URL;
@@ -266,7 +330,7 @@ function audioFile(value: string): PlayerTarget | null {
   };
 }
 
-const LINK_PARSERS = [youtube, vimeo, spotify, soundcloud, mixcloud, tidal, audioFile];
+const LINK_PARSERS = [youtube, vimeo, spotify, soundcloud, mixcloud, tidal, deezer, audioFile];
 
 /** The player for one link, when the link is on a service in the allowlist. */
 export function getPlayerTarget(link: string): PlayerTarget | null {
@@ -280,7 +344,9 @@ export function getPlayerTarget(link: string): PlayerTarget | null {
 /**
  * Every player the card offers, one per service: the card's own link first (`href`, the link as
  * written, else its `uri`), then its `also_on` links in Pinakes' order (its best link of a service
- * first). A `missing` card's own link is gone upstream and offers no player.
+ * first), those that start on our press before those that need a press inside (`autoplay`), so
+ * Play on starts with one press whenever an Also on service can. A `missing` card's own link is
+ * gone upstream and offers no player.
  */
 export function getPlayerTargets(
   card: Pick<TPinakesCard, 'uri' | 'status' | 'also_on'>,
@@ -297,5 +363,11 @@ export function getPlayerTargets(
     seen.add(target.provider);
     targets.push(target);
   }
-  return targets;
+  const ownCount = own && getPlayerTarget(own) ? 1 : 0;
+  const alsoOn = targets.slice(ownCount);
+  return [
+    ...targets.slice(0, ownCount),
+    ...alsoOn.filter((target) => target.autoplay),
+    ...alsoOn.filter((target) => !target.autoplay),
+  ];
 }

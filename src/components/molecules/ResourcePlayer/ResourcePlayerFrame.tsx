@@ -77,7 +77,7 @@ function useStartMessage(target: PlayerTarget, onLoaded: () => void) {
  * minimum). Until the frame loads, a placeholder of the same size names the service; it is gone
  * once the frame has loaded, so nothing covers the player. A frame that has not loaded after a
  * while offers the service's page. One press on our Play starts it: by its `src` or by its start
- * message (Spotify, TIDAL). A service that cannot start that way (Mixcloud) says a press inside its
+ * message (Spotify, TIDAL). A service that cannot start that way (Mixcloud, Deezer) says a press inside its
  * player is needed; the card never claims playback.
  */
 export function ResourcePlayerFrame({ target, title, load, onLoaded, className }: ResourcePlayerFrameProps) {

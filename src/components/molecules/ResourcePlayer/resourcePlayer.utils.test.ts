@@ -70,6 +70,34 @@ describe('getPlayerTarget', () => {
     );
   });
 
+  it('plays an artist’s links: YouTube channel uploads, SoundCloud profile, Deezer top tracks', () => {
+    expect(getPlayerTarget('https://www.youtube.com/channel/UCZpHk06_nhe7C6n0tD1mt_w')).toMatchObject({
+      provider: PlayerProvider.YOUTUBE,
+      link: 'https://www.youtube.com/channel/UCZpHk06_nhe7C6n0tD1mt_w',
+      src: 'https://www.youtube-nocookie.com/embed/videoseries?list=UUZpHk06_nhe7C6n0tD1mt_w&enablejsapi=1&autoplay=1&rel=0',
+    });
+    expect(getPlayerTarget('https://soundcloud.com/sefadj')).toMatchObject({
+      provider: PlayerProvider.SOUNDCLOUD,
+      link: 'https://soundcloud.com/sefadj',
+      layout: { kind: 'audio', height: 450 },
+    });
+    expect(getPlayerTarget('https://www.youtube.com/channel/UCZpHk06_nhe7C6n0tD1mt_w/videos')?.link).toBe(
+      'https://www.youtube.com/channel/UCZpHk06_nhe7C6n0tD1mt_w',
+    );
+    expect(getPlayerTarget('https://soundcloud.com/discover')).toBeNull();
+    expect(getPlayerTarget('https://soundcloud.com/settings')).toBeNull();
+    expect(getPlayerTarget('https://soundcloud.com/sefadj/tracks')).toBeNull();
+    expect(getPlayerTarget('https://www.deezer.com/artist/13142371')).toMatchObject({
+      provider: PlayerProvider.DEEZER,
+      name: 'Deezer',
+      src: 'https://widget.deezer.com/widget/dark/artist/13142371/top_tracks',
+      autoplay: false,
+    });
+    expect(getPlayerTarget('https://www.deezer.com/en/album/320429237')?.src).toBe(
+      'https://widget.deezer.com/widget/dark/album/320429237',
+    );
+  });
+
   it('plays a plain https audio file in the browser player', () => {
     expect(getPlayerTarget('https://example.com/files/episode.mp3')).toMatchObject({ element: 'audio' });
   });
@@ -81,9 +109,10 @@ describe('getPlayerTarget', () => {
     'https://www.youtube.com:8443/watch?v=dQw4w9WgXcQ',
     'https://soundcloud.com/discover/sets/x',
     'https://soundcloud.com/forss/likes',
-    'https://www.deezer.com/album/320429237',
+    'https://www.deezer.com/episode/320429237',
+    'https://tidal.com/artist/7429906',
     'https://music.apple.com/song/1440717826',
-    'https://www.youtube.com/channel/UCVMF2HD4ZgC0QHpU9Yq5Xrw',
+    'https://www.youtube.com/@Sefaofficial',
     'javascript:alert(1)',
   ])('offers no player for %s', (link) => {
     expect(getPlayerTarget(link)).toBeNull();
@@ -101,12 +130,23 @@ describe('getPlayerTargets', () => {
         { uri: 'https://www.youtube.com/watch?v=4D7u5KF7SP8', site: 'YouTube', derived: true },
       ] as TPinakesAlsoOn[]),
     );
+    // Deezer needs a press inside its player: after the services that start on ours.
     expect(targets.map((target) => target.provider)).toEqual([
       PlayerProvider.SPOTIFY,
       PlayerProvider.TIDAL,
       PlayerProvider.YOUTUBE,
+      PlayerProvider.DEEZER,
     ]);
     expect(targets[2].link).toBe('https://www.youtube.com/watch?v=5NV6Rdv1a3I');
+  });
+
+  it('keeps a card’s own Deezer link first', () => {
+    const targets = getPlayerTargets(
+      card('https://www.deezer.com/album/320429237', [
+        { uri: 'https://open.spotify.com/album/4LH4d3cOWNNsVw41Gqt2kv', site: 'Spotify' },
+      ] as TPinakesAlsoOn[]),
+    );
+    expect(targets.map((target) => target.provider)).toEqual([PlayerProvider.DEEZER, PlayerProvider.SPOTIFY]);
   });
 
   it('skips the own link of a card that is gone upstream', () => {
@@ -121,6 +161,6 @@ describe('getPlayerTargets', () => {
   });
 
   it('offers nothing for a card on services we do not embed', () => {
-    expect(getPlayerTargets(card('https://www.deezer.com/album/320429237'))).toEqual([]);
+    expect(getPlayerTargets(card('https://music.apple.com/song/1440717826'))).toEqual([]);
   });
 });
