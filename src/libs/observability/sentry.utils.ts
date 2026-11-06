@@ -165,12 +165,15 @@ const APP_ERROR_DROP_RULES: AppErrorDropRule[] = [
   {
     name: 'nexus-resource-tags-transport',
     reason:
-      'The tag bar of an external resource card reads its tags from Nexus by the link (GET /v0/resource/by-uri); ' +
-      'on a failure the bar shows no tags and its add button. safeFetch builds connection and timeout errors with the ' +
-      "full request in context.url, whose query carries the link from someone's post and the viewer, one event per " +
-      'distinct link on every feed view, and they come mostly from the viewer (offline, a stalled connection). Nexus ' +
-      'outages stay visible through every other Nexus operation; HTTP errors of this one (4xx other than 404, 5xx, ' +
-      'malformed bodies), whose context names the endpoint without the query, remain reportable.',
+      'The tag bar of an external resource card reads its tags from Nexus by the link: one POST ' +
+      '/v0/stream/resources/by_ids for the links on screen, or GET /v0/resource/by-uri per link where the Nexus ' +
+      'has no by_ids or a batch view is cut off; on a failure the bar shows no tags and its add button. safeFetch ' +
+      'builds connection and timeout errors with the full request in context.url, whose by-uri query carries ' +
+      "the link from someone's post and the viewer, one event per batch or link on every feed view, and they come " +
+      'mostly from the viewer (offline, a stalled connection). Nexus outages stay visible through every other Nexus ' +
+      'operation; HTTP errors of this one (5xx, malformed bodies, by-uri 4xx other than 404), whose context names ' +
+      "the endpoint without the query, remain reportable; by_ids' 400/404/405/422 are not errors, the links are " +
+      'read by by-uri.',
     matches: (error) =>
       error.service === ErrorService.Nexus &&
       error.operation === NEXUS_RESOURCE_TAGS_OPERATION &&
