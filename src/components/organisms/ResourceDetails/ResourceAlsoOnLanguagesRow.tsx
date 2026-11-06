@@ -1,5 +1,6 @@
 'use client';
 
+import { getResourceRoute } from '@/app/routes';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import {
   getAlsoOnEditionNote,
@@ -7,7 +8,6 @@ import {
   getLanguageTag,
   type TAlsoOnEdition,
 } from '@/molecules/ResourceCard/ResourceAlsoOn.utils';
-import { getHttpUrl } from '@/molecules/ResourceCard/ResourceCard.utils';
 import { ResourceListRow } from '@/molecules/ResourceCard/ResourceListRow';
 import { useAlsoOnEdition } from '@/molecules/ResourceCard/useAlsoOnEdition';
 import { getAlsoOnSource } from './ResourceAlsoOnList.utils';
@@ -22,7 +22,7 @@ interface ResourceAlsoOnLanguagesRowProps {
 
 /**
  * One service in several languages on the resource page: a row (`Wikipedia`, the language in its
- * note) linking to the edition in the viewer's language (else English, else the first), and beside
+ * note) opening the Pubky page of the edition in the viewer's language (else English, else the first), and beside
  * it a compact select (the app's `Select`) of the languages, each named in its own language
  * (`Deutsch (de)`). Choosing one changes where the row links; it does not open anything. The
  * select's name says what it switches and what is chosen ("Wikipedia language: Deutsch (de)").
@@ -33,8 +33,8 @@ export function ResourceAlsoOnLanguagesRow({ name, editions, testId }: ResourceA
   return (
     <ResourceListRow
       uri={edition.entry.uri}
-      // `groupAlsoOn` groups web links only: `getHttpUrl` keeps any other URI from becoming a link.
-      href={getHttpUrl(edition.entry.uri)}
+      // The chosen edition's page on Pubky, as every Also on row opens.
+      href={getResourceRoute(edition.entry.uri)}
       name={name}
       note={getAlsoOnEditionNote(edition, { withSource: false })}
       source={getAlsoOnSource(edition.entry)}

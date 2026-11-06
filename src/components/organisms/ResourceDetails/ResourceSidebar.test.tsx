@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getResourceRoute } from '@/app/routes';
@@ -21,6 +21,12 @@ vi.mock('@/hooks/usePinakesRelated/usePinakesRelated', () => ({ usePinakesRelate
 vi.mock('./ResourceSimilarBecause', () => ({
   ResourceSimilarBecause: ({ tagUri }: { tagUri: string }) => <span data-testid="because">{tagUri}</span>,
 }));
+vi.mock('./ResourceParticipants', () => ({
+  ResourceParticipants: ({ uri, replyIds }: { uri: string; replyIds: string[] }) => (
+    <div data-testid="participants-stub" data-uri={uri} data-replies={replyIds.join(' ')} />
+  ),
+}));
+vi.mock('@/organisms/FeedbackCard/FeedbackCard', () => ({ FeedbackCard: () => <div data-testid="feedback-stub" /> }));
 
 const VIDEO: TPinakesResourceDetail = videoFixture;
 const GROUP: TPinakesGroupDetail = groupFixture;
@@ -50,8 +56,31 @@ describe('ResourceSidebar', () => {
     expect(mockRelated).not.toHaveBeenCalled();
   });
 
+  describe('people sections, as on a post’s page', () => {
+    it('shows Participants and Feedback under Also on and Similar, Feedback only when asked', () => {
+      const { rerender } = render(<ResourceSidebar card={card} uri={VIDEO.uri} replyIds={['a:1']} showFeedback />);
+
+      const sidebar = screen.getByTestId('resource-sidebar');
+      const order = [...sidebar.children].map((child) => child.getAttribute('data-testid'));
+      expect(order.slice(-2)).toEqual(['participants-stub', 'feedback-stub']);
+      expect(screen.getByTestId('participants-stub')).toHaveAttribute('data-uri', VIDEO.uri);
+      expect(screen.getByTestId('participants-stub')).toHaveAttribute('data-replies', 'a:1');
+
+      rerender(<ResourceSidebar card={card} uri={VIDEO.uri} />);
+      expect(screen.queryByTestId('feedback-stub')).not.toBeInTheDocument();
+    });
+
+    it('shows Participants without a card', () => {
+      render(<ResourceSidebar card={null} uri="https://example.com/a" showFeedback />);
+
+      expect(screen.getByTestId('participants-stub')).toHaveAttribute('data-uri', 'https://example.com/a');
+      expect(screen.getByTestId('feedback-stub')).toBeInTheDocument();
+      expect(mockRelated).not.toHaveBeenCalled();
+    });
+  });
+
   describe('with a card', () => {
-    it('lists one row per other service, each opening it, where the link came from in its tooltip only', () => {
+    it('lists one row per other service, each opening its page on Pubky, where the link came from in its tooltip only', () => {
       render(<ResourceSidebar card={card} />);
 
       const section = screen.getByTestId('resource-also-on-list');
@@ -61,11 +90,32 @@ describe('ResourceSidebar', () => {
       expect(rows.map((row) => row.textContent)).toEqual(['TIDAL', 'Apple Music', 'Deezer', 'Spotify']);
       const tidal = within(rows[0]).getByRole('link');
       expect(tidal).toHaveAccessibleName('TIDAL');
-      expect(tidal).toHaveAttribute('href', VIDEO.also_on[0].uri);
-      expect(tidal).toHaveAttribute('target', '_blank');
-      expect(tidal).toHaveAttribute('rel', 'noopener noreferrer');
+      // Its page on Pubky, not the service: leaving for TIDAL happens there.
+      expect(tidal).toHaveAttribute('href', getResourceRoute(VIDEO.also_on[0].uri));
+      expect(tidal).not.toHaveAttribute('target');
       expect(tidal).toHaveAttribute('title', `TIDAL · ${SHARED_ON_PUBKY_NOTE}`);
       expect(section.textContent).not.toMatch(/found via|shared on pubky/i);
+    });
+
+    it('shows the first five services and the rest behind "Show N more" in the card’s footer', () => {
+      const many = Array.from({ length: 8 }, (_, index) => ({
+        uri: `https://service${index}.example/track/1`,
+        site: `Service ${index}`,
+      }));
+      card = { ...VIDEO, group: null, also_on: many };
+      render(<ResourceSidebar card={card} />);
+
+      const section = screen.getByTestId('resource-also-on-list');
+      expect(within(section).getByRole('heading', { level: 2 })).toHaveTextContent('Also on · 8');
+      expect(within(section).getAllByTestId('resource-also-on-list-row')).toHaveLength(5);
+      const toggle = within(section).getByTestId('resource-also-on-list-toggle');
+      expect(toggle).toHaveTextContent('Show 3 more');
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(toggle).toHaveAttribute('aria-controls', within(section).getByRole('list').id);
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(within(section).getAllByTestId('resource-also-on-list-row')).toHaveLength(8);
+      expect(within(section).getByTestId('resource-also-on-list-toggle')).toHaveTextContent('Show less');
     });
 
     it('has no group members list: Also on, then Similar', () => {
@@ -79,17 +129,17 @@ describe('ResourceSidebar', () => {
       expect(sidebar).not.toHaveTextContent('Group members');
     });
 
-    it('lists a shared link that is not a web link by its identifier, as text', () => {
+    it('lists a shared link that is not a web link by its identifier, opening its page', () => {
       card = natureFixture;
       render(<ResourceSidebar card={card} />);
 
       const doi = screen.getAllByTestId('resource-also-on-list-row')[0];
       expect(natureFixture.also_on[0].uri).toBe('doi:10.1038/nature12373');
       expect(doi).toHaveTextContent('DOI 10.1038/nature12373');
-      expect(within(doi).queryByRole('link')).not.toBeInTheDocument();
+      expect(within(doi).getByRole('link')).toHaveAttribute('href', getResourceRoute('doi:10.1038/nature12373'));
     });
 
-    it('lists a found link that is not a web link as text', () => {
+    it('lists a found link that is not a web link, opening its page', () => {
       card = {
         ...natureFixture,
         also_on: [{ uri: 'doi:10.1038/nature12373', site: 'DOI', derived: true, via: 'crossref' }],
@@ -98,7 +148,7 @@ describe('ResourceSidebar', () => {
 
       const doi = screen.getByTestId('resource-also-on-list-row');
       expect(doi).toHaveTextContent('10.1038/nature12373');
-      expect(within(doi).queryByRole('link')).not.toBeInTheDocument();
+      expect(within(doi).getByRole('link')).toHaveAttribute('href', getResourceRoute('doi:10.1038/nature12373'));
     });
 
     it('shows no Also on section for a resource on no other service', () => {
@@ -145,8 +195,8 @@ describe('ResourceSidebar', () => {
         expect(rows).toHaveLength(6);
         expect(wikipedia()).toHaveAccessibleName('Wikipedia English (en)');
         expect(wikipedia()).toHaveAttribute('title', 'Wikipedia · English (en) · Found via wikidata');
-        expect(wikipedia()).toHaveAttribute('href', 'https://en.wikipedia.org/wiki/Berlin');
-        expect(wikipedia()).toHaveAttribute('target', '_blank');
+        expect(wikipedia()).toHaveAttribute('href', getResourceRoute('https://en.wikipedia.org/wiki/Berlin'));
+        expect(wikipedia()).not.toHaveAttribute('target');
         // The select is the link's sibling in the list item, never inside it.
         expect(languages()).toHaveAccessibleName('Wikipedia language: English (en)');
         expect(languages()).toHaveTextContent('English (en)');
@@ -171,7 +221,7 @@ describe('ResourceSidebar', () => {
         await user.click(screen.getByRole('option', { name: 'Français (fr)' }));
 
         expect(languages()).toHaveAccessibleName('Wikipedia language: Français (fr)');
-        expect(wikipedia()).toHaveAttribute('href', 'https://fr.wikipedia.org/wiki/Berlin');
+        expect(wikipedia()).toHaveAttribute('href', getResourceRoute('https://fr.wikipedia.org/wiki/Berlin'));
         expect(wikipedia()).toHaveAccessibleName('Wikipedia Français (fr)');
         expect(window.location.href).toBe(location);
       });
@@ -183,7 +233,7 @@ describe('ResourceSidebar', () => {
           render(<ResourceSidebar card={card} />);
 
           expect(languages()).toHaveAccessibleName('Wikipedia language: Deutsch (de)');
-          expect(wikipedia()).toHaveAttribute('href', 'https://de.wikipedia.org/wiki/Berlin');
+          expect(wikipedia()).toHaveAttribute('href', getResourceRoute('https://de.wikipedia.org/wiki/Berlin'));
         } finally {
           spy.mockRestore();
         }
@@ -199,7 +249,7 @@ describe('ResourceSidebar', () => {
         expect(languages('Wikivoyage')).toHaveAccessibleName('Wikivoyage language: Deutsch (de)');
         expect(within(section()).getByRole('link', { name: 'Wikipedia (de)' })).toHaveAttribute(
           'href',
-          wikipediaDe.uri,
+          getResourceRoute(wikipediaDe.uri),
         );
       });
     });
@@ -214,13 +264,13 @@ describe('ResourceSidebar', () => {
       const section = screen.getByTestId('resource-also-on-list');
       const links = within(section).getAllByRole('link');
       expect(links.map((link) => link.textContent)).toEqual(['Spotify', 'TIDAL', 'Apple Music', 'Deezer']);
-      expect(links[0]).toHaveAttribute('href', derived.uri);
-      expect(links[1]).toHaveAttribute('href', 'https://tidal.com/track/490851477');
+      expect(links[0]).toHaveAttribute('href', getResourceRoute(derived.uri));
+      expect(links[1]).toHaveAttribute('href', getResourceRoute('https://tidal.com/track/490851477'));
       // A member is named by its service, as Also on names it, not by its title.
       expect(section).not.toHaveTextContent('(Official Video)');
     });
 
-    it('names a member Pinakes gives no service by its link’s host, and links it out', () => {
+    it('names a member Pinakes gives no service by its link’s host, and opens its page', () => {
       const derived = VIDEO.also_on[VIDEO.also_on.length - 1];
       card = { ...VIDEO, also_on: [derived] };
       const member = { ...GROUP.members[1], uri: 'https://www.example.org/track/1', refs: [], site: null };
@@ -229,7 +279,7 @@ describe('ResourceSidebar', () => {
 
       const last = within(screen.getAllByTestId('resource-also-on-list-row')[1]).getByRole('link');
       expect(last).toHaveAccessibleName('example.org');
-      expect(last).toHaveAttribute('href', member.uri);
+      expect(last).toHaveAttribute('href', getResourceRoute(member.uri));
     });
 
     it.each([
