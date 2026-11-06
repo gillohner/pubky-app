@@ -303,7 +303,11 @@ export class LocalPostService {
   static async create({ compositePostId, post }: TLocalSavePostParams) {
     const { content, kind, parent, attachments, embed, lock } = post.object;
 
-    const parentUri = parent ?? undefined;
+    // `replied` names a parent post, as Nexus serves it. A post whose `parent` is an external
+    // resource (a web link, `isbn:`, ...) is a root post here: no post's reply count to bump, no
+    // thread to join.
+    const parentUri =
+      parent && buildCompositeIdFromPubkyUri({ uri: parent, domain: CompositeIdDomain.POSTS }) ? parent : undefined;
     const repostedUri = embed ?? null;
     const normalizedKind = toLocalPostKind(kind);
 
@@ -545,7 +549,13 @@ export class LocalPostService {
             return;
           }
           const postRelationships = await PostRelationshipsModel.findById(compositePostId);
-          const parentUri = postRelationships?.replied ?? undefined;
+          // As on create: only a parent post is a thread to leave; an external resource parent
+          // (should a refresh ever store one in `replied`) leaves no count or stream behind.
+          const replied = postRelationships?.replied ?? undefined;
+          const parentUri =
+            replied && buildCompositeIdFromPubkyUri({ uri: replied, domain: CompositeIdDomain.POSTS })
+              ? replied
+              : undefined;
           const repostedUri = postRelationships?.reposted ?? undefined;
           const kind = postDetails?.kind ?? 'short';
 

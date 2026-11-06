@@ -355,6 +355,48 @@ describe('PostController', () => {
       });
     });
 
+    it('writes an external resource as the parent of a root post', async () => {
+      const { PostController } = await import('./post');
+
+      await PostController.commitCreate({
+        content: 'About this page',
+        authorId: testData.authorPubky,
+        parentUri: 'https://example.com/page',
+      });
+
+      expect(lastPutPost().parent).toBe('https://example.com/page');
+      const saved = (await PostDetailsModel.table.toArray()).find((p) => p.content === 'About this page');
+      expect(saved).toBeTruthy();
+      const relationships = await PostRelationshipsModel.table.get(saved!.id);
+      expect(relationships?.replied).toBeNull();
+    });
+
+    it('refuses an external parent with a scheme the app does not write', async () => {
+      const { PostController } = await import('./post');
+
+      await expect(
+        PostController.commitCreate({
+          content: 'Nope',
+          authorId: testData.authorPubky,
+          parentUri: 'javascript:alert(1)',
+        }),
+      ).rejects.toThrow('External resource parent has an unsupported scheme');
+      expect(HomeserverService.putBlob).not.toHaveBeenCalled();
+    });
+
+    it('refuses a post parent and an external parent together', async () => {
+      await setupExistingPost();
+      const { PostController } = await import('./post');
+
+      await expect(
+        PostController.commitCreate({
+          ...createPostParams('Both', testData.fullPostId),
+          parentUri: 'https://example.com/page',
+        }),
+      ).rejects.toThrow('A post replies to either a post or an external resource');
+      expect(HomeserverService.putBlob).not.toHaveBeenCalled();
+    });
+
     it('should infer image kind when attachments contain image files', async () => {
       const { PostController } = await import('./post');
       const imageFile = new File(['image-content'], 'photo.png', { type: 'image/png' });
@@ -1528,6 +1570,56 @@ describe('PostController', () => {
             shouldAdd: true,
           }),
         ).rejects.toThrow('Current user is not the author of this post');
+        expect(commitEditSpy).not.toHaveBeenCalled();
+      } finally {
+        cleanupAuthUser();
+      }
+    });
+
+    it('adds an external resource by its link to a collection, and removes it again', async () => {
+      setupAuthUser(testData.authorPubky);
+      const link = 'https://www.openstreetmap.org/node/240109189';
+      const getDetailsSpy = vi
+        .spyOn(PostApplication, 'getDetails')
+        .mockResolvedValueOnce(createCollectionDetails([targetPostUri]))
+        .mockResolvedValueOnce(createCollectionDetails([link, targetPostUri]));
+      const commitEditSpy = vi.spyOn(PostApplication, 'commitEdit').mockResolvedValue(undefined);
+
+      try {
+        const { PostController } = await import('./post');
+        await PostController.commitUpdateCollectionResource({
+          collectionId: collectionPostId,
+          uri: link,
+          shouldAdd: true,
+        });
+        await PostController.commitUpdateCollectionResource({
+          collectionId: collectionPostId,
+          uri: link,
+          shouldAdd: false,
+        });
+
+        expect(getDetailsSpy).toHaveBeenCalledWith({ compositeId: collectionPostId });
+        expect(commitEditSpy).toHaveBeenNthCalledWith(1, expectedEdit([link, targetPostUri]));
+        expect(commitEditSpy).toHaveBeenNthCalledWith(2, expectedEdit([targetPostUri]));
+      } finally {
+        cleanupAuthUser();
+      }
+    });
+
+    it('writes nothing when the collection already holds the link', async () => {
+      setupAuthUser(testData.authorPubky);
+      const link = 'https://www.openstreetmap.org/node/240109189';
+      vi.spyOn(PostApplication, 'getDetails').mockResolvedValue(createCollectionDetails([link]));
+      const commitEditSpy = vi.spyOn(PostApplication, 'commitEdit').mockResolvedValue(undefined);
+
+      try {
+        const { PostController } = await import('./post');
+        await PostController.commitUpdateCollectionResource({
+          collectionId: collectionPostId,
+          uri: link,
+          shouldAdd: true,
+        });
+
         expect(commitEditSpy).not.toHaveBeenCalled();
       } finally {
         cleanupAuthUser();

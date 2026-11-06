@@ -312,6 +312,34 @@ describe('LocalPostService', () => {
       expect(details?.localUpdatedAt).toBe(ttl?.lastUpdatedAt);
     });
 
+    it('keeps a post replying to an external resource a root post', async () => {
+      await setupUserCounts(testData.authorPubky);
+      const userCountsSpy = vi.spyOn(UserCountsModel, 'updateCounts');
+      const updateCountsSpy = vi.spyOn(PostCountsModel, 'update');
+
+      const baseParams = createSaveParams('About this book', testData.fullPostId1);
+      const saveParams: TLocalSavePostParams = {
+        ...baseParams,
+        post: builtPost(
+          { content: baseParams.post.object.content, parent: 'https://example.com/book' },
+          baseParams.compositePostId,
+        ),
+      };
+
+      await LocalPostService.create(saveParams);
+
+      const relationships = await PostRelationshipsModel.findById(testData.fullPostId1);
+      expect(relationships?.replied).toBeNull();
+      expect(updateCountsSpy).not.toHaveBeenCalled();
+      expect(userCountsSpy).toHaveBeenCalledWith({
+        userId: testData.authorPubky,
+        countChanges: { posts: 1, replies: 0, collections: 0 },
+      });
+
+      userCountsSpy.mockRestore();
+      updateCountsSpy.mockRestore();
+    });
+
     it('should handle reply creation when parent post does not exist', async () => {
       const parentUri = `pubky://nonexistent/pub/pubky.app/posts/missing123`;
 
@@ -589,6 +617,47 @@ describe('LocalPostService', () => {
       });
 
       userCountsSpy.mockRestore();
+    });
+
+    it('deletes a post replying to an external resource as a root post', async () => {
+      await setupUserCounts(testData.authorPubky);
+      const baseParams = createSaveParams('About this book', testData.fullPostId1);
+      await LocalPostService.create({
+        ...baseParams,
+        post: builtPost(
+          { content: baseParams.post.object.content, parent: 'isbn:9780131103627' },
+          baseParams.compositePostId,
+        ),
+      });
+      const userCountsSpy = vi.spyOn(UserCountsModel, 'updateCounts');
+      const updateCountsSpy = vi.spyOn(PostCountsModel, 'update');
+
+      await LocalPostService.delete({ compositePostId: testData.fullPostId1 });
+
+      expect(userCountsSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ countChanges: expect.objectContaining({ posts: -1, replies: 0 }) }),
+      );
+      expect(updateCountsSpy).not.toHaveBeenCalled();
+
+      userCountsSpy.mockRestore();
+      updateCountsSpy.mockRestore();
+    });
+
+    it('treats an external resource stored as `replied` as no parent post on delete', async () => {
+      await setupUserCounts(testData.authorPubky);
+      await setupExistingPost(testData.fullPostId1, 'About this page', 'https://example.com/page');
+      const userCountsSpy = vi.spyOn(UserCountsModel, 'updateCounts');
+      const updateCountsSpy = vi.spyOn(PostCountsModel, 'update');
+
+      await LocalPostService.delete({ compositePostId: testData.fullPostId1 });
+
+      expect(userCountsSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ countChanges: expect.objectContaining({ posts: -1, replies: 0 }) }),
+      );
+      expect(updateCountsSpy).not.toHaveBeenCalled();
+
+      userCountsSpy.mockRestore();
+      updateCountsSpy.mockRestore();
     });
 
     it('should handle delete when parent/original post no longer exists', async () => {
