@@ -1,0 +1,172 @@
+[
+  {
+    "file": "off-sign-in-1440.png",
+    "flag": false,
+    "viewportWidth": 1440,
+    "route": "/sign-in",
+    "button": [
+      {
+        "text": "Continue with Google",
+        "aria": null,
+        "width": 259.15625,
+        "height": 60
+      }
+    ]
+  },
+  {
+    "file": "off-sign-in-390.png",
+    "flag": false,
+    "viewportWidth": 390,
+    "route": "/sign-in",
+    "button": [
+      {
+        "text": "Continue with Google",
+        "aria": null,
+        "width": 358,
+        "height": 60
+      }
+    ]
+  },
+  {
+    "file": "on-sign-in-1440.png",
+    "flag": true,
+    "viewportWidth": 1440,
+    "route": "/sign-in",
+    "button": [
+      {
+        "text": "Continue with",
+        "aria": "Continue with Google or Apple",
+        "width": 252,
+        "height": 60,
+        "icons": 2
+      }
+    ]
+  },
+  {
+    "file": "on-sign-in-390.png",
+    "flag": true,
+    "viewportWidth": 390,
+    "route": "/sign-in",
+    "button": [
+      {
+        "text": "Continue with",
+        "aria": "Continue with Google or Apple",
+        "width": 358,
+        "height": 60,
+        "icons": 2
+      }
+    ]
+  },
+  {
+    "file": "off-hero-1440.png",
+    "flag": false,
+    "viewportWidth": 1440,
+    "route": "/",
+    "button": [
+      {
+        "text": "Continue with Google",
+        "aria": null,
+        "width": 259.15625,
+        "height": 60,
+        "icons": 1
+      }
+    ]
+  },
+  {
+    "file": "off-hero-390.png",
+    "flag": false,
+    "viewportWidth": 390,
+    "route": "/",
+    "button": [
+      {
+        "text": "Continue with Google",
+        "aria": null,
+        "width": 358,
+        "height": 60,
+        "icons": 1
+      }
+    ]
+  },
+  {
+    "file": "on-hero-1440.png",
+    "flag": true,
+    "viewportWidth": 1440,
+    "route": "/",
+    "button": [
+      {
+        "text": "Continue with",
+        "aria": "Continue with Google or Apple",
+        "width": 226.265625,
+        "height": 60,
+        "icons": 2
+      }
+    ]
+  },
+  {
+    "file": "on-hero-390.png",
+    "flag": true,
+    "viewportWidth": 390,
+    "route": "/",
+    "button": [
+      {
+        "text": "Continue with",
+        "aria": "Continue with Google or Apple",
+        "width": 358,
+        "height": 60,
+        "icons": 2
+      }
+    ]
+  },
+  {
+    "file": "off-banner-1440.png",
+    "flag": false,
+    "viewportWidth": 1440,
+    "route": "/profile/nto4u7kkagk5hfjk4wgueemzy61nssic811hid1ty9u81uatmqzy",
+    "button": {
+      "text": "Continue with Google",
+      "aria": "Continue with Google",
+      "width": 193.15625,
+      "height": 40,
+      "icons": 1
+    }
+  },
+  {
+    "file": "on-banner-1440.png",
+    "flag": true,
+    "viewportWidth": 1440,
+    "route": "/profile/nto4u7kkagk5hfjk4wgueemzy61nssic811hid1ty9u81uatmqzy",
+    "button": {
+      "text": "Continue with",
+      "aria": "Continue with Google or Apple",
+      "width": 164.265625,
+      "height": 40,
+      "icons": 2
+    }
+  },
+  {
+    "file": "on-banner-390.png",
+    "flag": true,
+    "viewportWidth": 390,
+    "route": "/profile/nto4u7kkagk5hfjk4wgueemzy61nssic811hid1ty9u81uatmqzy",
+    "button": {
+      "text": "",
+      "aria": "Continue with Google or Apple",
+      "width": 64,
+      "height": 40,
+      "icons": 2
+    }
+  },
+  {
+    "file": "off-banner-390.png",
+    "flag": false,
+    "viewportWidth": 390,
+    "route": "/profile/nto4u7kkagk5hfjk4wgueemzy61nssic811hid1ty9u81uatmqzy",
+    "button": {
+      "text": "",
+      "aria": "Continue with Google",
+      "width": 40,
+      "height": 40,
+      "icons": 1
+    }
+  }
+]
