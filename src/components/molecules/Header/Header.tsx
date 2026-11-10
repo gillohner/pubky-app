@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Flame, Home, Library, Settings, UserRoundPlus } from 'lucide-react';
+import { CalendarDays, Flame, Home, Library, Settings, UserRoundPlus } from 'lucide-react';
 import { APP_ROUTES, isCoreExploreRoute, isNavItemActive, SETTINGS_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
@@ -14,6 +14,7 @@ import { getGithubLink, getTelegramLink, getTwitterGetpubkyLink } from '@/config
 import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { Github2, Telegram, XTwitter } from '@/icons';
+import { getEventkyCalendarEnabled } from '@/libs/runtime-config/runtime-config';
 import { handleFeedNavClick } from '@/libs/utils/feedScrollTop';
 import { cn } from '@/libs/utils/utils';
 import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFallback';
@@ -119,6 +120,13 @@ const NAVIGATION_ITEMS: NavigationItemConfig[] = [
     activePrefix: APP_ROUTES.COLLECTIONS,
   },
   {
+    href: APP_ROUTES.CALENDAR,
+    icon: CalendarDays,
+    label: 'Calendar',
+    dataCy: 'header-calendar-btn',
+    activePrefix: APP_ROUTES.CALENDAR,
+  },
+  {
     href: SETTINGS_ROUTES.ACCOUNT,
     icon: Settings,
     label: 'Settings',
@@ -210,23 +218,25 @@ export function HeaderNavigationButtons({
   const counterString = counter > 21 ? '21+' : counter.toString();
   return (
     <Container className={cn('hidden w-auto flex-row items-center justify-start gap-3 lg:flex', className)}>
-      {NAVIGATION_ITEMS.map((item) => {
-        const isCollectionsItem = item.href === APP_ROUTES.COLLECTIONS;
-        return (
-          <NavigationButton
-            key={item.href}
-            href={item.href}
-            onClick={isCollectionsItem ? markCollectionsNavSeen : undefined}
-            icon={item.icon}
-            label={item.label}
-            isActive={isNavItemActive(pathname, item)}
-            dataCy={item.dataCy}
-            isFeedRoute={item.isFeedRoute}
-            showNew={isCollectionsItem && showCollectionsNew}
-            newLabel={'New'}
-          />
-        );
-      })}
+      {NAVIGATION_ITEMS.filter((item) => item.href !== APP_ROUTES.CALENDAR || getEventkyCalendarEnabled()).map(
+        (item) => {
+          const isCollectionsItem = item.href === APP_ROUTES.COLLECTIONS;
+          return (
+            <NavigationButton
+              key={item.href}
+              href={item.href}
+              onClick={isCollectionsItem ? markCollectionsNavSeen : undefined}
+              icon={item.icon}
+              label={item.label}
+              isActive={isNavItemActive(pathname, item)}
+              dataCy={item.dataCy}
+              isFeedRoute={item.isFeedRoute}
+              showNew={isCollectionsItem && showCollectionsNew}
+              newLabel={'New'}
+            />
+          );
+        },
+      )}
 
       <Link data-cy="header-nav-profile-btn" className="relative" href={APP_ROUTES.PROFILE}>
         <AvatarWithFallback
@@ -270,21 +280,23 @@ export function HeaderExploreNavigationButtons({
   return (
     <Container className={cn('hidden min-w-0 flex-1 flex-row items-center justify-end gap-3 lg:flex', className)}>
       {showSearch && <SearchInput />}
-      {NAVIGATION_ITEMS.map((item) => {
-        // Core explore routes navigate freely; Settings requires an account.
-        const requiresAuth = !isCoreExploreRoute(item.href);
-        return (
-          <NavigationButton
-            key={item.href}
-            href={requiresAuth ? undefined : item.href}
-            onClick={requiresAuth ? () => requireAuth(() => router.push(item.href)) : undefined}
-            icon={item.icon}
-            label={item.label}
-            isActive={isNavItemActive(pathname, item)}
-            dataCy={item.dataCy}
-          />
-        );
-      })}
+      {NAVIGATION_ITEMS.filter((item) => item.href !== APP_ROUTES.CALENDAR || getEventkyCalendarEnabled()).map(
+        (item) => {
+          // Core explore routes navigate freely; Settings requires an account.
+          const requiresAuth = !isCoreExploreRoute(item.href);
+          return (
+            <NavigationButton
+              key={item.href}
+              href={requiresAuth ? undefined : item.href}
+              onClick={requiresAuth ? () => requireAuth(() => router.push(item.href)) : undefined}
+              icon={item.icon}
+              label={item.label}
+              isActive={isNavItemActive(pathname, item)}
+              dataCy={item.dataCy}
+            />
+          );
+        },
+      )}
 
       <Button
         variant="secondary"

@@ -15,9 +15,11 @@ import { useElementHeight } from '@/hooks/useElementHeight/useElementHeight';
 import { useEnterSubmit } from '@/hooks/useEnterSubmit/useEnterSubmit';
 import { usePostInput } from '@/hooks/usePostInput/usePostInput';
 import { usePostInputAuthHandlers } from '@/hooks/usePostInputAuthHandlers/usePostInputAuthHandlers';
+import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { getComposerDissolveVariants } from '@/libs/motion/composerMotion';
 import { parseArticleContent } from '@/libs/post/articleContent';
 import { deserializeArticleBody } from '@/libs/post/articleInlineImages';
+import { getEventkyEnabled } from '@/libs/runtime-config/runtime-config';
 import { canSubmitPost, cn, getCharacterCount } from '@/libs/utils/utils';
 import { parseCompositeId } from '@/models/models.utils';
 import { sanitizeCodeBlockLanguages } from '@/molecules/MarkdownEditor/InitializedMDXEditor.utils';
@@ -31,6 +33,7 @@ import {
 import { PostInputAttachments } from '@/molecules/PostInputAttachments/PostInputAttachments';
 import { PostPreviewCard } from '@/molecules/PostPreviewCard/PostPreviewCard';
 import { toast } from '@/molecules/Toaster/toast';
+import { DialogEventkyPost } from '@/organisms/DialogEventkyPost/DialogEventkyPost';
 import { POST_INPUT_HEADER_SIZE_BY_TAGS_LAYOUT } from '@/organisms/PostMain/PostMainLayoutRules';
 import { BODY_TEXT_CLASS_BY_TAGS_LAYOUT } from '@/organisms/PostMain/PostMainTypography';
 import { AvatarWithFallback } from '../AvatarWithFallback/AvatarWithFallback';
@@ -63,6 +66,8 @@ export function PostInput({
   initialAttachments,
   layoutOverride,
 }: PostInputProps) {
+  const [eventkyKind, setEventkyKind] = React.useState<'event' | 'calendar' | null>(null);
+  const { requireAuth } = useRequireAuth();
   const {
     textareaRef,
     markdownEditorRef,
@@ -489,6 +494,10 @@ export function PostInput({
                       onEmojiSelect={handleEmojiSelectWithAuth}
                       onImageClick={handleFileClickWithAuth}
                       onArticleClick={handleArticleClickWithAuth}
+                      onEventClick={getEventkyEnabled() ? () => requireAuth(() => setEventkyKind('event')) : undefined}
+                      onCalendarClick={
+                        getEventkyEnabled() ? () => requireAuth(() => setEventkyKind('calendar')) : undefined
+                      }
                       isPostDisabled={isAuthenticated ? !isValid() : false}
                       submitMode={variant}
                       submitLabel={submitLabel}
@@ -501,6 +510,25 @@ export function PostInput({
           </div>
         </motion.div>
       </Container>
+      {eventkyKind && (
+        <DialogEventkyPost
+          open
+          kind={eventkyKind}
+          initialDescription={content}
+          initialTags={tags}
+          initialFiles={attachments}
+          onOpenChange={(open) => {
+            if (!open) setEventkyKind(null);
+          }}
+          onSuccess={(createdId) => {
+            setContent('');
+            setTags([]);
+            setAttachments([]);
+            onContentChange?.('', [], [], '');
+            onSuccess?.(createdId);
+          }}
+        />
+      )}
     </Container>
   );
 }

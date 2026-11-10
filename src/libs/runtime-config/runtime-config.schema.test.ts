@@ -260,7 +260,13 @@ describe('runtimeEnvInputSchemaWithDefaults', () => {
     const parsed = runtimeEnvInputSchemaWithDefaults.parse({});
 
     // Defaults must come out PARSED, not as strings.
-    expect(parsed).toEqual({ ...NETWORK_RUNTIME_DEFAULTS, ...SENTRY_RUNTIME_DEFAULTS, ...APP_RUNTIME_DEFAULTS });
+    expect(parsed).toEqual({
+      ...NETWORK_RUNTIME_DEFAULTS,
+      ...SENTRY_RUNTIME_DEFAULTS,
+      ...APP_RUNTIME_DEFAULTS,
+      eventkyEnabled: false,
+      eventkyCalendarEnabled: false,
+    });
     expect(Array.isArray(parsed.pkarrRelays)).toBe(true);
     expect(typeof parsed.testnet).toBe('boolean');
     expect(parsed.moderationId).toBe(APP_RUNTIME_DEFAULTS.moderationId);

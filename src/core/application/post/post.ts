@@ -17,9 +17,11 @@ import type {
   TFetchPostTaggersParams,
 } from '@/controllers/post/post.types';
 import { NOT_FOUND_CACHED_STREAM, SKIP_FETCH_NEW_POSTS } from '@/controllers/stream/posts/post.constants';
-import { ClientErrorCode } from '@/libs/error/error.codes';
+import { isAppError } from '@/libs/error/error';
+import { ClientErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { hasHttpStatus } from '@/libs/error/error.utils';
 import { isHomeserverFileUri } from '@/libs/file/homeserverFileUri';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
@@ -33,7 +35,8 @@ import type { PostRelationshipsModelSchema } from '@/models/post/relationships/p
 import type { TagCollectionModelSchema } from '@/models/shared/tag/tag.schema';
 import { buildAuthorCollectionsStreamId } from '@/models/stream/post/postStream.types';
 import { CollectionPostContent } from '@/pipes/post/post.collection';
-import { PostNormalizer } from '@/pipes/post/post.normalizer';
+import { type PubkyPostWire, toPostWire } from '@/pipes/post/post.wire';
+import type { EventkyReplyBatch } from '@/services/eventkyAttendance/eventkyAttendance';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalPostService } from '@/services/local/post/post';
 import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
@@ -43,6 +46,23 @@ import { NexusPostService } from '@/services/nexus/post/post';
 import type { TCompositeId } from '@/services/nexus/post/post.types';
 
 export class PostApplication {
+  static async persistEventkyReplies(
+    batch: EventkyReplyBatch,
+    viewerId: string | null | undefined,
+    expectedSources: Record<string, string>,
+  ) {
+    // Compare with the prepared write, not a local row which may still contain the old value during uploads.
+    const acknowledged = batch.sources
+      .filter((source) => expectedSources[`${source.author}:${source.id}`] === JSON.stringify(toPostWire(source)))
+      .map((source) => `${source.author}:${source.id}`);
+    const protectedIds = new Set(Object.keys(expectedSources).filter((id) => !acknowledged.includes(id)));
+    await PostStreamApplication.persistFetchedPosts(
+      batch.posts.filter((post) => !protectedIds.has(`${post.details.author}:${post.details.id}`)),
+      viewerId,
+    );
+    return { ...batch, acknowledged };
+  }
+
   /**
    * Reads post details from local database and enriches with moderation state
    * @param compositeId - Composite post ID in format "authorId:postId"
@@ -217,17 +237,72 @@ export class PostApplication {
     return await this.getAuthoredCollections({ authorId, viewerId });
   }
 
-  static async commitCreate({ postUrl, compositePostId, post, fileAttachments, tags }: TCreatePostInput) {
+  /** Read the owned source before editing; a cached view may omit legacy envelope fields. */
+  static async getEditSource({ compositeId }: TCompositeId): Promise<PubkyPostWire | null> {
+    const { pubky, id } = parseCompositeId(compositeId);
+    try {
+      const source = await HomeserverService.request<PubkyPostWire>({
+        method: HttpMethod.GET,
+        url: postUriBuilder(pubky, id),
+      });
+      if (!source) return null;
+      if (typeof source.kind !== 'string' || typeof source.content !== 'string') {
+        throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Post source has an invalid envelope', {
+          service: ErrorService.Homeserver,
+          operation: 'getEditSource',
+          context: { compositeId },
+        });
+      }
+      return toPostWire(source);
+    } catch (error) {
+      if (hasHttpStatus(error, 404)) return null;
+      throw error;
+    }
+  }
+
+  private static async putPostSource(
+    url: string,
+    post: PubkyPostWire,
+    previouslyUncertain = false,
+  ): Promise<{ confirmed: true } | { confirmed: false; uncertain: boolean; error: unknown }> {
+    try {
+      await HomeserverService.request({ method: HttpMethod.PUT, url, bodyJson: post });
+      return { confirmed: true };
+    } catch (error) {
+      const uncertain =
+        previouslyUncertain ||
+        !isAppError(error) ||
+        error.category === undefined ||
+        [ErrorCategory.Network, ErrorCategory.Timeout, ErrorCategory.Server].includes(error.category);
+      if (uncertain) {
+        try {
+          const current = await HomeserverService.request<PubkyPostWire>({ method: HttpMethod.GET, url });
+          if (current && JSON.stringify(toPostWire(current)) === JSON.stringify(post)) return { confirmed: true };
+        } catch {
+          // The original PUT remains uncertain; never delete files it may already reference.
+        }
+      }
+      return { confirmed: false, uncertain, error };
+    }
+  }
+
+  static async commitCreate({ postUrl, compositePostId, post, fileAttachments, tags, uploadState }: TCreatePostInput) {
+    const wire = toPostWire(post);
     const hasFiles = fileAttachments != null && fileAttachments.length > 0;
 
-    if (hasFiles) {
+    if (hasFiles && !uploadState?.completed) {
       await FileApplication.commitCreate({ fileAttachments });
+      if (uploadState) uploadState.completed = true;
     }
     await LocalPostService.create({ compositePostId, post });
 
-    try {
-      await HomeserverService.request({ method: HttpMethod.PUT, url: postUrl, bodyJson: post.toJson() });
-    } catch (error) {
+    const write = await this.putPostSource(postUrl, wire, uploadState?.postUncertain);
+    if (!write.confirmed) {
+      if (write.uncertain) {
+        if (uploadState) uploadState.postUncertain = true;
+        throw write.error;
+      }
+      const error = write.error;
       try {
         await LocalPostService.delete({ compositePostId });
       } catch (rollbackError) {
@@ -238,6 +313,7 @@ export class PostApplication {
       }
 
       if (hasFiles) {
+        if (uploadState) uploadState.completed = false;
         try {
           // Known record + blob URLs: also cleans up partial uploads (blob PUT
           // ok, record PUT failed) that a record-based delete cannot reach
@@ -252,10 +328,17 @@ export class PostApplication {
 
       throw error;
     }
+    if (uploadState) uploadState.postUncertain = false;
 
     if (tags && tags.length > 0) {
-      await TagApplication.commitCreate({ tagList: tags });
+      try {
+        await TagApplication.commitCreate({ tagList: tags });
+      } catch {
+        // The post is already published. The caller may retry tags independently.
+        return { tagsFailed: true };
+      }
     }
+    return { tagsFailed: false };
   }
 
   /**
@@ -332,7 +415,43 @@ export class PostApplication {
    * attachments, and kind), so content-only callers are no-op writes for the
    * attachment/kind columns.
    */
-  static async commitEdit({ compositePostId, post, postUrl, fileAttachments, removedUris }: TEditPostInput) {
+  static async commitEdit({
+    compositePostId,
+    post,
+    postUrl,
+    fileAttachments,
+    removedUris,
+    expectedContent,
+    expectedSource,
+    uploadState,
+  }: TEditPostInput) {
+    const wire = toPostWire(post);
+    let alreadyApplied = false;
+    if (
+      expectedSource !== undefined ||
+      expectedContent !== undefined ||
+      uploadState?.completed ||
+      uploadState?.postUncertain
+    ) {
+      const current = await this.getEditSource({ compositeId: compositePostId });
+      alreadyApplied = current !== null && JSON.stringify(current) === JSON.stringify(wire);
+      if (
+        !alreadyApplied &&
+        (!current ||
+          (expectedContent !== undefined && current.content !== expectedContent) ||
+          (expectedSource !== undefined && JSON.stringify(current) !== JSON.stringify(toPostWire(expectedSource))))
+      ) {
+        throw Err.client(
+          ClientErrorCode.CONFLICT,
+          'This post changed since you opened the editor. Review the latest version before saving.',
+          {
+            service: ErrorService.Homeserver,
+            operation: 'commitEdit',
+            context: { compositePostId },
+          },
+        );
+      }
+    }
     const originalPost = await LocalPostService.readDetails({ postId: compositePostId });
 
     const hasNewFiles = fileAttachments != null && fileAttachments.length > 0;
@@ -342,7 +461,8 @@ export class PostApplication {
     // that a record-based delete cannot reach. Best-effort — the triggering
     // error is what gets rethrown.
     const rollbackUploadedFiles = async () => {
-      if (!hasNewFiles) return;
+      if (!hasNewFiles || alreadyApplied || uploadState?.postUncertain) return;
+      if (uploadState) uploadState.completed = false;
       await FileApplication.commitDeleteUploaded(fileAttachments).catch((cleanupError) => {
         Logger.error('[PostApplication.commitEdit] Failed to rollback new file attachments', {
           compositePostId,
@@ -351,9 +471,10 @@ export class PostApplication {
       });
     };
 
-    if (hasNewFiles) {
+    if (hasNewFiles && !uploadState?.completed && !alreadyApplied) {
       try {
         await FileApplication.commitCreate({ fileAttachments });
+        if (uploadState) uploadState.completed = true;
       } catch (error) {
         // Uploads run in parallel and can partially succeed; sweep everything
         // best-effort before rethrowing (nothing else has happened yet).
@@ -365,9 +486,12 @@ export class PostApplication {
     try {
       await LocalPostService.edit({
         compositePostId,
-        content: post.content,
-        attachments: post.attachments ?? null,
-        kind: PostNormalizer.postKindToLowerCase(post.kind),
+        content: wire.content,
+        attachments: wire.attachments ?? null,
+        kind: wire.kind,
+        parent: wire.parent,
+        embed: wire.embed,
+        lock: wire.lock,
       });
     } catch (error) {
       // Local write failed after the uploads — remove them or they orphan
@@ -375,9 +499,15 @@ export class PostApplication {
       throw error;
     }
 
-    try {
-      await HomeserverService.request({ method: HttpMethod.PUT, url: postUrl, bodyJson: post.toJson() });
-    } catch (error) {
+    const write = alreadyApplied
+      ? { confirmed: true as const }
+      : await this.putPostSource(postUrl, wire, uploadState?.postUncertain);
+    if (!write.confirmed) {
+      if (write.uncertain) {
+        if (uploadState) uploadState.postUncertain = true;
+        throw write.error;
+      }
+      const error = write.error;
       if (originalPost) {
         try {
           await LocalPostService.edit({
@@ -385,6 +515,9 @@ export class PostApplication {
             content: originalPost.content,
             attachments: originalPost.attachments,
             kind: originalPost.kind,
+            parent: originalPost.parent,
+            embed: originalPost.embed,
+            lock: originalPost.lock,
           });
         } catch (rollbackError) {
           Logger.error('[PostApplication.commitEdit] Failed to rollback local post edit', {
@@ -398,13 +531,14 @@ export class PostApplication {
 
       throw error;
     }
+    if (uploadState) uploadState.postUncertain = false;
 
     // A kind change strands the post in the old kind's filtered streams —
     // permanently, since stream persistence only merges and never evicts.
     // Remove it from every cached old-kind stream after the edit is fully
     // committed (best-effort); runs after the PUT so a failed edit never
     // touches stream membership.
-    const nextKind = PostNormalizer.postKindToLowerCase(post.kind);
+    const nextKind = wire.kind;
     if (originalPost && originalPost.kind !== nextKind) {
       await LocalPostService.removeFromKindStreams({ compositePostId, kind: originalPost.kind }).catch(
         (cleanupError) => {

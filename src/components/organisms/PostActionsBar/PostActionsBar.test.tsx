@@ -2,6 +2,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PostActionsBar } from './PostActionsBar';
 
+vi.mock('@/hooks/useEventkyDiscussion/useEventkyDiscussion', () => ({
+  useEventkyDiscussion: () => ({ complete: true, replyIds: ['real-comment'] }),
+}));
 // Mock hooks
 const mockUsePostCounts = vi.fn();
 const mockUsePostDetails = vi.fn();
@@ -260,4 +263,15 @@ describe('PostActionsBar - Snapshots', () => {
     const { container } = render(<PostActionsBar postId="post-5" />);
     expect(container.firstChild).toMatchSnapshot();
   });
+});
+
+it('uses event comments rather than combined RSVP reply counts', () => {
+  mockUsePostCounts.mockReturnValue({
+    postCounts: { tags: 0, unique_tags: 0, replies: 12, reposts: 0 },
+    isLoading: false,
+  });
+  mockUsePostDetails.mockReturnValue({ postDetails: { kind: 'event' } });
+  render(<PostActionsBar postId="author:event" />);
+  expect(screen.getByRole('button', { name: 'Reply to post (1)' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Reply to post (12)' })).not.toBeInTheDocument();
 });

@@ -1,4 +1,5 @@
 import type { Pubky } from '@/models/models.types';
+import { isPostStreamKindSegment, postKindToStreamSegment } from '@/models/stream/post/postStream.kind';
 import { StreamSorting } from '@/services/nexus/nexus.types';
 import { StreamKind, StreamSource } from '@/services/nexus/stream/posts/postStream.types';
 
@@ -103,7 +104,17 @@ export enum PostStreamTypes {
 export type ReplyStreamCompositeId = `${StreamSource.REPLIES}:${string}`;
 export type AuthorStreamCompositeId = `${StreamSource.AUTHOR}:${string}`;
 export type AuthorRepliesStreamCompositeId = `${StreamSource.AUTHOR_REPLIES}:${string}`;
-export type PostStreamKindSegment = 'all' | StreamKind;
+/** A cache-key segment: use postKindToStreamSegment for arbitrary raw kinds. */
+export type PostStreamKindSegment = string;
+type KindFilteredStreamSource =
+  | StreamSource.ALL
+  | StreamSource.FOLLOWING
+  | StreamSource.FOLLOWERS
+  | StreamSource.FRIENDS
+  | StreamSource.WOT
+  | StreamSource.BOOKMARKS;
+export type KindFilteredPostStreamId =
+  `${StreamSorting}:${KindFilteredStreamSource}:${PostStreamKindSegment}${'' | `:${string}`}`;
 export type WotDomainDepth = 0 | 1 | 2;
 export type StreamDependencyScope = 'follow_graph' | 'friends' | 'profile_tag';
 export type WotStreamId =
@@ -143,6 +154,15 @@ const CONTENT_SEARCH_QUERY_MARKER = 'q~' as const;
 // posts"): `content_search:q~<encodedQuery>:<kind>[:<authorPubky>]`. Pubkys contain no ':'.
 export type ContentSearchStreamId =
   `${typeof CONTENT_SEARCH_STREAM_PREFIX}:${typeof CONTENT_SEARCH_QUERY_MARKER}${string}:${PostStreamKindSegment}${'' | `:${string}`}`;
+
+/** Build an exact kind-filtered stream without confusing punctuation or the literal kind `all`. */
+export function buildKindFilteredPostStreamId(
+  kind: string,
+  sorting: StreamSorting = StreamSorting.TIMELINE,
+  source: KindFilteredStreamSource = StreamSource.ALL,
+): KindFilteredPostStreamId {
+  return `${sorting}:${source}:${postKindToStreamSegment(kind)}`;
+}
 
 export function buildPostReplyStreamId(compositePostId: string): ReplyStreamCompositeId {
   return `${StreamSource.REPLIES}:${compositePostId}`;
@@ -286,12 +306,8 @@ export function isViewerExcludedWotStream(streamId: string): boolean {
   return isWotStream(streamId) || isWotDomainStream(streamId);
 }
 
-const POST_STREAM_KIND_SEGMENTS: ReadonlySet<string> = new Set(['all', ...Object.values<string>(StreamKind)]);
-
 function toPostStreamKindSegment(segment: string | undefined): PostStreamKindSegment | undefined {
-  return segment !== undefined && POST_STREAM_KIND_SEGMENTS.has(segment)
-    ? (segment as PostStreamKindSegment)
-    : undefined;
+  return isPostStreamKindSegment(segment) ? segment : undefined;
 }
 
 /**
@@ -409,6 +425,7 @@ export function isDeletedRetainingStream(streamId: string): boolean {
 }
 
 export type PostStreamId =
+  | KindFilteredPostStreamId
   | PostStreamTypes
   | WotStreamId
   | WotDomainStreamCompositeId

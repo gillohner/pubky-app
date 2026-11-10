@@ -1,6 +1,5 @@
 import type { Pubky } from '@/models/models.types';
 import type { StreamSorting, TPaginationParams, TPaginationRangeParams } from '@/services/nexus/nexus.types';
-import type { StreamKind } from '@/services/nexus/stream/posts/postStream.types';
 
 export type TTagParams = TPaginationParams & {
   tag: string;
@@ -17,7 +16,7 @@ export type TPrefixSearchParams = TPaginationParams & {
 
 export type TContentSearchParams = TPaginationParams & {
   q: string;
-  kind?: StreamKind;
+  kind?: string;
   // Scopes the full-text search to one author's posts (profile "Filter posts").
   author?: Pubky;
 };

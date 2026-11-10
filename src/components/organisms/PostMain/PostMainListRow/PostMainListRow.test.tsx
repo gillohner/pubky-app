@@ -8,6 +8,7 @@ import { useRepostInfo } from '@/hooks/useRepostInfo/useRepostInfo';
 import { useUserDetails } from '@/hooks/useUserDetails/useUserDetails';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type { AuthStore } from '@/stores/auth/auth.types';
+import { eventkyEventFixture } from '@/test/fixtures/eventky';
 import { PostMainListRow } from './PostMainListRow';
 
 const { mockAuthStoreSelector } = vi.hoisted(() => ({
@@ -245,6 +246,24 @@ describe('PostMainListRow', () => {
       isLoading: false,
     }));
   };
+
+  it('summarizes native events and hides unknown JSON in compact rows', () => {
+    mockPostDetails(JSON.stringify(eventkyEventFixture), 'event');
+    const props = {
+      postId: 'author:post',
+      showFullContent: false,
+      shouldShowPostHeader: true,
+      onReplyClick: vi.fn(),
+      onRepostClick: vi.fn(),
+    };
+    const { rerender } = render(<PostMainListRow {...props} />);
+    expect(screen.getByText(/Pubky community meetup/)).toBeInTheDocument();
+    expect(screen.queryByText(/schema_version/)).not.toBeInTheDocument();
+    mockPostDetails('{"opaque":"never render this"}', 'vendor:event');
+    rerender(<PostMainListRow {...props} />);
+    expect(screen.getByText('Unsupported post format')).toBeInTheDocument();
+    expect(screen.queryByText(/never render this/)).not.toBeInTheDocument();
+  });
 
   it('uses secondary foreground color for the post content snippet', () => {
     mockPostDetails('Some post content');

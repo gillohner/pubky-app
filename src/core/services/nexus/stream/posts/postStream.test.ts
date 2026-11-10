@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, test, vi } from 'vitest';
 import { AppError } from '@/libs/error/error';
 import type { Pubky } from '@/models/models.types';
-import { buildContentSearchStreamId, type PostStreamId, PostStreamTypes } from '@/models/stream/post/postStream.types';
+import {
+  buildContentSearchStreamId,
+  buildKindFilteredPostStreamId,
+  type PostStreamId,
+  PostStreamTypes,
+} from '@/models/stream/post/postStream.types';
 import { type NexusPost, type NexusPostsKeyStream, StreamSorting } from '@/services/nexus/nexus.types';
 import { queryNexus } from '@/services/nexus/nexus.utils';
 import {
@@ -1526,5 +1531,45 @@ describe('NexusPostStreamService', () => {
       });
       expect(result).toEqual([]);
     });
+  });
+});
+
+describe('Universal kind discovery and hydration', () => {
+  it.each(['event', 'calendar', 'Event', 'vendor:event%📅', 'all'])(
+    'retains exact kind %s through key parsing and API URL encoding',
+    (kind) => {
+      const streamId = buildKindFilteredPostStreamId(kind);
+      const result = createPostStreamParams({ streamId, streamTail: 0, streamHead: 0, viewerId: null, limit: 10 });
+      expect(result.params.kind).toBe(kind);
+      expect(new URL(postStreamApi.all(result.params)).searchParams.get('kind')).toBe(kind);
+    },
+  );
+
+  it('rejects malformed encoded kinds rather than fetching all posts', () => {
+    expect(() =>
+      createPostStreamParams({ streamId: 'timeline:all:k~%', streamTail: 0, streamHead: 0, viewerId: null, limit: 10 }),
+    ).toThrow();
+  });
+
+  it('preserves raw envelopes and canonicalizes only legacy object embeds when hydrating', async () => {
+    const posts = [
+      {
+        details: {
+          id: '1',
+          author: 'a',
+          kind: 'Event',
+          embed: { uri: 'https://example.com', kind: 'link' },
+          lock: 'timestamp',
+        },
+      },
+      { details: { id: '2', author: 'a', kind: 'calendar', embed: null, lock: null } },
+      { details: { id: '3', author: 'a', kind: 'unknown' } },
+    ];
+    mockQueryNexus.mockResolvedValueOnce(posts);
+    const result = await NexusPostStreamService.fetchByIds({ post_ids: ['a:1', 'a:2', 'a:3'] });
+    expect(result[0].details).toMatchObject({ kind: 'Event', embed: 'https://example.com', lock: 'timestamp' });
+    expect(result[1].details).toMatchObject({ embed: null, lock: null });
+    expect(result[2].details).not.toHaveProperty('embed');
+    expect(result[2].details).not.toHaveProperty('lock');
   });
 });

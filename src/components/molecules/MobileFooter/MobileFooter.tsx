@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Flame, Home, Library, Search, Settings, UserRoundPlus } from 'lucide-react';
+import { CalendarDays, Flame, Home, Library, Search, Settings, UserRoundPlus } from 'lucide-react';
 import { APP_ROUTES, isNavItemActive, SETTINGS_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
@@ -13,6 +13,7 @@ import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/u
 import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentUserProfile';
 import { useKeyboardOffset } from '@/hooks/useKeyboardOffset/useKeyboardOffset';
 import { usePublicRoute } from '@/hooks/usePublicRoute/usePublicRoute';
+import { getEventkyCalendarEnabled } from '@/libs/runtime-config/runtime-config';
 import { handleFeedNavClick } from '@/libs/utils/feedScrollTop';
 import { cn } from '@/libs/utils/utils';
 import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFallback';
@@ -80,6 +81,8 @@ export function MobileFooter({ className }: MobileFooterProps) {
       label: 'Settings',
     },
   ];
+  if (getEventkyCalendarEnabled())
+    authenticatedNavItems.splice(4, 0, { href: APP_ROUTES.CALENDAR, icon: CalendarDays, label: 'Calendar' });
   const protectedNavHrefs = new Set<string>([SETTINGS_ROUTES.ACCOUNT]);
   // Hide footer for guests only on non-explore routes. Core explore and dynamic public
   // routes (/home, /post/..., /profile/...) use the public explore footer.
@@ -104,7 +107,10 @@ export function MobileFooter({ className }: MobileFooterProps) {
     >
       <Container
         overrideDefaults
-        className="mx-auto flex max-w-[380px] items-center justify-between sm:max-w-[600px] md:max-w-[720px]"
+        className={cn(
+          'mx-auto flex max-w-[380px] items-center justify-between sm:max-w-[600px] md:max-w-[720px]',
+          getEventkyCalendarEnabled() && 'gap-1',
+        )}
       >
         {authenticatedNavItems.map((item) => {
           const Icon = item.icon;
@@ -130,6 +136,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
               }}
               className={cn(
                 'rounded-full p-3 transition-all',
+                getEventkyCalendarEnabled() && 'p-2',
                 showCollectionsNewTreatment
                   ? 'relative inline-flex border border-brand bg-white/5 text-brand hover:bg-brand/10'
                   : itemIsActive

@@ -232,6 +232,27 @@ describe('useVisualFeedTiles', () => {
     resetVisualTileCaches();
   });
 
+  it.each(['event', 'calendar', 'vendor:event'])(
+    'renders %s as a native card without probing media or exposing content',
+    async (kind) => {
+      mockUseLiveQuery.mockImplementation(useExecutedLiveQuery);
+      mockFindByIdsPreserveOrder.mockResolvedValue([
+        { ...createPostDetails({ id: 'author:custom', attachments: [], content: '{"schema_version":99}' }), kind },
+      ]);
+      const { result } = renderHook(() => useVisualFeedTiles({ postIds: ['author:custom'], hasMore: false }));
+      await waitFor(() => expect(result.current.tiles).toHaveLength(1));
+      expect(result.current.tiles[0]).toMatchObject({
+        postId: 'author:custom',
+        renderAsPost: true,
+        probeState: 'ready',
+        content: '',
+      });
+      expect(result.current.hiddenPostCount).toBe(0);
+      expect(result.current.hasPendingTiles).toBe(false);
+      expect(mockGetMetadata).not.toHaveBeenCalled();
+    },
+  );
+
   it('fetches missing file metadata through FileController', async () => {
     mockUseLiveQuery.mockReturnValue({
       tiles: [],

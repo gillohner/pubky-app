@@ -1,10 +1,29 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { getEventkyEnabled } from '@/libs/runtime-config/runtime-config';
 import { VISUAL_DISABLED_CONTENT } from '@/organisms/Timeline/Feed/TimelineFeed/TimelineFeedVisual.helpers';
 import { CONTENT, type ContentType } from '@/stores/home/home.types';
 import { FilterContent } from './FilterContent';
 
+vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
+  getEventkyEnabled: vi.fn(() => false),
+}));
+
 describe('FilterContent', () => {
+  it('offers exact event/calendar filters only when enabled for this deployment', () => {
+    const onTabChange = vi.fn();
+    vi.mocked(getEventkyEnabled).mockReturnValueOnce(true);
+    const { unmount } = render(<FilterContent onTabChange={onTabChange} />);
+    fireEvent.click(screen.getByText('Events'));
+    fireEvent.click(screen.getByText('Calendars'));
+    expect(onTabChange).toHaveBeenNthCalledWith(1, CONTENT.EVENTS);
+    expect(onTabChange).toHaveBeenNthCalledWith(2, CONTENT.CALENDARS);
+    unmount();
+    render(<FilterContent />);
+    expect(screen.queryByText('Events')).not.toBeInTheDocument();
+    expect(screen.queryByText('Calendars')).not.toBeInTheDocument();
+  });
   it('renders with default selected tab', () => {
     render(<FilterContent />);
 

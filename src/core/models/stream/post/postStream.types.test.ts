@@ -106,7 +106,7 @@ describe('post-stream id builders', () => {
       expect(parseContentSearchStreamId('content_search:bitcoin:all')).toBeNull();
       // Undecodable percent-encoding.
       expect(parseContentSearchStreamId('content_search:q~%:all')).toBeNull();
-      expect(parseContentSearchStreamId('content_search:q~bitcoin:not-a-kind')).toBeNull();
+      expect(parseContentSearchStreamId('content_search:q~bitcoin:bad,kind')).toBeNull();
       // Anything past the author segment is malformed.
       expect(parseContentSearchStreamId(`content_search:q~bitcoin:all:${TEST_PUBKY}:extra`)).toBeNull();
       // A trailing ':' (empty author segment) is malformed, not an unscoped search.
@@ -118,7 +118,7 @@ describe('post-stream id builders', () => {
     it('keeps isContentSearchStream prefix-based so malformed family ids stay skip-paginated', () => {
       expect(isContentSearchStream('content_search:bitcoin:all')).toBe(true);
       expect(isContentSearchStream('content_search:q~%:all')).toBe(true);
-      expect(isContentSearchStream('content_search:q~bitcoin:not-a-kind')).toBe(true);
+      expect(isContentSearchStream('content_search:q~bitcoin:bad,kind')).toBe(true);
       expect(isContentSearchStream(`content_search:q~bitcoin:all:${TEST_PUBKY}:extra`)).toBe(true);
       expect(isContentSearchStream('content_search:q~:all')).toBe(true);
       expect(isContentSearchStream('timeline:all:all')).toBe(false);
@@ -363,8 +363,8 @@ describe('getPostStreamKind', () => {
   });
 
   it('returns undefined for invalid kind segments', () => {
-    expect(getPostStreamKind('timeline:wot_domain:2:not-a-kind:bitcoin')).toBeUndefined();
-    expect(getPostStreamKind('timeline:all:not-a-kind')).toBeUndefined();
+    expect(getPostStreamKind('timeline:wot_domain:2:bad,kind:bitcoin')).toBeUndefined();
+    expect(getPostStreamKind('timeline:all:bad,kind')).toBeUndefined();
   });
 });
 
@@ -376,10 +376,10 @@ describe('getStreamDependencyScopes', () => {
   it.each([
     'recent:following:all',
     'timeline:following',
-    'timeline:following:not-a-kind',
+    'timeline:following:bad,kind',
     'timeline:following:all:tag:extra',
     'timeline:wot_domain:3:all:developer',
-    'timeline:wot_domain:2:not-a-kind:developer',
+    'timeline:wot_domain:2:bad,kind:developer',
     'timeline:wot_domain:2:all:',
     'timeline:wot_domain:2:all:developer:',
     'timeline:wot_domain:0:all:',

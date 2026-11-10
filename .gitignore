@@ -83,3 +83,7 @@ public/sw.js.map
 
 # AI PR Descriptions
 .prs
+
+# Rebuildable Eventky service artifacts and local derived state
+/dist/eventky-projection/
+/services/eventky-projection/data/

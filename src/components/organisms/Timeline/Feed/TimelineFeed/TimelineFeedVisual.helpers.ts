@@ -46,7 +46,13 @@ export const VISUAL_TILE_ASPECT_RATIOS: Record<VisualTileSize, string> = {
 };
 
 export function isVisualContentSupported(content: ContentType): boolean {
-  return content === VISUAL_CONTENT_ALL || content === VISUAL_CONTENT_IMAGES || content === VISUAL_CONTENT_VIDEOS;
+  return (
+    content === VISUAL_CONTENT_ALL ||
+    content === VISUAL_CONTENT_IMAGES ||
+    content === VISUAL_CONTENT_VIDEOS ||
+    content === 'events' ||
+    content === 'calendars'
+  );
 }
 
 export function resolveVisualFeedContent({

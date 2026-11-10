@@ -8,7 +8,7 @@ import { TagApplication } from '@/application/tag/tag';
 import { TagKind, type TCreateTagInput } from '@/application/tag/tag.types';
 import { NEXUS_STREAM_MAX_LIMIT } from '@/config/nexus';
 import type { TFetchPostTaggersParams } from '@/controllers/post/post.types';
-import { DatabaseErrorCode } from '@/libs/error/error.codes';
+import { AuthErrorCode, ClientErrorCode, DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
@@ -184,9 +184,14 @@ describe('Post Application', () => {
     it('should rollback local write and propagate error when homeserver sync fails', async () => {
       const mockData = createMockPostData();
       const { saveSpy, deleteSpy, requestSpy } = setupBasicSpies();
-      requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 500'));
+      requestSpy.mockRejectedValue(
+        Err.client(ClientErrorCode.BAD_REQUEST, 'Failed to PUT to homeserver: 400', {
+          service: ErrorService.Homeserver,
+          operation: 'PUT',
+        }),
+      );
 
-      await expect(PostApplication.commitCreate(mockData)).rejects.toThrow('Failed to PUT to homeserver: 500');
+      await expect(PostApplication.commitCreate(mockData)).rejects.toThrow('Failed to PUT to homeserver: 400');
       expect(saveSpy).toHaveBeenCalledOnce();
       expect(requestSpy).toHaveBeenCalledOnce();
       expect(deleteSpy).toHaveBeenCalledWith({ compositePostId: mockData.compositePostId });
@@ -195,7 +200,12 @@ describe('Post Application', () => {
     it('should propagate original error when rollback also fails', async () => {
       const mockData = createMockPostData();
       const { saveSpy, deleteSpy, requestSpy } = setupBasicSpies();
-      requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 401'));
+      requestSpy.mockRejectedValue(
+        Err.auth(AuthErrorCode.UNAUTHORIZED, 'Failed to PUT to homeserver: 401', {
+          service: ErrorService.Homeserver,
+          operation: 'PUT',
+        }),
+      );
       deleteSpy.mockRejectedValue(new Error('Rollback DB error'));
 
       await expect(PostApplication.commitCreate(mockData)).rejects.toThrow('Failed to PUT to homeserver: 401');
@@ -347,7 +357,7 @@ describe('Post Application', () => {
         });
       });
 
-      it('should propagate tag creation error after post sync', async () => {
+      it('should report partial tag failure after confirmed post sync', async () => {
         const mockTags = [createMockTag('author:post-with-tags-fail', 'science')];
 
         const mockPost = new PubkyAppPost(
@@ -367,7 +377,7 @@ describe('Post Application', () => {
         const { saveSpy, requestSpy, tagCreateSpy } = setupCreateSpies();
         tagCreateSpy.mockRejectedValue(new Error('Tag creation failed: database locked'));
 
-        await expect(PostApplication.commitCreate(mockData)).rejects.toThrow('Tag creation failed: database locked');
+        await expect(PostApplication.commitCreate(mockData)).resolves.toEqual({ tagsFailed: true });
 
         expect(saveSpy).toHaveBeenCalledWith({
           compositePostId: mockData.compositePostId,
@@ -451,11 +461,14 @@ describe('Post Application', () => {
         const { commitCreateSpy, saveSpy, requestSpy, tagCreateSpy } = setupCreateSpies();
         const deleteSpy = vi.spyOn(LocalPostService, 'delete').mockResolvedValue(false);
         const fileDeleteUploadedSpy = vi.spyOn(FileApplication, 'commitDeleteUploaded').mockResolvedValue(undefined);
-        requestSpy.mockRejectedValue(new Error('Homeserver sync failed: 503 Service Unavailable'));
-
-        await expect(PostApplication.commitCreate(mockData)).rejects.toThrow(
-          'Homeserver sync failed: 503 Service Unavailable',
+        requestSpy.mockRejectedValue(
+          Err.client(ClientErrorCode.BAD_REQUEST, 'Homeserver sync failed: 400 Bad Request', {
+            service: ErrorService.Homeserver,
+            operation: 'PUT',
+          }),
         );
+
+        await expect(PostApplication.commitCreate(mockData)).rejects.toThrow('Homeserver sync failed: 400 Bad Request');
 
         expect(commitCreateSpy).toHaveBeenCalledWith({ fileAttachments: mockFileAttachments });
         expect(saveSpy).toHaveBeenCalledWith({
@@ -498,7 +511,12 @@ describe('Post Application', () => {
         const fileDeleteUploadedSpy = vi
           .spyOn(FileApplication, 'commitDeleteUploaded')
           .mockRejectedValue(new Error('File rollback failed'));
-        requestSpy.mockRejectedValue(new Error('Homeserver sync failed: 401'));
+        requestSpy.mockRejectedValue(
+          Err.auth(AuthErrorCode.UNAUTHORIZED, 'Homeserver sync failed: 401', {
+            service: ErrorService.Homeserver,
+            operation: 'PUT',
+          }),
+        );
 
         await expect(PostApplication.commitCreate(mockData)).rejects.toThrow('Homeserver sync failed: 401');
 
@@ -1403,6 +1421,9 @@ describe('Post Application', () => {
       expect(editSpy).toHaveBeenCalledWith({
         compositePostId: mockData.compositePostId,
         content: 'Edited content',
+        parent: null,
+        embed: null,
+        lock: null,
         attachments: null,
         kind: 'short',
       });
@@ -1416,7 +1437,12 @@ describe('Post Application', () => {
     it('should rollback local edit when homeserver sync fails', async () => {
       const mockData = createMockEditInput();
       const { readDetailsSpy, editSpy, requestSpy, fileDeleteSpy, fileDeleteUploadedSpy } = setupEditSpies();
-      requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 401'));
+      requestSpy.mockRejectedValue(
+        Err.auth(AuthErrorCode.UNAUTHORIZED, 'Failed to PUT to homeserver: 401', {
+          service: ErrorService.Homeserver,
+          operation: 'PUT',
+        }),
+      );
 
       await expect(PostApplication.commitEdit(mockData)).rejects.toThrow('Failed to PUT to homeserver: 401');
 
@@ -1425,12 +1451,18 @@ describe('Post Application', () => {
       expect(editSpy).toHaveBeenNthCalledWith(1, {
         compositePostId: mockData.compositePostId,
         content: 'Edited content',
+        parent: null,
+        embed: null,
+        lock: null,
         attachments: null,
         kind: 'short',
       });
       expect(editSpy).toHaveBeenNthCalledWith(2, {
         compositePostId: mockData.compositePostId,
         content: 'Original content',
+        parent: undefined,
+        embed: undefined,
+        lock: undefined,
         attachments: null,
         kind: 'short',
       });
@@ -1442,7 +1474,12 @@ describe('Post Application', () => {
     it('should propagate original error when edit rollback also fails', async () => {
       const mockData = createMockEditInput();
       const { readDetailsSpy, editSpy, requestSpy } = setupEditSpies();
-      requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 401'));
+      requestSpy.mockRejectedValue(
+        Err.auth(AuthErrorCode.UNAUTHORIZED, 'Failed to PUT to homeserver: 401', {
+          service: ErrorService.Homeserver,
+          operation: 'PUT',
+        }),
+      );
       editSpy.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('Rollback DB error'));
 
       await expect(PostApplication.commitEdit(mockData)).rejects.toThrow('Failed to PUT to homeserver: 401');
@@ -1485,6 +1522,9 @@ describe('Post Application', () => {
         expect(editSpy).toHaveBeenCalledWith({
           compositePostId: mockData.compositePostId,
           content: 'Edited content',
+          parent: null,
+          embed: null,
+          lock: null,
           attachments: [newFileUri],
           kind: 'image',
         });
@@ -1496,14 +1536,22 @@ describe('Post Application', () => {
         const mockData = createEditInputWithFiles();
         const { readDetailsSpy, editSpy, requestSpy, fileDeleteSpy, fileDeleteUploadedSpy } = setupEditSpies();
         readDetailsSpy.mockResolvedValue(originalPostDetails);
-        requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 500'));
+        requestSpy.mockRejectedValue(
+          Err.client(ClientErrorCode.BAD_REQUEST, 'Failed to PUT to homeserver: 400', {
+            service: ErrorService.Homeserver,
+            operation: 'PUT',
+          }),
+        );
 
-        await expect(PostApplication.commitEdit(mockData)).rejects.toThrow('Failed to PUT to homeserver: 500');
+        await expect(PostApplication.commitEdit(mockData)).rejects.toThrow('Failed to PUT to homeserver: 400');
 
         expect(editSpy).toHaveBeenCalledTimes(2);
         expect(editSpy).toHaveBeenNthCalledWith(2, {
           compositePostId: mockData.compositePostId,
           content: 'Original content',
+          parent: undefined,
+          embed: undefined,
+          lock: undefined,
           attachments: [oldFileUri],
           kind: 'image',
         });
@@ -1630,9 +1678,14 @@ describe('Post Application', () => {
       it('should not touch kind streams when the PUT fails', async () => {
         const mockData = createEditInputWithFiles();
         const { requestSpy, removeKindStreamsSpy } = setupEditSpies();
-        requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 500'));
+        requestSpy.mockRejectedValue(
+          Err.client(ClientErrorCode.BAD_REQUEST, 'Failed to PUT to homeserver: 400', {
+            service: ErrorService.Homeserver,
+            operation: 'PUT',
+          }),
+        );
 
-        await expect(PostApplication.commitEdit(mockData)).rejects.toThrow('Failed to PUT to homeserver: 500');
+        await expect(PostApplication.commitEdit(mockData)).rejects.toThrow('Failed to PUT to homeserver: 400');
 
         expect(removeKindStreamsSpy).not.toHaveBeenCalled();
       });

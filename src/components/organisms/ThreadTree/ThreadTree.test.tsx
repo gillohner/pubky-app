@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useThreadReplies } from '@/hooks/useThreadReplies/useThreadReplies';
 import { ThreadTree } from './ThreadTree';
 
+vi.mock('@/hooks/usePostDetails/usePostDetails', () => ({
+  usePostDetails: () => ({ postDetails: { kind: 'short' } }),
+}));
 vi.mock('@/hooks/useThreadReplies/useThreadReplies', () => ({
   useThreadReplies: vi.fn(),
 }));

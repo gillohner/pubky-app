@@ -4,7 +4,10 @@ import type { NexusUserDetails } from '@/services/nexus/nexus.types';
 
 export type PostValidatorData = {
   content: string;
-  kind: PubkyAppPostKind;
+  kind: PubkyAppPostKind | string;
+  /** Reuse an allocated ID when retrying an uncertain write. */
+  postId?: string;
+  lock?: string | null;
   parentUri?: string;
   embed?: string;
   attachments?: TFileAttachmentResult[];

@@ -19,6 +19,7 @@ import type { PostRelationshipsModelSchema } from '@/models/post/relationships/p
 import { PostTagsModel } from '@/models/post/tags/postTags';
 import { PostTtlModel } from '@/models/post/ttl/postTtl';
 import type { TagCollectionModelSchema } from '@/models/shared/tag/tag.schema';
+import { postKindToStreamSegment, streamSegmentToPostKind } from '@/models/stream/post/postStream.kind';
 import {
   buildAuthorCollectionsStreamId,
   getPostStreamKind,
@@ -28,7 +29,7 @@ import {
 import { PostStreamModel } from '@/models/stream/post/tables/postStream';
 import { UnreadPostStreamModel } from '@/models/stream/post/tables/postStream.unread';
 import { UserCountsModel } from '@/models/user/counts/userCounts';
-import { PostNormalizer } from '@/pipes/post/post.normalizer';
+import { toPostWire } from '@/pipes/post/post.wire';
 import type { TLocalSavePostParams, TLocalUpdatePostStreamParams } from '@/services/local/post/post.types';
 
 export class LocalPostService {
@@ -150,7 +151,7 @@ export class LocalPostService {
    * @param params.compositePostId - Composite post ID (author:postId)
    * @param params.content - New content for the post
    * @param params.attachments - New attachment URIs (`null` clears them); `undefined` leaves the column untouched
-   * @param params.kind - New lowercase kind; `undefined` leaves the column untouched
+   * @param params.kind - Exact kind; `undefined` leaves the column untouched
    *
    * @throws {DatabaseError} When database operations fail
    */
@@ -159,11 +160,17 @@ export class LocalPostService {
     content,
     attachments,
     kind,
+    parent,
+    embed,
+    lock,
   }: {
     compositePostId: string;
     content: string;
     attachments?: string[] | null;
     kind?: string;
+    parent?: string | null;
+    embed?: string | null;
+    lock?: string | null;
   }) {
     try {
       const changes: Partial<PostDetailsModelSchema> = { content };
@@ -173,6 +180,9 @@ export class LocalPostService {
       if (kind !== undefined) {
         changes.kind = kind;
       }
+      if (parent !== undefined) changes.parent = parent;
+      if (embed !== undefined) changes.embed = embed;
+      if (lock !== undefined) changes.lock = lock;
 
       await db.transaction('rw', [PostDetailsModel.table, PostTtlModel.table], async () => {
         await PostDetailsModel.update(compositePostId, changes);
@@ -212,7 +222,10 @@ export class LocalPostService {
         UnreadPostStreamModel.table.toCollection().primaryKeys(),
       ]);
 
-      const matchesKind = (streamId: unknown) => getPostStreamKind(String(streamId)) === kind;
+      const matchesKind = (streamId: unknown) => {
+        const segment = getPostStreamKind(String(streamId));
+        return segment !== undefined && streamSegmentToPostKind(segment) === kind;
+      };
 
       await Promise.all([
         ...streamIds
@@ -250,10 +263,10 @@ export class LocalPostService {
    * @throws {DatabaseError} When database operations fail
    */
   static async create({ compositePostId, post }: TLocalSavePostParams) {
-    const { content, kind, parent: parentUri, attachments, embed } = post;
+    const { content, kind, parent: parentUri, attachments, embed, lock } = toPostWire(post);
 
-    const repostedUri = embed?.uri ?? null;
-    const normalizedKind = PostNormalizer.postKindToLowerCase(kind);
+    // External embeds are content, not social repost relationships.
+    const repostedUri = embed && /^pubky:\/\/[^/]+\/pub\/pubky\.app\/posts\/[^/?#]+$/.test(embed) ? embed : null;
 
     const { pubky: authorId, id: postId } = parseCompositeId(compositePostId);
 
@@ -262,9 +275,12 @@ export class LocalPostService {
         id: compositePostId,
         content,
         indexed_at: Date.now(),
-        kind: normalizedKind,
+        kind,
         uri: postUriBuilder(authorId, postId),
         attachments: attachments ?? null,
+        parent: parentUri ?? null,
+        embed: embed ?? null,
+        lock: lock ?? null,
       };
 
       const postRelationships: PostRelationshipsModelSchema = {
@@ -294,6 +310,14 @@ export class LocalPostService {
           PostTtlModel.table,
         ],
         async () => {
+          const existingPost = await PostDetailsModel.table.get(compositePostId);
+          if (existingPost) {
+            // A timed-out homeserver PUT may be retried with the same allocated identity.
+            // Check inside the transaction so concurrent retries cannot increment counts twice.
+            await PostDetailsModel.update(compositePostId, { ...postDetails, indexed_at: existingPost.indexed_at });
+            await PostTtlModel.upsert({ id: compositePostId, lastUpdatedAt: Date.now() });
+            return;
+          }
           await Promise.all([
             PostDetailsModel.create(postDetails),
             PostRelationshipsModel.create(postRelationships),
@@ -342,14 +366,14 @@ export class LocalPostService {
               countChanges: {
                 posts: 1,
                 replies: parentUri ? 1 : 0,
-                collections: normalizedKind === 'collection' ? 1 : 0,
+                collections: kind === 'collection' ? 1 : 0,
               },
             }),
           );
 
           this.updatePostStream({
             compositePostId,
-            kind: normalizedKind,
+            kind,
             parentUri,
             ops,
             action: HttpMethod.PUT,
@@ -505,6 +529,7 @@ export class LocalPostService {
   }
 
   private static updatePostStream({ compositePostId, kind, parentUri, ops, action }: TLocalUpdatePostStreamParams) {
+    const kindSegment = postKindToStreamSegment(kind);
     const { pubky: authorId } = parseCompositeId(compositePostId);
 
     // Helper to call the appropriate method with proper class context
@@ -543,11 +568,11 @@ export class LocalPostService {
       ops.push(removeFromUnreadStream(PostStreamTypes.TIMELINE_FRIENDS_COLLECTION, [compositePostId]));
     } else {
       ops.push(updateStream(PostStreamTypes.TIMELINE_ALL_ALL, [compositePostId]));
-      ops.push(updateStream(`timeline:all:${kind}` as PostStreamId, [compositePostId]));
+      ops.push(updateStream(`timeline:all:${kindSegment}` as PostStreamId, [compositePostId]));
       ops.push(updateStream(PostStreamTypes.TIMELINE_FOLLOWING_ALL, [compositePostId]));
-      ops.push(updateStream(`timeline:following:${kind}` as PostStreamId, [compositePostId]));
+      ops.push(updateStream(`timeline:following:${kindSegment}` as PostStreamId, [compositePostId]));
       ops.push(updateStream(PostStreamTypes.TIMELINE_FRIENDS_ALL, [compositePostId]));
-      ops.push(updateStream(`timeline:friends:${kind}` as PostStreamId, [compositePostId]));
+      ops.push(updateStream(`timeline:friends:${kindSegment}` as PostStreamId, [compositePostId]));
       ops.push(updateStream(`author:${authorId}`, [compositePostId]));
 
       // Also remove from unread streams when deleting to prevent ghost posts
@@ -555,11 +580,11 @@ export class LocalPostService {
       // Clean both the "all" streams and kind-specific streams since the user may have
       // been viewing a filtered feed (e.g., timeline:all:short) when the post was polled
       ops.push(removeFromUnreadStream(PostStreamTypes.TIMELINE_ALL_ALL, [compositePostId]));
-      ops.push(removeFromUnreadStream(`timeline:all:${kind}` as PostStreamId, [compositePostId]));
+      ops.push(removeFromUnreadStream(`timeline:all:${kindSegment}` as PostStreamId, [compositePostId]));
       ops.push(removeFromUnreadStream(PostStreamTypes.TIMELINE_FOLLOWING_ALL, [compositePostId]));
-      ops.push(removeFromUnreadStream(`timeline:following:${kind}` as PostStreamId, [compositePostId]));
+      ops.push(removeFromUnreadStream(`timeline:following:${kindSegment}` as PostStreamId, [compositePostId]));
       ops.push(removeFromUnreadStream(PostStreamTypes.TIMELINE_FRIENDS_ALL, [compositePostId]));
-      ops.push(removeFromUnreadStream(`timeline:friends:${kind}` as PostStreamId, [compositePostId]));
+      ops.push(removeFromUnreadStream(`timeline:friends:${kindSegment}` as PostStreamId, [compositePostId]));
     }
   }
 

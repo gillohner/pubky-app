@@ -27,7 +27,9 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\" --ignore-path .prettierignore",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\" --ignore-path .prettierignore",
     "precommit": "lint-staged && npm run typecheck",
-    "prepare": "husky"
+    "prepare": "husky",
+    "eventky:projection:build": "esbuild services/eventky-projection/src/server.ts services/eventky-projection/src/worker.ts --bundle --platform=node --format=cjs --target=node24 --outdir=dist/eventky-projection --out-extension:.js=.cjs",
+    "eventky:projection:start": "node dist/eventky-projection/server.cjs"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [
@@ -44,6 +46,7 @@
     "@dnd-kit/utilities": "3.2.2",
     "@emoji-mart/data": "1.2.1",
     "@hookform/resolvers": "5.9.1",
+    "@js-temporal/polyfill": "0.5.1",
     "@mdxeditor/editor": "4.2.3",
     "@mdxeditor/gurx": "1.2.4",
     "@prelude.so/js-sdk": "0.14.0",
@@ -62,6 +65,7 @@
     "embla-carousel-react": "8.6.0",
     "emoji-mart": "5.6.0",
     "facehash": "0.1.0",
+    "ical.js": "2.2.1",
     "jszip": "3.10.1",
     "libphonenumber-js": "1.13.12",
     "linkify-it": "5.0.2",
@@ -77,6 +81,7 @@
     "qrcode.react": "4.2.0",
     "radix-ui": "1.6.7",
     "react": "19.2.8",
+    "react-day-picker": "10.0.1",
     "react-dom": "19.2.8",
     "react-easy-crop": "5.5.7",
     "react-error-boundary": "6.1.4",
@@ -87,6 +92,7 @@
     "remark-gfm": "4.0.1",
     "serwist": "9.5.12",
     "sharp": "0.35.4",
+    "timezones-ical-library": "2.3.1",
     "undici": "7.29.0",
     "unist-util-visit": "5.1.0",
     "usehooks-ts": "3.1.1",
@@ -119,6 +125,7 @@
     "cypress": "15.10.0",
     "cypress-slow-down": "1.4.0",
     "dotenv": "17.4.2",
+    "esbuild": "0.28.2",
     "eslint": "9.39.2",
     "eslint-plugin-import": "2.32.0",
     "eslint-plugin-react": "7.37.5",

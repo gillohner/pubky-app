@@ -13,6 +13,8 @@ export interface VisualTile {
    * media fields and are never probed — they mount with a resolved size.
    */
   placeholderKind?: VisualPlaceholderKind;
+  /** Custom formats use the native post card, including posts without cover media. */
+  renderAsPost?: boolean;
   attachmentId: string;
   attachmentName: string;
   contentType: string;

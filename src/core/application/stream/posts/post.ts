@@ -45,6 +45,7 @@ import type { TStreamResult } from '@/services/local/stream/posts/post.types';
 import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
 import { postStreamDirtyRegistry } from '@/services/local/stream/posts/postStreamDirtyRegistry';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
+import type { NexusPostWithAttachmentMetadata } from '@/services/nexus/nexus.types';
 import { NexusPostStreamService } from '@/services/nexus/stream/posts/postStream';
 import { StreamKind, StreamOrder, StreamSource } from '@/services/nexus/stream/posts/postStream.types';
 import { breakDownStreamId, createPostStreamParams } from '@/services/nexus/stream/posts/postStream.utils';
@@ -575,20 +576,25 @@ export class PostStreamApplication {
         // Only pass viewer_id if it's a valid string (not null/undefined)
         ...(viewerId ? { viewer_id: viewerId } : {}),
       });
-      const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: postBatch });
-      await FileApplication.persistFiles(attachmentMetadata);
-      // Persist the missing authors of the posts
-      await this.fetchMissingUsersFromNexus({ posts: postBatch, viewerId });
-      // Fetch original posts for any reposts (to display embedded repost content)
-      const repostedUris = postBatch
-        .map((post) => post.relationships.reposted)
-        .filter((uri): uri is string => uri !== null);
-      await this.fetchOriginalPostsByUris({ repostedUris, viewerId });
+      await this.persistFetchedPosts(postBatch, viewerId);
       return true;
     } catch (error) {
       Logger.warn('Failed to fetch missing posts from Nexus', { cacheMissPostIds, viewerId, error });
       return false;
     }
+  }
+
+  /** Reuse a fetched batch without another post request; same native hydration as stream fetching. */
+  static async persistFetchedPosts(postBatch: NexusPostWithAttachmentMetadata[], viewerId?: string | null) {
+    const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: postBatch });
+    await FileApplication.persistFiles(attachmentMetadata);
+    // Persist the missing authors of the posts
+    await this.fetchMissingUsersFromNexus({ posts: postBatch, viewerId });
+    // Fetch original posts for any reposts (to display embedded repost content)
+    const repostedUris = postBatch
+      .map((post) => post.relationships.reposted)
+      .filter((uri): uri is string => uri !== null);
+    await this.fetchOriginalPostsByUris({ repostedUris, viewerId });
   }
 
   /**

@@ -54,6 +54,7 @@ vi.mock('@/application/tag/tag', () => ({
 // Mock pubky-app-specs
 vi.mock('pubky-app-specs', () => ({
   PubkySpecsBuilder: class {
+    free() {}
     createPost(content: string, kind: number) {
       const kindMap: Record<number, string> = {
         0: 'short',
@@ -117,6 +118,7 @@ vi.mock('pubky-app-specs', () => ({
       public content: string,
     ) {}
   },
+  parse_uri: () => ({ resource: 'posts', free() {} }),
   postUriBuilder: (authorId: string, postId: string) => `pubky://${authorId}/pub/pubky.app/posts/${postId}`,
 }));
 
@@ -764,6 +766,7 @@ describe('PostController', () => {
 
         expect(getDetailsSpy).not.toHaveBeenCalled();
         expect(toEditSpy).toHaveBeenCalledWith({
+          source: null,
           compositePostId: testData.fullPostId,
           content: 'Updated content',
           currentUserPubky: testData.authorPubky,
@@ -774,6 +777,7 @@ describe('PostController', () => {
         expect('kind' in toEditArg).toBe(false);
 
         expect(commitEditSpy).toHaveBeenCalledWith({
+          uploadState: { completed: false },
           compositePostId: testData.fullPostId,
           post: expect.any(Object),
           postUrl,
@@ -809,6 +813,7 @@ describe('PostController', () => {
 
         expect(getMetadataSpy).toHaveBeenCalledWith({ fileAttachments: [keptUri] });
         expect(toEditSpy).toHaveBeenCalledWith({
+          source: null,
           compositePostId: testData.fullPostId,
           content: 'Updated content',
           currentUserPubky: testData.authorPubky,
@@ -816,6 +821,7 @@ describe('PostController', () => {
           kind: PubkyAppPostKind.Image,
         });
         expect(commitEditSpy).toHaveBeenCalledWith({
+          uploadState: { completed: false },
           compositePostId: testData.fullPostId,
           post: expect.any(Object),
           postUrl,
@@ -830,6 +836,52 @@ describe('PostController', () => {
         cleanupAuthUser();
       }
     });
+
+    it.each(['content', 'attachments', 'ordered-attachments'] as const)(
+      'retains the original source envelope for a prepared %s edit',
+      async (path) => {
+        setupAuthUser(testData.authorPubky);
+        const source = {
+          kind: 'event',
+          content: 'Original content',
+          attachments: [keptUri],
+          parent: null,
+          embed: 'geo:1,2',
+          lock: `pubky://${testData.authorPubky}/pub/lock`,
+        };
+        vi.spyOn(PostApplication, 'getEditSource').mockResolvedValue(source);
+        vi.spyOn(PostApplication, 'getDetails').mockResolvedValue(
+          createPostDetails({ kind: 'event', attachments: [keptUri] }),
+        );
+        stubToEdit();
+        const commitEditSpy = vi.spyOn(PostApplication, 'commitEdit').mockResolvedValue(undefined);
+        try {
+          const { PostController } = await import('./post');
+          const prepared = await PostController.prepareEdit({
+            compositePostId: testData.fullPostId,
+            content: 'Updated content',
+            expectedContent: source.content,
+            attachments:
+              path === 'content'
+                ? undefined
+                : {
+                    original: [keptUri],
+                    kept: [keptUri],
+                    added: [],
+                    ...(path === 'ordered-attachments' ? { nextOrder: [keptUri] } : {}),
+                  },
+          });
+          expect(prepared.expectedSource).toEqual(source);
+          expect(prepared.expectedSource).not.toBe(source);
+          source.attachments.push('added-to-the-live-source-later');
+          expect(prepared.expectedSource?.attachments).toEqual([keptUri]);
+          await PostController.commitPreparedEdit(prepared);
+          expect(commitEditSpy).toHaveBeenCalledWith(prepared);
+        } finally {
+          cleanupAuthUser();
+        }
+      },
+    );
 
     it('never removes attachments the dialog did not see when the live row grew underneath it', async () => {
       setupAuthUser(testData.authorPubky);
@@ -1171,6 +1223,7 @@ describe('PostController', () => {
 
         expect(getDetailsSpy).toHaveBeenCalledWith({ compositeId: collectionPostId });
         expect(toEditSpy).toHaveBeenCalledWith({
+          source: null,
           compositePostId: collectionPostId,
           content: JSON.stringify({
             name: 'Saved posts',
@@ -1210,6 +1263,7 @@ describe('PostController', () => {
         });
 
         expect(toEditSpy).toHaveBeenCalledWith({
+          source: null,
           compositePostId: collectionPostId,
           content: JSON.stringify({
             name: 'Saved posts',
@@ -1242,6 +1296,7 @@ describe('PostController', () => {
         });
 
         expect(toEditSpy).toHaveBeenCalledWith({
+          source: null,
           compositePostId: collectionPostId,
           content: JSON.stringify({
             name: 'Saved posts',
@@ -1400,6 +1455,7 @@ describe('PostController', () => {
 
         expect(getDetailsSpy).toHaveBeenCalledWith({ compositeId: collectionPostId });
         expect(toEditSpy).toHaveBeenCalledWith({
+          source: null,
           compositePostId: collectionPostId,
           content: JSON.stringify({
             name: 'Saved posts',
@@ -1580,6 +1636,7 @@ describe('PostController', () => {
 
         expect(toFileAttachmentSpy).not.toHaveBeenCalled();
         expect(toEditSpy).toHaveBeenCalledWith({
+          source: null,
           compositePostId: collectionPostId,
           content: JSON.stringify({
             name: 'Renamed',
@@ -1628,6 +1685,7 @@ describe('PostController', () => {
         expect(toFileAttachmentSpy).toHaveBeenCalledWith({ file, pubky: testData.authorPubky });
         expect(commitFileCreateSpy).toHaveBeenCalled();
         expect(toEditSpy).toHaveBeenCalledWith({
+          source: null,
           compositePostId: collectionPostId,
           content: JSON.stringify({
             name: 'Renamed',
@@ -2246,6 +2304,7 @@ describe('PostController', () => {
           }),
         );
         expect(commitEditSpy).toHaveBeenCalledWith({
+          uploadState: { completed: false },
           compositePostId: testData.fullPostId,
           post: expect.any(Object),
           postUrl,

@@ -30,6 +30,8 @@ export enum CONTENT {
   ALL = 'all',
   SHORT = 'short',
   LONG = 'long',
+  EVENTS = 'events',
+  CALENDARS = 'calendars',
   COLLECTIONS = 'collections',
   IMAGES = 'images',
   VIDEOS = 'videos',

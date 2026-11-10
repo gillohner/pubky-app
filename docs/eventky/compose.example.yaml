@@ -1,0 +1,46 @@
+# Attach to the existing Nexus network after reviewing the VPS memory budget.
+# This file intentionally does not replace or reconfigure Nexus/Neo4j/Redis.
+services:
+  eventky-app:
+    image: ${EVENTKY_APP_IMAGE:?Set the tested app image tag or digest}
+    restart: unless-stopped
+    env_file: ${EVENTKY_APP_ENV_FILE:?Set the runtime configuration file path}
+    environment:
+      PUBKY_RUNTIME_EVENTKY_ENABLED: 'true'
+      PUBKY_RUNTIME_EVENTKY_CALENDAR_ENABLED: 'true'
+      EVENTKY_PROJECTION_URL: http://eventky-projection:8091
+    ports:
+      - '127.0.0.1:${EVENTKY_APP_PORT:-3000}:3000'
+    mem_limit: 512m
+    cpus: 1.0
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    networks: [nexus]
+
+  eventky-projection:
+    image: ${EVENTKY_PROJECTION_IMAGE:?Set the tested projection image tag or digest}
+    restart: unless-stopped
+    environment:
+      EVENTKY_NEXUS_URL: ${EVENTKY_NEXUS_URL:?Set the private Nexus API URL}
+      EVENTKY_NEXUS_SYNC_TOKEN: ${EVENTKY_NEXUS_SYNC_TOKEN:?Set the private source replication token}
+      EVENTKY_DATABASE: /data/eventky.sqlite
+      EVENTKY_WORKERS: '1'
+    volumes:
+      - eventky-projection-data:/data
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/tmp:size=16m]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    stop_grace_period: 20s
+    networks: [nexus]
+
+volumes:
+  eventky-projection-data:
+
+networks:
+  nexus:
+    external: true
+    name: ${EVENTKY_NETWORK:?Set the existing Nexus Docker network name}

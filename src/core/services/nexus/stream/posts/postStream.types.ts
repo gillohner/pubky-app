@@ -31,6 +31,8 @@ export enum StreamKind {
   LINK = 'link',
   FILE = 'file',
   COLLECTION = 'collection',
+  EVENT = 'event',
+  CALENDAR = 'calendar',
 }
 
 export enum StreamOrder {
@@ -52,7 +54,7 @@ export type TStreamBase = TPaginationParams &
     // The content viewer (for personalization like bookmarks, relationships)
     viewer_id?: Pubky;
     sorting?: StreamSorting;
-    kind?: StreamKind;
+    kind?: string;
     order?: StreamOrder;
     tags?: string; // Max 5 tags
     depth?: number;

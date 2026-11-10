@@ -1,6 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from '@/molecules/Toaster/toast';
+import { eventkyEventFixture } from '@/test/fixtures/eventky';
 import { useNotificationPostContent } from './useNotificationPostContent';
 
 type PostDetails = { kind: string; content: string } | null | undefined;
@@ -47,6 +48,17 @@ beforeEach(() => {
 });
 
 describe('useNotificationPostContent', () => {
+  it('previews event summaries directly and never resolves mentions in opaque JSON', () => {
+    setPost({ kind: 'event', content: JSON.stringify(eventkyEventFixture) });
+    const { result, rerender } = renderHook(() => useNotificationPostContent({ compositeId: COMPOSITE_ID }));
+    expect(result.current.content).toContain('Pubky community meetup');
+    expect(result.current.isResolving).toBe(false);
+    expect(mockResolvePubkyToNames).not.toHaveBeenCalled();
+    setPost({ kind: 'event', content: JSON.stringify({ ...eventkyEventFixture, schema_version: 2 }) });
+    rerender();
+    expect(result.current.content).toBe('Unsupported post format');
+    expect(mockResolvePubkyToNames).not.toHaveBeenCalled();
+  });
   it('stays idle and resolves nothing without a composite id', () => {
     setPost(undefined, true);
 

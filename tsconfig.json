@@ -23,6 +23,9 @@
       }
     ],
     "paths": {
+      "@eventky/*": [
+        "./packages/eventky-contract/src/*"
+      ],
       "@/atoms/*": [
         "./src/components/atoms/*"
       ],
@@ -76,6 +79,9 @@
       ],
       "@/*": [
         "./src/*"
+      ],
+      "@eventky-api/*": [
+        "./packages/eventky-api/src/*"
       ]
     }
   },
@@ -87,5 +93,7 @@
     "src/__tests__/page.test.jsx",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }

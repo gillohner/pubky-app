@@ -1,72 +1,49 @@
-import { PostResult, PubkyAppPost, PubkyAppPostEmbed, PubkyAppPostKind } from 'pubky-app-specs';
+import { parse_uri, PubkyAppPost, PubkyAppPostEmbed, PubkyAppPostKind } from 'pubky-app-specs';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import { Logger } from '@/libs/logger/logger';
 import { isPostDeleted } from '@/libs/utils/utils';
-import { CompositeIdDomain, type Pubky } from '@/models/models.types';
-import { buildCompositeIdFromPubkyUri, parseCompositeId } from '@/models/models.utils';
+import type { Pubky } from '@/models/models.types';
+import { parseCompositeId } from '@/models/models.utils';
 import type { CollectionContentInput } from '@/models/post/collection/collectionPost.types';
-import { PostDetailsModel } from '@/models/post/details/postDetails';
-import { PostRelationshipsModel } from '@/models/post/relationships/postRelationships';
 import { PubkySpecsSingleton } from '@/pipes/pipes.builder';
 import type { PostValidatorData } from '@/pipes/pipes.types';
 import { CollectionPostContent } from '@/pipes/post/post.collection';
+import {
+  builtinPostKind,
+  normalizePostEmbed,
+  postKindFromEnum,
+  postKindFromSpecs,
+  type PubkyPostWire,
+  toPostWire,
+  type UniversalPostResult,
+  validatePostWire,
+} from '@/pipes/post/post.wire';
 
-type TToEditParams = {
+export type TToEditParams = {
   compositePostId: string;
   content: string;
   currentUserPubky: Pubky;
-  /**
-   * Full ordered attachment URI list to persist on the edited post.
-   * `undefined` keeps the stored attachments; `[]` and `null` both clear them.
-   */
+  /** Resolved by the application before normalization; pipes never read storage. */
+  source: PubkyPostWire | null;
+  expectedContent?: string;
+  /** Undefined preserves attachments; null or [] clears them. */
   attachments?: string[] | null;
-  /** Kind for the edited post. `undefined` preserves the stored kind. */
-  kind?: PubkyAppPostKind;
+  kind?: PubkyAppPostKind | string;
 };
 
 export class PostNormalizer {
   private constructor() {}
 
+  /** Compatibility for actual specs getters; raw network kinds must pass through unchanged. */
   static postKindToLowerCase(kind: string): string {
-    // We will use that one until we fix the pubky-app-specs library
-    return kind.toLowerCase();
+    return postKindFromSpecs(kind);
   }
 
-  /**
-   * Maps stored kind string to PubkyAppPostKind enum.
-   * DB stores "short"/"long" strings, but PubkyAppPost expects numeric enum values.
-   *
-   * Fails closed on unrecognized kinds: the stored kind is an open string
-   * (Nexus running a newer spec can serve kinds this client doesn't know, as
-   * happened when `collection` shipped), and a fallback would make every edit
-   * of such a post silently rewrite its kind on the homeserver.
-   */
   static mapKindToEnum(kind: string): PubkyAppPostKind {
-    const normalized = kind.toLowerCase();
-    if (normalized === 'short' || normalized === String(PubkyAppPostKind.Short)) {
-      return PubkyAppPostKind.Short;
-    }
-    if (normalized === 'long' || normalized === String(PubkyAppPostKind.Long)) {
-      return PubkyAppPostKind.Long;
-    }
-    if (normalized === 'collection' || normalized === String(PubkyAppPostKind.Collection)) {
-      return PubkyAppPostKind.Collection;
-    }
-    if (normalized === 'image' || normalized === String(PubkyAppPostKind.Image)) {
-      return PubkyAppPostKind.Image;
-    }
-    if (normalized === 'video' || normalized === String(PubkyAppPostKind.Video)) {
-      return PubkyAppPostKind.Video;
-    }
-    if (normalized === 'link' || normalized === String(PubkyAppPostKind.Link)) {
-      return PubkyAppPostKind.Link;
-    }
-    if (normalized === 'file' || normalized === String(PubkyAppPostKind.File)) {
-      return PubkyAppPostKind.File;
-    }
+    const known = builtinPostKind(kind);
+    if (known !== undefined) return known;
     throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Unsupported post kind', {
       service: ErrorService.Local,
       operation: 'mapKindToEnum',
@@ -74,11 +51,14 @@ export class PostNormalizer {
     });
   }
 
-  static async toCollection(collection: CollectionContentInput, specsPubky: Pubky): Promise<PostResult> {
+  static createId(specsPubky: Pubky): string {
+    return PubkySpecsSingleton.get(specsPubky).createPost('draft', PubkyAppPostKind.Short).meta.id;
+  }
+
+  static async toCollection(collection: CollectionContentInput, specsPubky: Pubky) {
     try {
-      const builder = PubkySpecsSingleton.get(specsPubky);
       const normalized = CollectionPostContent.normalize(collection);
-      return builder.createCollectionPost(
+      return PubkySpecsSingleton.get(specsPubky).createCollectionPost(
         normalized.name,
         normalized.description,
         normalized.items,
@@ -86,70 +66,39 @@ export class PostNormalizer {
         normalized.layout,
       );
     } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, message, {
-        service: ErrorService.PubkyAppSpecs,
-        operation: 'createCollectionPost',
-        context: { specsPubky, itemCount: collection.items?.length ?? 0 },
-        cause: error,
-      });
+      throw this.validationError(error, 'createCollectionPost');
     }
   }
 
-  static async to(post: PostValidatorData, specsPubky: Pubky): Promise<PostResult> {
-    try {
-      const builder = PubkySpecsSingleton.get(specsPubky);
-
-      // Create embed object if embed URI is provided
-      let embedObject: PubkyAppPostEmbed | null = null;
-      if (post.embed) {
-        const embeddedPostId = buildCompositeIdFromPubkyUri({
-          uri: post.embed,
-          domain: CompositeIdDomain.POSTS,
-        });
-        if (embeddedPostId) {
-          const embeddedPost = await PostDetailsModel.findById(embeddedPostId);
-          if (embeddedPost) {
-            embedObject = new PubkyAppPostEmbed(post.embed, embeddedPost.kind as unknown as PubkyAppPostKind);
-          }
-        }
-      }
-
-      // Final attachment order: uploaded files first (article cover), then
-      // pre-uploaded URIs (article inline images, already on the homeserver).
-      const attachmentList = [
-        ...(post.attachments ?? []).map((attachment) => attachment.fileResult.meta.url),
-        ...(post.attachmentUris ?? []),
-      ];
-      const attachments = attachmentList.length > 0 ? attachmentList : null;
-
-      return builder.createPost(post.content, post.kind, post.parentUri ?? null, embedObject, attachments);
-    } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, message, {
-        service: ErrorService.PubkyAppSpecs,
-        operation: 'createPost',
-        context: { post, specsPubky },
-        cause: error,
-      });
-    }
+  static async to(post: PostValidatorData, specsPubky: Pubky): Promise<UniversalPostResult> {
+    const attachmentList = [
+      ...(post.attachments ?? []).map((attachment) => attachment.fileResult.meta.url),
+      ...(post.attachmentUris ?? []),
+    ];
+    return this.build(
+      {
+        kind: typeof post.kind === 'number' ? postKindFromEnum(post.kind) : post.kind,
+        content: post.content,
+        parent: post.parentUri ?? null,
+        embed: post.embed ?? null,
+        attachments: attachmentList.length > 0 ? attachmentList : null,
+        lock: post.lock ?? null,
+      },
+      specsPubky,
+      post.postId,
+    );
   }
 
   static async toEdit({
     compositePostId,
     content,
     currentUserPubky,
+    source,
+    expectedContent,
     attachments,
     kind,
-  }: TToEditParams): Promise<PostResult> {
+  }: TToEditParams): Promise<UniversalPostResult> {
     const { pubky: authorId, id: postId } = parseCompositeId(compositePostId);
-
     if (authorId !== currentUserPubky) {
       throw Err.auth(AuthErrorCode.FORBIDDEN, 'Current user is not the author of this post', {
         service: ErrorService.Local,
@@ -157,58 +106,97 @@ export class PostNormalizer {
         context: { postId, currentUserPubky },
       });
     }
-
-    const builder = PubkySpecsSingleton.get(authorId);
-
-    const postDetails = await PostDetailsModel.findById(compositePostId);
-    // Tombstoned posts (`content === '[DELETED]'`) are treated as not-found
-    // here. Pre-tombstone refactor `!postDetails` caught hard-deleted rows;
-    // now they stick around as tombstones and falling through would build a
-    // `PubkyAppPost` whose content is the `[DELETED]` sentinel.
-    if (!postDetails || isPostDeleted(postDetails.content)) {
+    if (!source || isPostDeleted(source.content)) {
       throw Err.client(ClientErrorCode.NOT_FOUND, 'Post not found', {
         service: ErrorService.Local,
         operation: 'toEdit',
         context: { postId: compositePostId },
       });
     }
+    if (expectedContent !== undefined && source.content !== expectedContent) {
+      throw Err.client(
+        ClientErrorCode.CONFLICT,
+        'This post changed since you opened the editor. Review the latest version before saving.',
+        {
+          service: ErrorService.Local,
+          operation: 'toEdit',
+          context: { postId: compositePostId },
+        },
+      );
+    }
+    return this.build(
+      {
+        ...source,
+        content,
+        kind: kind === undefined ? source.kind : typeof kind === 'number' ? postKindFromEnum(kind) : kind,
+        attachments: attachments === undefined ? source.attachments : attachments?.length ? attachments : null,
+      },
+      authorId,
+      postId,
+    );
+  }
 
-    const postRelationships = await PostRelationshipsModel.findById(compositePostId);
-
-    // Reconstruct the original PubkyAppPost from stored data
-    let embedObject: PubkyAppPostEmbed | undefined;
-    if (postRelationships?.reposted) {
-      // Get the embedded post's kind if available
-      const embeddedPostId = buildCompositeIdFromPubkyUri({
-        uri: postRelationships.reposted,
-        domain: CompositeIdDomain.POSTS,
-      });
-      if (embeddedPostId) {
-        const embeddedPost = await PostDetailsModel.findById(embeddedPostId);
-        if (embeddedPost) {
-          embedObject = new PubkyAppPostEmbed(postRelationships.reposted, this.mapKindToEnum(embeddedPost.kind));
+  private static build(input: PubkyPostWire, authorId: Pubky, postId?: string): UniversalPostResult {
+    try {
+      const kind = builtinPostKind(input.kind);
+      const embed = input.embed == null ? null : normalizePostEmbed(input.embed);
+      if (input.parent) {
+        const parsed = parse_uri(input.parent);
+        if (parsed.resource !== 'posts') {
+          throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Post parent must reference a Pubky post', {
+            service: ErrorService.PubkyAppSpecs,
+            operation: 'validatePostWire',
+          });
         }
       }
+      // The specs still validate built-in text and common fields. A placeholder
+      // bypasses only opaque custom content and universal embed interpretation.
+      const content = kind === undefined ? 'custom' : input.content;
+      const validationEmbed =
+        embed === null ? null : new PubkyAppPostEmbed('https://example.com/', PubkyAppPostKind.Link);
+      const builder = PubkySpecsSingleton.get(authorId);
+      const result =
+        postId === undefined
+          ? builder.createPost(
+              content,
+              kind ?? PubkyAppPostKind.Short,
+              input.parent,
+              validationEmbed,
+              input.attachments,
+              input.lock,
+            )
+          : builder.editPost(
+              PubkyAppPost.new_with_lock(
+                content,
+                kind ?? PubkyAppPostKind.Short,
+                input.parent,
+                validationEmbed,
+                input.attachments,
+                input.lock,
+              ),
+              postId,
+              content,
+            );
+      const sanitized = toPostWire(result.post);
+      const post = validatePostWire({
+        ...sanitized,
+        kind: input.kind,
+        content: kind === undefined ? input.content : sanitized.content,
+        embed,
+      });
+      const meta = result.meta;
+      return { post, meta: { id: meta.id, url: meta.url, path: meta.path } };
+    } catch (error) {
+      throw this.validationError(error, postId === undefined ? 'createPost' : 'editPost');
     }
+  }
 
-    // `builder.editPost` swaps content only, so attachment/kind changes ride on
-    // the reconstructed "original" post: it carries the *next* attachments and
-    // kind, and `editPost` validates the result under the existing post id/URL.
-    const nextAttachments =
-      attachments === undefined ? postDetails.attachments : attachments && attachments.length > 0 ? attachments : null;
-
-    const originalPost = new PubkyAppPost(
-      postDetails.content,
-      kind ?? this.mapKindToEnum(postDetails.kind),
-      postRelationships?.replied ?? null,
-      embedObject ?? null,
-      nextAttachments,
-    );
-
-    const result = builder.editPost(originalPost, postId, content);
-
-    Logger.debug('Post validated', { result });
-
-    return result;
+  private static validationError(error: unknown, operation: string): AppError {
+    if (error instanceof AppError) return error;
+    return Err.validation(ValidationErrorCode.INVALID_INPUT, error instanceof Error ? error.message : String(error), {
+      service: ErrorService.PubkyAppSpecs,
+      operation,
+      cause: error,
+    });
   }
 }

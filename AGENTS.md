@@ -69,6 +69,7 @@ Use `Err.*` factories (never raw `Error`). Factories log automatically — don't
 
 Consult `docs/` before making changes:
 
+- Events and calendars (`event`, `calendar`, `attendance` post kinds) → `docs/eventky/README.md`
 - `src/core/` changes → `docs/architecture.md`, `docs/local-first.md`, `docs/error-handling.md`, `docs/data-patterns.md`
 - `src/components/` changes → `docs/components.md`, `docs/z-index.md`, `docs/component-testing.md`, `docs/skeleton-architecture.md`
 - `src/libs/env/` changes → `docs/environment.md`

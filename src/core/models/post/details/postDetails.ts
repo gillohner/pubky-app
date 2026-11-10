@@ -1,6 +1,7 @@
 import { Table } from 'dexie';
 import { db } from '@/database/franky/franky';
 import { DELETED } from '@/models/post/details/postDetails.constants';
+import { normalizeLegacyPostDetailsEmbed } from '@/models/post/details/postDetails.helpers';
 import type { PostDetailsModelSchema } from '@/models/post/details/postDetails.schema';
 import { RecordModelBase } from '@/models/shared/base/record/baseRecord';
 
@@ -15,14 +16,21 @@ export class PostDetailsModel
   kind: string;
   uri: string;
   attachments: string[] | null;
+  parent?: string | null;
+  embed?: string | null;
+  lock?: string | null;
 
   constructor(postDetails: PostDetailsModelSchema) {
+    postDetails = normalizeLegacyPostDetailsEmbed(postDetails);
     super(postDetails);
     this.content = postDetails.content;
     this.indexed_at = postDetails.indexed_at;
     this.kind = postDetails.kind;
     this.uri = postDetails.uri;
     this.attachments = postDetails.attachments;
+    this.parent = postDetails.parent;
+    this.embed = postDetails.embed;
+    this.lock = postDetails.lock;
   }
 
   /**

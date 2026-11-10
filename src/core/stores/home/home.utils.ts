@@ -1,4 +1,5 @@
 import type { Pubky } from '@/models/models.types';
+import { streamSegmentToPostKind } from '@/models/stream/post/postStream.kind';
 import {
   buildSortedAuthorStreamId,
   buildWotDomainStreamId,
@@ -49,6 +50,8 @@ const CONTENT_TO_KIND = {
   [CONTENT.ALL]: 'all',
   [CONTENT.SHORT]: StreamKind.SHORT,
   [CONTENT.LONG]: StreamKind.LONG,
+  [CONTENT.EVENTS]: StreamKind.EVENT,
+  [CONTENT.CALENDARS]: StreamKind.CALENDAR,
   [CONTENT.COLLECTIONS]: StreamKind.COLLECTION,
   [CONTENT.IMAGES]: StreamKind.IMAGE,
   [CONTENT.VIDEOS]: StreamKind.VIDEO,
@@ -192,16 +195,6 @@ export function parseStreamId(streamId: string): {
   return { sort, reach, content };
 }
 
-const POST_KIND_TO_CONTENT = {
-  short: CONTENT.SHORT,
-  long: CONTENT.LONG,
-  image: CONTENT.IMAGES,
-  video: CONTENT.VIDEOS,
-  link: CONTENT.LINKS,
-  file: CONTENT.FILES,
-  collection: CONTENT.COLLECTIONS,
-} as const satisfies Record<string, ContentType>;
-
 /**
  * Returns whether a post kind belongs in a stream identified by streamId.
  * Kind extraction is delegated to the canonical model-layer parser, which
@@ -212,18 +205,15 @@ const POST_KIND_TO_CONTENT = {
 export function postKindBelongsToStream(postKind: string, streamId: string): boolean {
   const kindSegment = getPostStreamKind(streamId);
   if (!kindSegment) {
-    return true;
+    const [source, second, third] = streamId.split(':');
+    // Only genuinely kindless sources accept every kind. Malformed filters fail closed.
+    return (
+      source === 'post_replies' ||
+      source === 'collection' ||
+      ((source === 'author' || source === 'author_replies' || second === 'author') && !third)
+    );
   }
 
-  const streamContent = KIND_TO_CONTENT[kindSegment];
-  if (streamContent === CONTENT.ALL) {
-    return true;
-  }
-
-  const postContent = POST_KIND_TO_CONTENT[postKind as keyof typeof POST_KIND_TO_CONTENT];
-  if (!postContent) {
-    return false;
-  }
-
-  return postContent === streamContent;
+  const filterKind = streamSegmentToPostKind(kindSegment);
+  return filterKind === undefined || postKind === filterKind;
 }

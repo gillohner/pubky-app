@@ -1,4 +1,3 @@
-import { PostController } from '@/controllers/post/post';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -7,13 +6,13 @@ import { isPostDeleted } from '@/libs/utils/utils';
 export type TValidatePostIdParams = {
   postId: string;
   message: string;
+  post: { content: string; uri: string } | null;
 };
 
 export class PostValidators {
   constructor() {}
 
-  static async validatePostId({ postId, message }: TValidatePostIdParams): Promise<string> {
-    const parentPost = await PostController.getDetails({ compositeId: postId });
+  static validatePostId({ postId, message, post: parentPost }: TValidatePostIdParams): string {
     // Treat tombstones (`content === '[DELETED]'`) as not-found. Pre-tombstone
     // refactor the hard-delete branch fully removed the row so `!parentPost`
     // caught this; now the row sticks around as a tombstone and we need an
