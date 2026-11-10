@@ -22,13 +22,14 @@ type TResourceCardDetailField =
   | 'address'
   | 'category'
   | 'stream'
+  | 'episodes'
   | 'facts';
 
 export interface ResourceCardProps {
   /**
    * A card from any Pinakes read; a resource read (`by-uri`) adds the details: an event's `tz`,
    * `all_day`, `venue`, `event_status`, `organizer` and `attendance`, a place's `address` and
-   * `category`, an episode's `stream`, and the source's `facts`.
+   * `category`, an episode's `stream`, a show's latest `episodes`, and the source's `facts`.
    */
   card: TPinakesCard & Partial<Pick<TPinakesResourceDetail, TResourceCardDetailField>>;
   /**
