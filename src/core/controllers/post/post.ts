@@ -186,6 +186,7 @@ export class PostController {
    * @param params.parentPostId - ID of the post being replied to (optional for root posts)
    * @param params.parentUri - URI of the external resource being replied to (optional, never with `parentPostId`)
    * @param params.originalPostId - ID of the post being reposted (optional for reposts)
+   * @param params.embedUrl - A web link the post embeds (optional, never with `originalPostId`)
    * @returns The composite post ID of the created post
    */
   static async commitCreate({
@@ -198,6 +199,7 @@ export class PostController {
     parentPostId,
     parentUri: externalParentUri,
     originalPostId,
+    embedUrl,
     lock,
     onPostSynced,
   }: TCreatePostParams): Promise<string> {
@@ -226,6 +228,13 @@ export class PostController {
     if (originalPostId) {
       repostedUri = await PostValidators.validatePostId({ postId: originalPostId, message: 'Original post' });
     }
+    // The data model has one `embed`: a repost's original or a web link, never both.
+    if (repostedUri && embedUrl) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'A post embeds either a post or a link', {
+        service: ErrorService.Local,
+        operation: 'commitCreate',
+      });
+    }
 
     // A `lock` marks this post as the public announcement of locked content, which may never be a
     // `long` or `collection` post — the locked content behind it still may.
@@ -245,7 +254,7 @@ export class PostController {
         content: content.trim(),
         kind: postKind,
         parentUri,
-        embed: repostedUri,
+        embed: repostedUri ?? embedUrl,
         attachments: fileAttachments,
         coverImage: coverAttachment,
         lock,
@@ -607,10 +616,11 @@ export class PostController {
    * current attachments not in `kept` leave the post, and the post kind is
    * recomputed to match the resulting attachment set (articles and collections
    * keep their kind). An article's `coverImage` replaces (a string) or clears
-   * (`null`) the envelope's cover. Nothing an edit removes is deleted: the
-   * earlier versions still reference it (ADR-0027).
+   * (`null`) the envelope's cover. `embedUrl` sets the web link the next version
+   * embeds (`null`: none); a repost keeps the post it embeds. Nothing an edit
+   * removes is deleted: the earlier versions still reference it (ADR-0027).
    */
-  static async commitEdit({ compositePostId, content, attachments, coverImage }: TEditPostParams) {
+  static async commitEdit({ compositePostId, content, attachments, coverImage, embedUrl }: TEditPostParams) {
     const currentUserPubky = useAuthStore.getState().selectCurrentUserPubky();
 
     // Reject non-authors up front, before the CPU-heavy file sanitization below.
@@ -628,9 +638,11 @@ export class PostController {
     // An article's cover, as asked for.
     const coverEdit =
       coverImage === undefined ? {} : { coverImage: this.articleCover({ current, coverImage, authorId }) };
+    // The web link to embed, or none
+    const embedEdit = embedUrl === undefined ? {} : { embed: embedUrl };
 
     if (!attachments) {
-      await PostApplication.commitEdit({ compositePostId, edit: { content, ...coverEdit } });
+      await PostApplication.commitEdit({ compositePostId, edit: { content, ...coverEdit, ...embedEdit } });
       return;
     }
 
@@ -678,7 +690,7 @@ export class PostController {
 
       await PostApplication.commitEdit({
         compositePostId,
-        edit: { content, attachmentUris: nextOrder, kind, ...coverEdit },
+        edit: { content, attachmentUris: nextOrder, kind, ...coverEdit, ...embedEdit },
       });
       return;
     }
@@ -692,7 +704,7 @@ export class PostController {
 
     await PostApplication.commitEdit({
       compositePostId,
-      edit: { content, attachmentUris: nextUris, attachmentNames, kind, ...coverEdit },
+      edit: { content, attachmentUris: nextUris, attachmentNames, kind, ...coverEdit, ...embedEdit },
       fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
     });
   }

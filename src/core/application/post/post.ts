@@ -21,6 +21,7 @@ import { ErrorService } from '@/libs/error/error.types';
 import { isHomeserverFileUri } from '@/libs/file/homeserverFileUri';
 import { Logger } from '@/libs/logger/logger';
 import { parseArticleContent } from '@/libs/post/articleContent';
+import { getWebEmbedUrl } from '@/libs/post/postEmbedUrl';
 import { isPostDeleted } from '@/libs/utils/utils';
 import type { Pubky } from '@/models/models.types';
 import { parseCompositeId } from '@/models/models.utils';
@@ -456,8 +457,9 @@ export class PostApplication {
    *
    * 1. New uploads go up first, so the edited post never references files that do not exist
    *    yet; they are deleted again if the edit fails.
-   * 2. The edit is projected onto the cached row (`PostNormalizer.toLocalEdit`), so the UI shows
-   *    it at once and offline behaves as it always did.
+   * 2. The edit is projected onto the cached row (`PostNormalizer.toLocalEdit`; a changed web
+   *    embed onto its relationships too), so the UI shows it at once and offline behaves as it
+   *    always did.
    * 3. Inside a write fence, the newest stored version is read (LIST, pick the head, GET,
    *    decode), the edit is applied to it (`PostNormalizer.toEdit`: the lock, kept attachments'
    *    alt text, an article's cover, item notes and unknown members are carried over), and the
@@ -510,6 +512,12 @@ export class PostApplication {
       });
     }
 
+    // The web link the post embedded, for the rollback of an edit that changes it
+    const originalRelationships =
+      edit.embed === undefined ? null : await LocalPostService.readRelationships(compositePostId);
+    const originalEmbed =
+      getWebEmbedUrl(originalRelationships?.embedded) ?? getWebEmbedUrl(originalRelationships?.reposted) ?? null;
+
     const hasNewFiles = fileAttachments != null && fileAttachments.length > 0;
     const rollbackUploadedFiles = () =>
       this.rollbackUploadedFiles({
@@ -561,6 +569,7 @@ export class PostApplication {
           content: originalPost.content,
           attachments: originalPost.attachments,
           kind: originalPost.kind,
+          embed: edit.embed === undefined ? undefined : originalEmbed,
         });
       } catch (rollbackError) {
         Logger.error('[PostApplication.commitEdit] Failed to rollback local post edit', {
@@ -584,6 +593,10 @@ export class PostApplication {
         content: built.object.content,
         attachments: built.object.attachments.length > 0 ? built.object.attachments.map(({ uri }) => uri) : null,
         kind: nextKind,
+        embed:
+          edit.embed !== undefined && PostNormalizer.isWebEmbedOrNone(built.object.embed)
+            ? (built.object.embed ?? null)
+            : undefined,
       });
     } catch (convergeError) {
       Logger.warn('[PostApplication.commitEdit] Failed to converge the local row to the stored version', {
