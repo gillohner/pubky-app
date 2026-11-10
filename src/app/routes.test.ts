@@ -13,6 +13,7 @@ import {
   getCollectionRoute,
   getContentSearchUrl,
   getProfileRoute,
+  getResourceRoute,
   getUserProfileUrl,
   isCollectionsOverviewRoute,
   isCoreExploreRoute,
@@ -34,6 +35,7 @@ import {
   ONBOARDING_ROUTES,
   PROFILE_ROUTES,
   PUBLIC_ROUTES,
+  RESOURCE_ROUTES,
   SETTINGS_ROUTES,
   SOCIAL_MIGRATION_SIGNED_OUT_ROUTES,
   UNAUTHENTICATED_ROUTES,
@@ -42,6 +44,21 @@ import {
 describe('getContentSearchUrl', () => {
   it('builds an encoded q-only search URL', () => {
     expect(getContentSearchUrl('bitcoin wallets & privacy')).toBe('/search?q=bitcoin+wallets+%26+privacy');
+  });
+});
+
+describe('getResourceRoute', () => {
+  it('puts the link into an encoded uri query value', () => {
+    expect(getResourceRoute('https://en.wikipedia.org/wiki/Bitcoin?a=1&b=2#x')).toBe(
+      '/resource?uri=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FBitcoin%3Fa%3D1%26b%3D2%23x',
+    );
+  });
+
+  it('round-trips a URI that is not a web link', () => {
+    const url = new URL(getResourceRoute('isbn:9780140328721'), 'https://pubky.app');
+
+    expect(url.pathname).toBe(RESOURCE_ROUTES.RESOURCE);
+    expect(url.searchParams.get('uri')).toBe('isbn:9780140328721');
   });
 });
 
