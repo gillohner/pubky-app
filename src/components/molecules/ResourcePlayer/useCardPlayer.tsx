@@ -15,11 +15,11 @@ import { useSettingsStore } from '@/stores/settings/settings.store';
 import { usePlayerHost } from './PlayerHost';
 import {
   CARD_PLAYER,
+  type EmbedProvider,
   getOwnPlayer,
   getPlayerTargets,
   getUpFrontTarget,
   isCardFirst,
-  type PlayerProvider,
   type PlayerTarget,
 } from './resourcePlayer.utils';
 import { type PagePlayer, PlayerDock, PlayerSwitch } from './ResourcePlayerControls';
@@ -164,7 +164,7 @@ export function useCardPlayer(
 }
 
 /** What a card's switch picks: a service, or its card. */
-type EmbedChoice = PlayerProvider | typeof CARD_PLAYER;
+type EmbedChoice = EmbedProvider | typeof CARD_PLAYER;
 
 interface EmbedPlayerProps {
   card: TPinakesResourceDetail;
@@ -241,13 +241,19 @@ function EmbedPlayer({
 
   const open = () => {
     onOptIn(true);
-    if (preview) return;
+    // A post, map or document frame is shown, not played: what plays keeps playing.
+    if (preview || target.frame) return;
     setAutoStart(true);
     player.play(target);
   };
 
   if (!showsPlayer) {
-    const label = preview ? `Show the ${target.name} player` : `Play on ${target.name}`;
+    // A post, map or document frame is shown, not played.
+    const label = target.frame
+      ? `Show on ${target.name}`
+      : preview
+        ? `Show the ${target.name} player`
+        : `Play on ${target.name}`;
     const summary = getResourceSummary(card);
     return (
       <Container
@@ -286,8 +292,8 @@ function EmbedPlayer({
         target={target}
         title={title}
         onClose={close}
-        dockable={isActive && !player.paused && !preview}
-        pagePlayer={pagePlayer}
+        dockable={isActive && !player.paused && !preview && !target.frame}
+        pagePlayer={target.frame ? undefined : pagePlayer}
       >
         <ResourcePlayerFrame
           key={frameKey}
@@ -298,7 +304,7 @@ function EmbedPlayer({
           load={autoStart && isActive ? player.load : loadedKey === frameKey ? 'ready' : 'loading'}
           onLoaded={autoStart && isActive ? player.onLoaded : () => setLoadedKey(frameKey)}
           quiet={!autoStart}
-          onPlay={(media) => player.play(target, media)}
+          onPlay={target.frame ? undefined : (media) => player.play(target, media)}
           // Paused or ended in its card, it does not go to the dock.
           onPause={player.pause}
         />
