@@ -44,6 +44,7 @@ import { getCardAttribution, getMapDataCredit, getShownCredits } from './Resourc
 import { ResourceEpisodes } from './ResourceEpisodes';
 import { ResourceFactList } from './ResourceFactList';
 import { getResourceDetailRows, getResourceSummary } from './ResourceFacts.utils';
+import { useResourceSurface } from './ResourceSurfaceContext';
 import { getResourceTypeIcon } from './ResourceTypeIcon';
 import { useResourceFallback } from './useResourceFallback';
 
@@ -108,6 +109,8 @@ export function ResourceCard({
   const typeLabel = getResourceTypeLabel(card);
   const { linkUrl, sourceUri, siteName } = getResourceLinks(card, href);
   const isLarge = size === 'large';
+  // The large card and a collection's item stand on the post card's surface: their pills are the post's.
+  const onCard = useResourceSurface() === 'card';
   // A `missing` card's own link is gone upstream: neither the card, its heading nor its source
   // send the viewer there.
   const titleUrl = isMissing ? null : linkUrl;
@@ -354,7 +357,9 @@ export function ResourceCard({
           </Container>
         )}
 
-        {episodes.length > 0 && <ResourceEpisodes episodes={episodes} />}
+        {episodes.length > 0 && (
+          <ResourceEpisodes episodes={episodes} surface={isLarge || onCard ? 'default' : 'muted'} />
+        )}
 
         {isLarge && <ResourceFactList rows={detailRows} />}
 
