@@ -22,6 +22,9 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { useOgMetadata } from '@/hooks/useOgMetadata/useOgMetadata';
 import { cn } from '@/libs/utils/utils';
 import { useIsPostPreviewNavigable } from '@/molecules/PostPreviewCard/PostPreviewNestingContext';
+import { getLocationRowText, isLocationRow, ResourceLocation } from '@/molecules/ResourceMap/ResourceLocation';
+import { useResourceLocationVariant } from '@/molecules/ResourceMap/ResourceLocationContext';
+import { getMapsDestination } from '@/molecules/ResourceMap/ResourceMap.utils';
 import { PinakesStatus, type TPinakesCredit } from '@/services/pinakes/pinakes.types';
 import { type ResourceCardProps, ResourceFamily } from './ResourceCard.types';
 import {
@@ -140,14 +143,23 @@ export function ResourceCard({
   const title = card.name?.trim() || og?.title?.trim() || getDisplayLink(href || card.uri);
   const shownDescription = description ?? fallback.description?.value ?? null;
 
-  const summary = getResourceSummary(card);
+  // Where a place or an event is: a map of its point, or a line ending in "Open in Maps"
+  const destination = getMapsDestination(card);
+  const locationVariant = useResourceLocationVariant();
+  const locationRowText =
+    destination && isLocationRow(destination, locationVariant) ? getLocationRowText(destination) : null;
+  const cardSummary = getResourceSummary(card);
+  // The location line says the address: the summary does not say it a second time
+  const summary = cardSummary !== null && cardSummary === locationRowText ? null : cardSummary;
   const dates = isEvent ? formatResourceDates(card) : null;
   const venue = isEvent ? card.venue?.name?.trim() || null : null;
   const organizer = isEvent ? getOrganizer(card, venue) : null;
   const attendance = isEvent ? (ATTENDANCE_LABELS[card.attendance?.trim().toLowerCase() ?? ''] ?? null) : null;
   // Coordinates only for a place or event that has nothing better to say where it is.
   const point =
-    family !== ResourceFamily.WEB && !venue && !summary && card.point ? formatResourcePoint(card.point) : null;
+    family !== ResourceFamily.WEB && !venue && !cardSummary && !locationRowText && card.point
+      ? formatResourcePoint(card.point)
+      : null;
   const eventStatusNote = isEvent ? getEventStatusNote(card.event_status) : null;
   const statusNote = status === PinakesStatus.OK ? null : STATUS_NOTES[status];
   // OpenStreetMap is credited once, under the resource page's Sources ("Map data"), not on every
@@ -339,6 +351,8 @@ export function ResourceCard({
             </Container>
           </Container>,
         )}
+
+        {destination && <ResourceLocation id={card.id} destination={destination} size={size} />}
 
         {streamUrl && (
           <Container overrideDefaults data-resource-controls className="flex flex-col gap-1">
