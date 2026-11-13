@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => {
     isLoadingMore: false,
     isMoreError: false,
     loadMore: async () => {},
+    retry: () => {},
   };
   return { none, occurrences: none };
 });
