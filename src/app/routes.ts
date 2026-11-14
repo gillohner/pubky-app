@@ -70,6 +70,7 @@ export enum SETTINGS_ROUTES {
   NOTIFICATIONS = '/settings/notifications',
   APPEARANCE = '/settings/appearance',
   PRIVACY_SAFETY = '/settings/privacy-safety',
+  MEDIA = '/settings/media',
   MUTED_USERS = '/settings/muted-users',
   HELP = '/settings/help',
 }
