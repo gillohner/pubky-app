@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getResourceRoute } from '@/app/routes';
 import { PostPreviewNavigableProvider } from '@/molecules/PostPreviewCard/PostPreviewNestingContext';
@@ -29,12 +29,31 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mockPush }) }));
 vi.mock('@/hooks/useOgMetadata/useOgMetadata', () => ({
   useOgMetadata: () => ({ metadata: null, isLoading: false, error: null }),
 }));
+// The image's lightbox: Embla is stubbed only because jsdom lacks the matchMedia it needs
+// (as in PostAttachmentsImagesAndVideos.focus.test); the Dialog is the real one.
+// One API object for every render, as Embla keeps its own.
+vi.mock('embla-carousel-react', () => {
+  const api = {
+    scrollPrev: () => {},
+    scrollNext: () => {},
+    canScrollPrev: () => false,
+    canScrollNext: () => false,
+    selectedScrollSnap: () => 0,
+    on: () => {},
+    off: () => {},
+    scrollTo: () => {},
+  };
+  const ref = () => {};
+  return { default: () => [ref, api] };
+});
 
 const ARTICLE: TPinakesResourceDetail = articleFixture;
 
 const card = () => screen.getByTestId('resource-card');
 const title = () => screen.getByTestId('resource-card-title');
 const source = () => screen.getByTestId('resource-card-source');
+/** The card's image: the post's single image, inside the card's image slot. */
+const cardImage = () => within(screen.getByTestId('resource-card-image')).getByRole('img');
 
 describe('ResourceCard', () => {
   afterEach(() => {
@@ -109,10 +128,9 @@ describe('ResourceCard', () => {
       render(<ResourceCard card={ARTICLE} href={ARTICLE.uri} />);
 
       fireEvent.click(screen.getByTestId('resource-card-description'));
-      fireEvent.click(screen.getByTestId('resource-card-image'));
       fireEvent.click(screen.getByTestId('resource-card-type'));
 
-      expect(mockPush).toHaveBeenCalledTimes(3);
+      expect(mockPush).toHaveBeenCalledTimes(2);
       expect(mockPush).toHaveBeenCalledWith(getResourceRoute(ARTICLE.uri));
       expect(open).not.toHaveBeenCalled();
       expect(card()).toHaveAttribute('data-click-through', 'true');
@@ -284,7 +302,7 @@ describe('ResourceCard', () => {
         /^Bitcoin is the first decentralized/,
       );
       // A Wikimedia file is shown without a credit too.
-      expect(screen.getByTestId('resource-card-image')).toHaveAttribute('src', ARTICLE.image);
+      expect(cardImage()).toHaveAttribute('src', ARTICLE.image);
       expect(screen.queryByTestId('resource-card-type-tile')).not.toBeInTheDocument();
       expect(screen.queryByTestId('resource-card-status')).not.toBeInTheDocument();
     });
@@ -296,7 +314,7 @@ describe('ResourceCard', () => {
     ])('shows a Wikimedia image with %s', (_, extra, creditLine, attribution) => {
       render(<ResourceCard card={{ ...ARTICLE, ...extra }} href={ARTICLE.uri} />);
 
-      expect(screen.getByTestId('resource-card-image')).toHaveAttribute('src', ARTICLE.image);
+      expect(cardImage()).toHaveAttribute('src', ARTICLE.image);
       if (creditLine) expect(screen.getByTestId('resource-credits')).toHaveTextContent(creditLine);
       else expect(screen.queryByTestId('resource-credits')).not.toBeInTheDocument();
       if (attribution) expect(screen.getByTestId('resource-card-attribution')).toHaveTextContent(attribution);
@@ -367,63 +385,138 @@ describe('ResourceCard', () => {
     it('shows the type’s icon in place of an image that fails to load', () => {
       render(<ResourceCard card={musicRecordingFixture} href={musicRecordingFixture.uri} />);
 
-      fireEvent.error(screen.getByTestId('resource-card-image'));
+      fireEvent.error(cardImage());
 
       expect(screen.queryByTestId('resource-card-image')).not.toBeInTheDocument();
       expect(screen.getByTestId('resource-card-type-tile').querySelector('svg')).toHaveClass('lucide-music');
     });
 
-    it('aligns the image to the top, so a tall text column never stretches it', () => {
-      render(<ResourceCard card={videoFixture} href={videoFixture.uri} />);
-
-      expect(screen.getByTestId('resource-card-image')).toHaveClass('self-start');
-    });
-
-    it('shows an upright image (a poster) as a square once it has loaded, even for a film', async () => {
-      render(<ResourceCard card={movieFixture} href={movieFixture.uri} />);
-      const image = screen.getByTestId('resource-card-image');
-      expect(image).toHaveAttribute('data-shape', 'wide');
-      Object.defineProperty(image, 'naturalWidth', { value: 500 });
-      Object.defineProperty(image, 'naturalHeight', { value: 750 });
-
-      fireEvent.load(image);
-
-      await waitFor(() => expect(screen.getByTestId('resource-card-image')).toHaveAttribute('data-shape', 'square'));
-    });
-
-    it('shows a wide image as a 16:9 thumbnail once it has loaded, whatever the type', async () => {
+    it('shows the image under the text as a post shows its one image, the type tile only without one', () => {
       render(<ResourceCard card={musicRecordingFixture} href={musicRecordingFixture.uri} />);
-      const image = screen.getByTestId('resource-card-image');
-      Object.defineProperty(image, 'naturalWidth', { value: 1200 });
-      Object.defineProperty(image, 'naturalHeight', { value: 784 });
 
-      fireEvent.load(image);
-
-      await waitFor(() => expect(screen.getByTestId('resource-card-image')).toHaveAttribute('data-shape', 'wide'));
+      const slot = screen.getByTestId('resource-card-image');
+      expect(title().compareDocumentPosition(slot)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(slot).toContainElement(screen.getByRole('button', { name: musicRecordingFixture.name! }));
+      expect(cardImage()).toHaveAttribute('data-cy', 'post-attachment-image');
+      expect(cardImage()).toHaveAccessibleName(musicRecordingFixture.name!);
+      expect(screen.queryByTestId('resource-card-type-tile')).not.toBeInTheDocument();
     });
 
     it.each([
       ['video', videoFixture],
       ['movie', movieFixture],
-    ])('shows a %s’s image as a 16:9 thumbnail', (_, fixture) => {
+      ['song', musicRecordingFixture],
+    ])('shows a %s’s image whole, in its own shape', (_, fixture) => {
       render(<ResourceCard card={fixture} href={fixture.uri} />);
 
-      const image = screen.getByTestId('resource-card-image');
-      expect(image).toHaveAttribute('data-shape', 'wide');
-      expect(image).toHaveClass('aspect-video');
-      expect(image).not.toHaveClass('size-20');
+      expect(cardImage()).toHaveClass('object-contain', 'max-h-96');
+      expect(cardImage()).not.toHaveClass('object-cover');
+    });
+
+    it('opens the image in the post’s lightbox on a tap, never the resource page', async () => {
+      const open = vi.spyOn(window, 'open').mockReturnValue(null);
+      const onPostClick = vi.fn();
+      render(
+        <div onClick={onPostClick}>
+          <ResourceCard card={ARTICLE} href={ARTICLE.uri} />
+        </div>,
+      );
+      const slot = screen.getByTestId('resource-card-image');
+      const fit = screen.getByTestId('resource-card-image-fit');
+      expect(fit).toHaveAttribute('data-resource-controls');
+
+      // In the image's box around the picture, and a middle click on it, open nothing either.
+      fireEvent.click(fit);
+      fireEvent(cardImage(), new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }));
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+
+      fireEvent.click(cardImage());
+
+      const lightbox = await screen.findByRole('dialog');
+      expect(within(lightbox).getByTestId('carousel-image-zoom-frame')).toHaveAttribute('data-zoomed', 'false');
+      expect(
+        within(lightbox)
+          .getAllByRole('img')
+          .map((img) => img.getAttribute('src')),
+      ).toContain(ARTICLE.image);
+      fireEvent.click(lightbox);
+      // The lightbox's images are the card's in React only: one failing there leaves the card's image as it is.
+      fireEvent.error(within(lightbox).getAllByRole('img')[0]);
+      expect(screen.getByTestId('resource-card-image')).toBe(slot);
+      expect(screen.queryByTestId('resource-card-type-tile')).not.toBeInTheDocument();
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+      expect(onPostClick).not.toHaveBeenCalled();
+      expect(card()).toHaveAttribute('data-click-through', 'true');
+    });
+
+    it('opens the lightbox where links may not navigate too, as a post’s image does', async () => {
+      render(
+        <PostPreviewNavigableProvider navigable={false}>
+          <ResourceCard card={ARTICLE} href={ARTICLE.uri} />
+        </PostPreviewNavigableProvider>,
+      );
+
+      fireEvent.click(cardImage());
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(mockPush).not.toHaveBeenCalled();
     });
 
     it.each([
-      ['song', musicRecordingFixture],
-      ['band', mbGroupEnrichedFixture],
-    ])('keeps a %s’s image square', (_, fixture) => {
-      render(<ResourceCard card={fixture} href={fixture.uri} />);
+      [64, '64px'],
+      [1200, '1200px'],
+    ])('never shows an image %ipx wide larger than it is, nor wider than a post’s media', (width, maxWidth) => {
+      render(<ResourceCard card={ARTICLE} href={ARTICLE.uri} />);
+      const fit = screen.getByTestId('resource-card-image-fit');
+      expect(fit.style.maxWidth).toBe('');
+      Object.defineProperty(cardImage(), 'naturalWidth', { value: width });
 
-      const image = screen.getByTestId('resource-card-image');
-      expect(image).toHaveAttribute('data-shape', 'square');
-      expect(image).toHaveClass('size-20');
-      expect(image).not.toHaveClass('aspect-video');
+      fireEvent.load(cardImage());
+
+      expect(fit.style.maxWidth).toBe(maxWidth);
+      expect(fit).toHaveClass('mx-auto');
+      expect(screen.getByTestId('resource-card-image')).toHaveClass('max-w-2xl');
+      expect(screen.getByTestId('resource-card-image').style.maxWidth).toBe('');
+      // Beside a narrow image is the card's surface: it opens the resource page.
+      fireEvent.click(screen.getByTestId('resource-card-image'));
+      expect(mockPush).toHaveBeenCalledWith(getResourceRoute(ARTICLE.uri));
+    });
+
+    it('takes no size from the lightbox’s images', async () => {
+      render(<ResourceCard card={ARTICLE} href={ARTICLE.uri} />);
+      fireEvent.click(cardImage());
+      const lightboxImage = within(await screen.findByRole('dialog')).getAllByRole('img')[0];
+      Object.defineProperty(lightboxImage, 'naturalWidth', { value: 64 });
+
+      fireEvent.load(lightboxImage);
+
+      expect(screen.getByTestId('resource-card-image-fit').style.maxWidth).toBe('');
+    });
+
+    it('gives the image’s place to a player or embed that stands in the body', () => {
+      const wrap = (body: React.ReactNode) => <div data-testid="wrapped">{body}</div>;
+      const { rerender } = render(<ResourceCard card={ARTICLE} href={ARTICLE.uri} renderBody={wrap} />);
+      expect(screen.getByTestId('wrapped')).toContainElement(screen.getByTestId('resource-card-image'));
+
+      rerender(
+        <ResourceCard
+          card={ARTICLE}
+          href={ARTICLE.uri}
+          renderBody={() => <div data-testid="player" />}
+          isBodyReplaced
+        />,
+      );
+
+      expect(screen.getByTestId('player')).toBeInTheDocument();
+      expect(screen.queryByTestId('resource-card-image')).not.toBeInTheDocument();
+    });
+
+    it('dims the image of an object that is gone', () => {
+      render(<ResourceCard card={{ ...missingFixture, image: ARTICLE.image }} />);
+
+      expect(screen.getByTestId('resource-card-image')).toHaveClass('opacity-60');
     });
 
     it('names the source by the card’s own host when the card has no site', () => {
@@ -960,7 +1053,7 @@ describe('ResourceCard', () => {
         'Image: Sony Music Entertainment · Wikimedia Commons · CC BY 4.0',
       ]);
       expect(screen.getByTestId('resource-card-description')).not.toHaveClass('line-clamp-2');
-      expect(screen.getByTestId('resource-card-image')).toHaveAttribute('src', MB_GROUP.image);
+      expect(cardImage()).toHaveAttribute('src', MB_GROUP.image);
     });
 
     it('lets a source in the line open its own page on a card that is a click-through', () => {
@@ -990,7 +1083,7 @@ describe('ResourceCard', () => {
     it('drops the image’s credit when the image fails to load', () => {
       render(<ResourceCard card={MB_GROUP} />);
 
-      fireEvent.error(screen.getByTestId('resource-card-image'));
+      fireEvent.error(cardImage());
 
       expect(credits()).toHaveTextContent('Sources: Text: Wikipedia');
       expect(credits()).not.toHaveTextContent('Wikimedia Commons');
@@ -1014,13 +1107,13 @@ describe('ResourceCard', () => {
     it('still shows an image that has no credit and needs none', () => {
       render(<ResourceCard card={{ ...musicRecordingFixture, credits: [] }} />);
 
-      expect(screen.getByTestId('resource-card-image')).toHaveAttribute('src', musicRecordingFixture.image);
+      expect(cardImage()).toHaveAttribute('src', musicRecordingFixture.image);
     });
 
     it('shows a Wikimedia Commons image without its credit, crediting only the text', () => {
       render(<ResourceCard card={{ ...MB_GROUP, credits: MB_GROUP.credits?.slice(0, 1) }} />);
 
-      expect(screen.getByTestId('resource-card-image')).toHaveAttribute('src', MB_GROUP.image);
+      expect(cardImage()).toHaveAttribute('src', MB_GROUP.image);
       expect(credits()).toHaveTextContent('Sources: Text: Wikipedia');
       expect(credits()).not.toHaveTextContent('Wikimedia Commons');
     });
